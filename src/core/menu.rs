@@ -199,7 +199,7 @@ impl Menu {
             }
         }
     }
-    
+
     pub fn show_db_menu() -> DBMenuChoice {
         loop {
             utils::cli::clear_screen();

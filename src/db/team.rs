@@ -45,7 +45,13 @@ impl Team {
         conn.execute(
             "INSERT INTO teams (name, league_id, city, abbreviation, founded_year)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![self.name, self.league_id, self.city, self.abbreviation, self.founded_year],
+            params![
+                self.name,
+                self.league_id,
+                self.city,
+                self.abbreviation,
+                self.founded_year
+            ],
         )?;
 
         let id = conn.last_insert_rowid();
@@ -57,7 +63,7 @@ impl Team {
     pub fn get_by_id(conn: &Connection, id: i64) -> Result<Team> {
         let mut stmt = conn.prepare(
             "SELECT id, name, league_id, city, abbreviation, founded_year
-             FROM teams WHERE id = ?1"
+             FROM teams WHERE id = ?1",
         )?;
 
         stmt.query_row(params![id], Self::from_row)
@@ -67,7 +73,7 @@ impl Team {
     pub fn get_all(conn: &Connection) -> Result<Vec<Team>> {
         let mut stmt = conn.prepare(
             "SELECT id, name, league_id, city, abbreviation, founded_year
-             FROM teams ORDER BY name"
+             FROM teams ORDER BY name",
         )?;
 
         let teams = stmt.query_map([], Self::from_row)?;
@@ -79,7 +85,7 @@ impl Team {
     pub fn get_by_league(conn: &Connection, league_id: i64) -> Result<Vec<Team>> {
         let mut stmt = conn.prepare(
             "SELECT id, name, league_id, city, abbreviation, founded_year
-             FROM teams WHERE league_id = ?1 ORDER BY name"
+             FROM teams WHERE league_id = ?1 ORDER BY name",
         )?;
 
         let teams = stmt.query_map(params![league_id], Self::from_row)?;
@@ -93,8 +99,14 @@ impl Team {
             conn.execute(
                 "UPDATE teams SET name = ?1, league_id = ?2, city = ?3,
                  abbreviation = ?4, founded_year = ?5 WHERE id = ?6",
-                params![self.name, self.league_id, self.city,
-                        self.abbreviation, self.founded_year, id],
+                params![
+                    self.name,
+                    self.league_id,
+                    self.city,
+                    self.abbreviation,
+                    self.founded_year,
+                    id
+                ],
             )?;
         }
         Ok(())

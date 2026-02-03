@@ -1,10 +1,10 @@
-use std::io;
-use std::io::Write;
 use crate::core::menu::PlayerMenuChoice;
 use crate::db::player::Player;
 use crate::models::types::Position;
 use crate::utils::cli;
 use crate::{Database, Menu, Team};
+use std::io;
+use std::io::Write;
 
 pub fn handle_player_menu(db: &Database) {
     loop {
@@ -260,10 +260,11 @@ fn update_player(db: &Database) {
         }
 
         // Update number
-        if let Some(new_number) = cli::read_i32(&format!("Number [{}]: ", player.number)) {
-            if new_number > 0 && new_number <= 99 {
-                player.number = new_number;
-            }
+        if let Some(new_number) = cli::read_i32(&format!("Number [{}]: ", player.number))
+            && new_number > 0
+            && new_number <= 99
+        {
+            player.number = new_number;
         }
 
         // Update position
@@ -272,10 +273,11 @@ fn update_player(db: &Database) {
             player.position.to_number()
         );
         let pos = cli::read_choice();
-        if pos > 0 && pos <= 9 {
-            if let Some(new_pos) = Position::from_number(pos as u8) {
-                player.position = new_pos;
-            }
+        if pos > 0
+            && pos <= 9
+            && let Some(new_pos) = Position::from_number(pos as u8)
+        {
+            player.position = new_pos;
         }
 
         // Update batting order

@@ -39,8 +39,7 @@ impl Player {
             team_id: row.get(1)?,
             number: row.get(2)?,
             name: row.get(3)?,
-            position: Position::from_number(position_num)
-                .unwrap_or(Position::RightField),
+            position: Position::from_number(position_num).unwrap_or(Position::RightField),
             batting_order: row.get(5)?,
             is_active: row.get(6)?,
         })
@@ -78,7 +77,7 @@ impl Player {
     pub fn get_by_id(conn: &Connection, id: i64) -> Result<Player> {
         let mut stmt = conn.prepare(
             "SELECT id, team_id, number, name, position, batting_order, is_active
-             FROM players WHERE id = ?1"
+             FROM players WHERE id = ?1",
         )?;
 
         stmt.query_row(params![id], Self::from_row)
@@ -89,7 +88,7 @@ impl Player {
         let mut stmt = conn.prepare(
             "SELECT id, team_id, number, name, position, batting_order, is_active
              FROM players WHERE team_id = ?1 AND is_active = 1
-             ORDER BY batting_order, number"
+             ORDER BY batting_order, number",
         )?;
 
         let players = stmt.query_map(params![team_id], Self::from_row)?;
