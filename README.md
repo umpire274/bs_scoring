@@ -1,37 +1,38 @@
-# ⚾ Baseball Scorer CLI - Versione 2.0
+# ⚾ Baseball Scorer - v0.2.2
 
-Un'applicazione CLI professionale in Rust per il scoring di partite di baseball/softball con database SQLite integrato e interfaccia menu COBOL-style.
+A comprehensive baseball and softball scoring application with SQLite persistence, official scoring symbols support, and cross-platform compatibility.
 
-## 🆕 Novità Versione 2.0
+## 🆕 What's New in v0.2.2
 
-- ✅ **Database SQLite** per persistenza dati
-- ✅ **Menu principale stile COBOL** 
-- ✅ **Gestione Leghe** completa (CRUD)
-- ✅ **Gestione Squadre** con roster
-- ✅ **Struttura modulare** migliorata
-- 🚧 **Sistema di scoring** (in sviluppo)
-- 🚧 **Statistiche avanzate** (in sviluppo)
+- ✅ **Library Support**: Now usable as a Rust library in other projects
+- ✅ **Standard Structure**: All code moved to `src/` directory
+- ✅ **Enhanced Metadata**: Ready for crates.io publishing
+- ✅ **Better Tooling**: Improved IDE support and documentation
 
-## 📁 Struttura Progetto
+## 📁 Project Structure
 
 ```
-baseball_scorer/
-├── Cargo.toml              # Configurazione e dipendenze
-├── main.rs                 # Entry point con menu principale
-├── core/                   # Logica di business
-│   ├── mod.rs
-│   ├── parser.rs          # Parser comandi scoring
-│   └── menu.rs            # Sistema menu navigazione
-├── models/                 # Modelli dati e DB
-│   ├── mod.rs
-│   ├── types.rs           # Tipi scoring (Hit, Out, ecc.)
-│   ├── database.rs        # Schema e init DB
-│   ├── league.rs          # CRUD leghe
-│   └── team.rs            # CRUD squadre e giocatori
-└── baseball_scorer.db     # Database SQLite (auto-creato)
+bs_scoring/
+├── Cargo.toml           # Package configuration with lib + bin
+├── README.md
+├── CHANGELOG.md
+├── SCORING_GUIDE.md
+└── src/                 # All source code
+    ├── lib.rs          # Library interface (NEW in v0.2.2)
+    ├── main.rs         # CLI application entry point
+    ├── core/           # Business logic
+    │   ├── menu.rs     # COBOL-style menu system
+    │   └── parser.rs   # Scoring notation parser
+    ├── db/             # Database layer
+    │   ├── config.rs   # Cross-platform path management
+    │   ├── database.rs # SQLite schema and operations
+    │   ├── league.rs   # League CRUD
+    │   └── team.rs     # Team and Player CRUD
+    └── models/         # Data types
+        └── types.rs    # Game scoring types
 ```
 
-## 🚀 Installazione
+## 🚀 Installation
 
 ### Prerequisiti
 - Rust 1.75 o superiore (installa da [rustup.rs](https://rustup.rs/))

@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-02-03
+
+### Added
+- **Library Support (`lib.rs`)**:
+  - Created public library interface for code reusability
+  - Re-exported commonly used types and functions
+  - Added comprehensive module documentation
+  - Enables integration with other Rust projects
+  - Foundation for future GUI, API, or plugin development
+
+### Changed
+- **Standard Rust Project Structure**:
+  - Moved `main.rs` → `src/main.rs`
+  - Moved `core/` → `src/core/`
+  - Moved `models/` → `src/models/`
+  - All source code now under `src/` directory
+  - Follows Rust best practices and conventions
+  
+- **Cargo.toml Enhancements**:
+  - Added `[lib]` section for library compilation
+  - Updated `[[bin]]` path to `src/main.rs`
+  - Added metadata: authors, description, license, repository
+  - Added keywords and categories for crates.io compatibility
+  - Fixed edition to `2021` (was incorrectly `2024`)
+
+- **Module System**:
+  - `main.rs` now uses `bs_scoring::` imports from lib
+  - Removed redundant module declarations
+  - Cleaner separation between library and binary
+
+### Improved
+- **IDE and Tooling Support**:
+  - Better autocomplete and navigation
+  - Improved `cargo doc` documentation generation
+  - Standard structure recognized by all Rust tools
+  - Easier debugging and testing
+
+## [0.2.1] - 2026-02-03
+
+### Added
+- **Cross-Platform Database Path Management**:
+  - Windows: Database stored in `%LOCALAPPDATA%\bs_scorer\baseball_scorer.db`
+  - macOS/Linux: Database stored in `$HOME/.bs_scorer/baseball_scorer.db`
+  - Automatic directory creation on first run
+  - Display database location on startup
+
+### Changed
+- **Project Structure Reorganization**:
+  - Created `src/db/` directory for all database-related code
+  - Moved `database.rs`, `league.rs`, `team.rs` to `src/db/`
+  - Added `src/db/config.rs` for path management
+  - `models/` now only contains `types.rs` (game scoring types)
+  - Clearer separation between DB operations and game logic
+
+### Fixed
+- Clippy warnings for enum variant naming:
+  - `Walk::IntentionalWalk` → `Walk::Intentional`
+  - `Pitch::HitByPitch` → `Pitch::HittedBy`
+
 ## [0.2.0] - 2026-02-03
 
 ### Added

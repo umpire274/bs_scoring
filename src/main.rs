@@ -1,16 +1,23 @@
-mod core;
-mod models;
-
-use core::menu::{LeagueMenuChoice, MainMenuChoice, Menu, TeamMenuChoice};
-use models::database::Database;
-use models::league::League;
-use models::team::Team;
-
-const DB_PATH: &str = "baseball_scorer.db";
+use bs_scoring::core::menu::{LeagueMenuChoice, MainMenuChoice, Menu, TeamMenuChoice};
+use bs_scoring::db::config::get_db_path;
+use bs_scoring::db::database::Database;
+use bs_scoring::db::league::League;
+use bs_scoring::db::team::Team;
 
 fn main() {
+    // Get platform-specific database path
+    let db_path = match get_db_path() {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("❌ Error determining database path: {}", e);
+            return;
+        }
+    };
+
+    println!("📁 Database location: {}", db_path.display());
+
     // Initialize database
-    let db = match Database::new(DB_PATH) {
+    let db = match Database::new(&db_path.to_string_lossy()) {
         Ok(db) => db,
         Err(e) => {
             eprintln!("❌ Error opening database: {}", e);
@@ -23,7 +30,7 @@ fn main() {
         return;
     }
 
-    println!("✅ Database initialized: {}", DB_PATH);
+    println!("✅ Database initialized successfully");
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     // Main menu loop
