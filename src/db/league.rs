@@ -18,6 +18,16 @@ impl League {
         }
     }
 
+    /// Helper function to map a database row to a League struct
+    fn from_row(row: &rusqlite::Row) -> Result<Self> {
+        Ok(League {
+            id: Some(row.get(0)?),
+            name: row.get(1)?,
+            season: row.get(2)?,
+            description: row.get(3)?,
+        })
+    }
+
     /// Create a new league in the database
     pub fn create(&mut self, conn: &Connection) -> Result<i64> {
         conn.execute(
@@ -36,14 +46,7 @@ impl League {
         let mut stmt =
             conn.prepare("SELECT id, name, season, description FROM leagues WHERE id = ?1")?;
 
-        stmt.query_row(params![id], |row| {
-            Ok(League {
-                id: Some(row.get(0)?),
-                name: row.get(1)?,
-                season: row.get(2)?,
-                description: row.get(3)?,
-            })
-        })
+        stmt.query_row(params![id], Self::from_row)
     }
 
     /// Get all leagues
@@ -51,14 +54,7 @@ impl League {
         let mut stmt =
             conn.prepare("SELECT id, name, season, description FROM leagues ORDER BY name")?;
 
-        let leagues = stmt.query_map([], |row| {
-            Ok(League {
-                id: Some(row.get(0)?),
-                name: row.get(1)?,
-                season: row.get(2)?,
-                description: row.get(3)?,
-            })
-        })?;
+        let leagues = stmt.query_map([], Self::from_row)?;
 
         leagues.collect()
     }
@@ -84,7 +80,7 @@ impl League {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::database::Database;
+    use crate::db::database::Database;
 
     #[test]
     fn test_league_crud() {

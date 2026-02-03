@@ -41,6 +41,17 @@ impl Team {
         }
     }
 
+    fn from_row(row: &rusqlite::Row) -> Result<Self> {
+        Ok(Team {
+            id: Some(row.get(0)?),
+            name: row.get(1)?,
+            league_id: row.get(2)?,
+            city: row.get(3)?,
+            abbreviation: row.get(4)?,
+            founded_year: row.get(5)?,
+        })
+    }
+
     /// Create a new team
     pub fn create(&mut self, conn: &Connection) -> Result<i64> {
         conn.execute(
@@ -68,16 +79,7 @@ impl Team {
              FROM teams WHERE id = ?1",
         )?;
 
-        stmt.query_row(params![id], |row| {
-            Ok(Team {
-                id: Some(row.get(0)?),
-                name: row.get(1)?,
-                league_id: row.get(2)?,
-                city: row.get(3)?,
-                abbreviation: row.get(4)?,
-                founded_year: row.get(5)?,
-            })
-        })
+        stmt.query_row(params![id], Self::from_row)
     }
 
     /// Get all teams
@@ -87,16 +89,7 @@ impl Team {
              FROM teams ORDER BY name",
         )?;
 
-        let teams = stmt.query_map([], |row| {
-            Ok(Team {
-                id: Some(row.get(0)?),
-                name: row.get(1)?,
-                league_id: row.get(2)?,
-                city: row.get(3)?,
-                abbreviation: row.get(4)?,
-                founded_year: row.get(5)?,
-            })
-        })?;
+        let teams = stmt.query_map([], Self::from_row)?;
 
         teams.collect()
     }
@@ -109,16 +102,7 @@ impl Team {
              FROM teams WHERE league_id = ?1 ORDER BY name",
         )?;
 
-        let teams = stmt.query_map(params![league_id], |row| {
-            Ok(Team {
-                id: Some(row.get(0)?),
-                name: row.get(1)?,
-                league_id: row.get(2)?,
-                city: row.get(3)?,
-                abbreviation: row.get(4)?,
-                founded_year: row.get(5)?,
-            })
-        })?;
+        let teams = stmt.query_map(params![league_id], Self::from_row)?;
 
         teams.collect()
     }
@@ -183,6 +167,19 @@ impl Player {
         }
     }
 
+    fn from_row(row: &rusqlite::Row) -> Result<Self> {
+        let position_num: u8 = row.get(4)?;
+        Ok(Player {
+            id: Some(row.get(0)?),
+            team_id: row.get(1)?,
+            number: row.get(2)?,
+            name: row.get(3)?,
+            position: Position::from_number(position_num).unwrap_or(Position::RightField),
+            batting_order: row.get(5)?,
+            is_active: row.get(6)?,
+        })
+    }
+
     /// Create a new player
     pub fn create(&mut self, conn: &Connection) -> Result<i64> {
         conn.execute(
@@ -210,18 +207,7 @@ impl Player {
              FROM players WHERE id = ?1",
         )?;
 
-        stmt.query_row(params![id], |row| {
-            let position_num: u8 = row.get(4)?;
-            Ok(Player {
-                id: Some(row.get(0)?),
-                team_id: row.get(1)?,
-                number: row.get(2)?,
-                name: row.get(3)?,
-                position: Position::from_number(position_num).unwrap_or(Position::RightField),
-                batting_order: row.get(5)?,
-                is_active: row.get(6)?,
-            })
-        })
+        stmt.query_row(params![id], Self::from_row)
     }
 
     /// Get all players for a team
@@ -232,18 +218,7 @@ impl Player {
              ORDER BY batting_order, number",
         )?;
 
-        let players = stmt.query_map(params![team_id], |row| {
-            let position_num: u8 = row.get(4)?;
-            Ok(Player {
-                id: Some(row.get(0)?),
-                team_id: row.get(1)?,
-                number: row.get(2)?,
-                name: row.get(3)?,
-                position: Position::from_number(position_num).unwrap_or(Position::RightField),
-                batting_order: row.get(5)?,
-                is_active: row.get(6)?,
-            })
-        })?;
+        let players = stmt.query_map(params![team_id], Self::from_row)?;
 
         players.collect()
     }
@@ -278,7 +253,7 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::database::Database;
+    use crate::db::database::Database;
 
     #[test]
     fn test_team_crud() {
