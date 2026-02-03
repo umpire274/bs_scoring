@@ -1,6 +1,6 @@
-use std::{fs, process};
-use std::path::PathBuf;
 use crate::Database;
+use std::path::PathBuf;
+use std::{fs, process};
 
 /// Initialize database with proper error handling and user feedback
 ///

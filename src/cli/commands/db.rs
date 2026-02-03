@@ -1,6 +1,6 @@
 use crate::core::menu::DBMenuChoice;
 use crate::utils::cli;
-use crate::{get_db_path, get_db_path_display, Database, Menu};
+use crate::{Database, Menu, get_db_path, get_db_path_display};
 
 pub fn handle_db_menu(db: &Database) {
     loop {

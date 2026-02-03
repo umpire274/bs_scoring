@@ -1,5 +1,5 @@
-use crate::{Database, League, Menu, Team, TeamMenuChoice};
 use crate::utils::cli;
+use crate::{Database, League, Menu, Team, TeamMenuChoice};
 
 pub fn handle_team_menu(db: &Database) {
     loop {

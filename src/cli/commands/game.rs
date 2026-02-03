@@ -1,5 +1,5 @@
-use crate::{Database, Team};
 use crate::utils::cli;
+use crate::{Database, Team};
 
 pub fn handle_new_game(db: &Database) {
     cli::show_header("NEW GAME");
@@ -69,4 +69,3 @@ pub fn handle_new_game(db: &Database) {
         }
     }
 }
-

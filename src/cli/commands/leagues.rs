@@ -1,5 +1,5 @@
-use crate::{Database, League, LeagueMenuChoice, Menu};
 use crate::utils::cli;
+use crate::{Database, League, LeagueMenuChoice, Menu};
 
 pub fn handle_league_menu(db: &Database) {
     loop {
@@ -138,4 +138,3 @@ fn delete_league(db: &Database) {
         Err(e) => cli::show_error(&format!("Error: {}", e)),
     }
 }
-
