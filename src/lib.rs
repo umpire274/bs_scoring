@@ -24,9 +24,11 @@
 pub mod core;
 pub mod db;
 pub mod models;
+pub mod utils;
+pub mod cli;
 
 // Re-export commonly used items for convenience
-pub use db::config::{get_app_data_dir, get_db_path, get_db_path_display};
+pub use db::config::{get_app_data_dir, get_db_path, get_db_path_display, setup_db};
 pub use db::database::Database;
 pub use db::league::League;
 pub use db::team::{Player, Team};
