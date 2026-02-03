@@ -1,6 +1,6 @@
+use crate::models::types;
 use crate::models::types::*;
 use std::error::Error;
-use crate::models::types;
 
 pub struct CommandParser;
 
@@ -20,6 +20,7 @@ impl CommandParser {
     /// "CS3" -> Caught stealing at third
     /// "6-4-3 DP" -> Double play
     /// "SF8" -> Sacrifice fly to center
+    #[allow(dead_code)]
     pub fn parse_command(input: &str) -> Result<PlateAppearanceResult, Box<dyn Error>> {
         let input = input.trim().to_uppercase();
 
@@ -91,7 +92,7 @@ impl CommandParser {
         }
 
         if input == "IBB" {
-            return Ok(PlateAppearanceResult::Walk(Walk::IntentionalWalk));
+            return Ok(PlateAppearanceResult::Walk(Walk::Intentional));
         }
 
         if input == "HBP" {
@@ -101,45 +102,45 @@ impl CommandParser {
         // Flyouts (F + number)
         if input.starts_with('F') && input.len() >= 2 {
             let pos_str = &input[1..];
-            if let Ok(pos_num) = pos_str.parse::<u8>() {
-                if let Some(position) = Position::from_number(pos_num) {
-                    return Ok(PlateAppearanceResult::Out {
-                        out_type: OutType::Flyout {
-                            positions: vec![position],
-                        },
-                        rbi: false,
-                    });
-                }
+            if let Ok(pos_num) = pos_str.parse::<u8>()
+                && let Some(position) = Position::from_number(pos_num)
+            {
+                return Ok(PlateAppearanceResult::Out {
+                    out_type: OutType::Flyout {
+                        positions: vec![position],
+                    },
+                    rbi: false,
+                });
             }
         }
 
         // Lineouts (L + number)
         if input.starts_with('L') && input.len() >= 2 {
             let pos_str = &input[1..];
-            if let Ok(pos_num) = pos_str.parse::<u8>() {
-                if let Some(position) = Position::from_number(pos_num) {
-                    return Ok(PlateAppearanceResult::Out {
-                        out_type: OutType::Lineout {
-                            positions: vec![position],
-                        },
-                        rbi: false,
-                    });
-                }
+            if let Ok(pos_num) = pos_str.parse::<u8>()
+                && let Some(position) = Position::from_number(pos_num)
+            {
+                return Ok(PlateAppearanceResult::Out {
+                    out_type: OutType::Lineout {
+                        positions: vec![position],
+                    },
+                    rbi: false,
+                });
             }
         }
 
         // Popouts (P + number)
         if input.starts_with('P') && input.len() >= 2 {
             let pos_str = &input[1..];
-            if let Ok(pos_num) = pos_str.parse::<u8>() {
-                if let Some(position) = Position::from_number(pos_num) {
-                    return Ok(PlateAppearanceResult::Out {
-                        out_type: OutType::Popup {
-                            positions: vec![position],
-                        },
-                        rbi: false,
-                    });
-                }
+            if let Ok(pos_num) = pos_str.parse::<u8>()
+                && let Some(position) = Position::from_number(pos_num)
+            {
+                return Ok(PlateAppearanceResult::Out {
+                    out_type: OutType::Popup {
+                        positions: vec![position],
+                    },
+                    rbi: false,
+                });
             }
         }
 
@@ -152,11 +153,11 @@ impl CommandParser {
                 let part = part.trim();
                 // Check if this part contains DP or TP
                 let pos_str = part.split_whitespace().next().unwrap_or(part);
-                
-                if let Ok(pos_num) = pos_str.parse::<u8>() {
-                    if let Some(position) = Position::from_number(pos_num) {
-                        positions.push(position);
-                    }
+
+                if let Ok(pos_num) = pos_str.parse::<u8>()
+                    && let Some(position) = Position::from_number(pos_num)
+                {
+                    positions.push(position);
                 }
             }
 
@@ -188,31 +189,31 @@ impl CommandParser {
         // Sacrifice fly (SF + number)
         if input.starts_with("SF") && input.len() >= 3 {
             let pos_str = &input[2..];
-            if let Ok(pos_num) = pos_str.parse::<u8>() {
-                if let Some(position) = Position::from_number(pos_num) {
-                    return Ok(PlateAppearanceResult::Out {
-                        out_type: OutType::Flyout {
-                            positions: vec![position],
-                        },
-                        rbi: true,
-                    });
-                }
+            if let Ok(pos_num) = pos_str.parse::<u8>()
+                && let Some(position) = Position::from_number(pos_num)
+            {
+                return Ok(PlateAppearanceResult::Out {
+                    out_type: OutType::Flyout {
+                        positions: vec![position],
+                    },
+                    rbi: true,
+                });
             }
         }
 
         // Errors (E + number)
         if input.starts_with('E') && input.len() >= 2 {
             let pos_str = &input[1..];
-            if let Ok(pos_num) = pos_str.parse::<u8>() {
-                if let Some(position) = Position::from_number(pos_num) {
-                    return Ok(PlateAppearanceResult::Error {
-                        error: types::Error {
-                            position,
-                            description: input.clone(),
-                        },
-                        reached_base: Base::First,
-                    });
-                }
+            if let Ok(pos_num) = pos_str.parse::<u8>()
+                && let Some(position) = Position::from_number(pos_num)
+            {
+                return Ok(PlateAppearanceResult::Error {
+                    error: types::Error {
+                        position,
+                        description: input.clone(),
+                    },
+                    reached_base: Base::First,
+                });
             }
         }
 
@@ -232,6 +233,7 @@ impl CommandParser {
     }
 
     /// Parse advanced plays like stolen bases, wild pitches, etc.
+    #[allow(dead_code)]
     pub fn parse_advanced_play(input: &str) -> Result<AdvancedPlay, Box<dyn Error>> {
         let input = input.trim().to_uppercase();
 
@@ -287,7 +289,7 @@ impl CommandParser {
                 'F' => Pitch::Foul,
                 'L' => Pitch::FoulBunt,
                 'X' => Pitch::InPlay,
-                'H' => Pitch::HitByPitch,
+                'H' => Pitch::HittedBy,
                 _ => return Err(format!("Pitch symbol non valido: {}", c).into()),
             };
             pitches.push(pitch);
