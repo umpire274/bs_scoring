@@ -1,4 +1,4 @@
-use bs_scoring::cli::commands::main_menu::main_menu;
+use bs_scoring::cli::commands::main_menu;
 use bs_scoring::setup_db;
 
 fn main() {
@@ -6,5 +6,5 @@ fn main() {
     std::thread::sleep(std::time::Duration::from_secs(3));
     println!();
 
-    main_menu(&db);
+    main_menu::run_main_menu(&db);
 }
