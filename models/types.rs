@@ -24,6 +24,7 @@ pub enum Position {
     RightField = 9,
 }
 
+#[allow(dead_code)]
 impl Position {
     pub fn from_number(n: u8) -> Option<Self> {
         match n {
@@ -40,9 +41,8 @@ impl Position {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn to_number(&self) -> u8 {
-        *self as u8
+    pub fn to_number(self) -> u8 {
+        self as u8
     }
 }
 
@@ -109,9 +109,9 @@ pub enum OutType {
 /// Walks and hit by pitch
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Walk {
-    BaseOnBalls,      // BB
-    IntentionalWalk,  // IBB
-    HitByPitch,       // HBP
+    BaseOnBalls, // BB
+    Intentional, // IBB
+    HitByPitch,  // HBP
 }
 
 /// Errors
@@ -124,21 +124,14 @@ pub struct Error {
 /// Advanced plays
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AdvancedPlay {
-    StolenBase {
-        from: Base,
-        to: Base,
-    }, // SB
-    Balk, // BK
-    WildPitch, // WP
-    PassedBall, // PB
-    Interference {
-        by: String,
-    }, // INT (catcher interference, etc.)
-    Obstruction, // OBS
-    SacrificeHit, // SH (sacrifice bunt)
-    SacrificeFly {
-        positions: Vec<Position>,
-    }, // SF
+    StolenBase { from: Base, to: Base },       // SB
+    Balk,                                      // BK
+    WildPitch,                                 // WP
+    PassedBall,                                // PB
+    Interference { by: String },               // INT (catcher interference, etc.)
+    Obstruction,                               // OBS
+    SacrificeHit,                              // SH (sacrifice bunt)
+    SacrificeFly { positions: Vec<Position> }, // SF
 }
 
 /// Result of a plate appearance
@@ -167,9 +160,10 @@ pub enum PlateAppearanceResult {
 }
 
 /// Runners on base and their advancement
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BaseRunner {
-    pub number: u8,           // Jersey number or batting order position
+    pub number: u8, // Jersey number or batting order position
     pub starting_base: Base,
     pub ending_base: Option<Base>, // None if out
     pub scored: bool,
@@ -190,6 +184,7 @@ pub enum RunnerAdvancement {
 }
 
 /// Complete plate appearance
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlateAppearance {
     pub inning: u8,
@@ -206,6 +201,7 @@ pub struct PlateAppearance {
     pub notes: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum HalfInning {
     Top,    // Visiting team batting
@@ -222,13 +218,13 @@ pub struct PitchCount {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Pitch {
-    Ball,              // B
-    CalledStrike,      // C
-    SwingingStrike,    // S
-    Foul,              // F
-    FoulBunt,          // L
-    InPlay,            // X
-    HitByPitch,        // H
+    Ball,           // B
+    CalledStrike,   // C
+    SwingingStrike, // S
+    Foul,           // F
+    FoulBunt,       // L
+    InPlay,         // X
+    HittedBy,       // H
 }
 
 impl fmt::Display for Pitch {
@@ -240,48 +236,51 @@ impl fmt::Display for Pitch {
             Pitch::Foul => "F",
             Pitch::FoulBunt => "L",
             Pitch::InPlay => "X",
-            Pitch::HitByPitch => "H",
+            Pitch::HittedBy => "H",
         };
         write!(f, "{}", symbol)
     }
 }
 
 /// Complete game scoresheet
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Game {
     pub game_id: String,
     pub date: String,
-    pub home_team: Team,
-    pub away_team: Team,
+    pub home_team: GameTeam,
+    pub away_team: GameTeam,
     pub venue: String,
     pub plate_appearances: Vec<PlateAppearance>,
     pub current_inning: u8,
     pub current_half: HalfInning,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Team {
+pub struct GameTeam {
     pub name: String,
-    pub lineup: Vec<Player>,
+    pub lineup: Vec<GamePlayer>,
     pub runs: u8,
     pub hits: u8,
     pub errors: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Player {
+pub struct GamePlayer {
     pub number: u8,
     pub name: String,
     pub position: Position,
     pub batting_order: u8,
 }
 
+#[allow(dead_code)]
 impl Game {
     pub fn new(
         game_id: String,
         date: String,
-        home_team: Team,
-        away_team: Team,
+        home_team: GameTeam,
+        away_team: GameTeam,
         venue: String,
     ) -> Self {
         Game {

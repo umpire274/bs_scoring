@@ -1,245 +1,402 @@
-mod models;
 mod core;
+mod models;
 
-use models::types::*;
-use core::parser::CommandParser;
-use std::io::{self, Write};
+use core::menu::{LeagueMenuChoice, MainMenuChoice, Menu, TeamMenuChoice};
+use models::database::Database;
+use models::league::League;
+use models::team::Team;
+
+const DB_PATH: &str = "baseball_scorer.db";
 
 fn main() {
-    println!("⚾ Baseball Scorer CLI");
-    println!("====================\n");
-
-    // Initialize game
-    let mut game = setup_game();
-
-    println!("\n🎮 Comandi disponibili:");
-    print_help();
-
-    loop {
-        print!("\n> ");
-        io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        let input = input.trim();
-
-        if input.is_empty() {
-            continue;
+    // Initialize database
+    let db = match Database::new(DB_PATH) {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("❌ Error opening database: {}", e);
+            return;
         }
+    };
 
-        match input.to_lowercase().as_str() {
-            "help" | "h" => print_help(),
-            "save" | "s" => save_game(&game),
-            "show" | "view" => show_game(&game),
-            "exit" | "quit" | "q" => {
-                println!("👋 Arrivederci!");
+    if let Err(e) = db.init_schema() {
+        eprintln!("❌ Error initializing database: {}", e);
+        return;
+    }
+
+    println!("✅ Database initialized: {}", DB_PATH);
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    // Main menu loop
+    loop {
+        match Menu::show_main_menu() {
+            MainMenuChoice::NewGame => handle_new_game(&db),
+            MainMenuChoice::ManageLeagues => handle_league_menu(&db),
+            MainMenuChoice::ManageTeams => handle_team_menu(&db),
+            MainMenuChoice::Statistics => handle_statistics(&db),
+            MainMenuChoice::Exit => {
+                println!("\n👋 Thank you for using Baseball Scorer!");
+                println!("⚾ Play Ball!\n");
                 break;
             }
-            "next" | "n" => next_batter(&mut game),
-            "inning" => next_inning(&mut game),
-            _ => process_play(&mut game, input),
         }
     }
 }
 
-fn setup_game() -> Game {
-    println!("📝 Setup partita");
-    println!("================\n");
+fn handle_new_game(db: &Database) {
+    Menu::show_header("NEW GAME");
 
-    print!("Squadra ospite: ");
-    io::stdout().flush().unwrap();
-    let mut away_name = String::new();
-    io::stdin().read_line(&mut away_name).unwrap();
+    let conn = db.get_connection();
 
-    print!("Squadra casa: ");
-    io::stdout().flush().unwrap();
-    let mut home_name = String::new();
-    io::stdin().read_line(&mut home_name).unwrap();
+    // List available teams
+    match Team::get_all(conn) {
+        Ok(teams) => {
+            if teams.is_empty() {
+                Menu::show_error("No teams available. Create teams first!");
+                return;
+            }
 
-    print!("Stadio: ");
-    io::stdout().flush().unwrap();
-    let mut venue = String::new();
-    io::stdin().read_line(&mut venue).unwrap();
+            println!("Available teams:\n");
+            for (i, team) in teams.iter().enumerate() {
+                Menu::show_list_item(
+                    i + 1,
+                    &format!(
+                        "{} {}",
+                        team.name,
+                        team.city
+                            .as_ref()
+                            .map(|c| format!("({})", c))
+                            .unwrap_or_default()
+                    ),
+                );
+            }
+            println!();
 
-    let away_team = Team {
-        name: away_name.trim().to_string(),
-        lineup: Vec::new(),
-        runs: 0,
-        hits: 0,
-        errors: 0,
-    };
+            // Select away team
+            if let Some(away_idx) = Menu::read_i64("\nAway team (number): ") {
+                if away_idx < 1 || away_idx as usize > teams.len() {
+                    Menu::show_error("Invalid selection");
+                    return;
+                }
 
-    let home_team = Team {
-        name: home_name.trim().to_string(),
-        lineup: Vec::new(),
-        runs: 0,
-        hits: 0,
-        errors: 0,
-    };
+                // Select home team
+                if let Some(home_idx) = Menu::read_i64("Home team (number): ") {
+                    if home_idx < 1 || home_idx as usize > teams.len() {
+                        Menu::show_error("Invalid selection");
+                        return;
+                    }
 
-    let game_id = format!("GAME_{}", chrono::Local::now().format("%Y%m%d_%H%M%S"));
-    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+                    if away_idx == home_idx {
+                        Menu::show_error("Teams must be different!");
+                        return;
+                    }
 
-    Game::new(
-        game_id,
-        date,
-        home_team,
-        away_team,
-        venue.trim().to_string(),
-    )
-}
+                    let venue = Menu::read_string("Venue: ");
 
-fn print_help() {
-    println!("\n📋 SIMBOLI DI SCORING:");
-    println!("  Basi:");
-    println!("    1B, 2B, 3B, HR    - Singolo, Doppio, Triplo, Fuoricampo");
-    println!("    GRD               - Ground Rule Double");
-    println!("\n  Out:");
-    println!("    K                 - Strikeout al volo");
-    println!("    KL                - Strikeout guardato");
-    println!("    6-3               - Groundout (es: interbase-prima base)");
-    println!("    F8                - Flyout (es: al centro)");
-    println!("    L9                - Lineout (es: al destro)");
-    println!("    P5                - Popup (es: alla terza base)");
-    println!("    6-4-3 DP          - Doppio gioco");
-    println!("    SF8               - Sacrifice Fly");
-    println!("\n  Basi su ball:");
-    println!("    BB                - Base on Balls");
-    println!("    IBB               - Intenzionale");
-    println!("    HBP               - Colpito dal lancio");
-    println!("\n  Errori e altro:");
-    println!("    E6                - Errore (numero posizione)");
-    println!("    FC                - Fielder's Choice");
-    println!("\n  Giochi avanzati:");
-    println!("    SB2, SB3, SBH     - Stolen Base");
-    println!("    WP                - Wild Pitch");
-    println!("    PB                - Passed Ball");
-    println!("    BK                - Balk");
-    println!("\n  Posizioni difensive:");
-    println!("    1=Lanciatore  2=Ricevitore  3=Prima base");
-    println!("    4=Seconda base  5=Terza base  6=Interbase");
-    println!("    7=Esterno sinistro  8=Esterno centro  9=Esterno destro");
-    println!("\n📌 COMANDI:");
-    println!("  help, h           - Mostra questo aiuto");
-    println!("  save, s           - Salva la partita in JSON");
-    println!("  show, view        - Mostra statistiche attuali");
-    println!("  next, n           - Prossimo battitore");
-    println!("  inning            - Prossimo inning");
-    println!("  exit, quit, q     - Esci");
-}
+                    Menu::show_success(&format!(
+                        "Game created: {} @ {} - {}",
+                        teams[(away_idx - 1) as usize].name,
+                        teams[(home_idx - 1) as usize].name,
+                        venue
+                    ));
 
-fn process_play(game: &mut Game, input: &str) {
-    // Parse the command
-    match CommandParser::parse_command(input) {
-        Ok(result) => {
-            println!("✅ Play registrato: {:?}", result);
-            
-            // Create a placeholder plate appearance
-            // In a full implementation, you'd collect more details
-            let pa = PlateAppearance {
-                inning: game.current_inning,
-                half_inning: game.current_half,
-                batter_number: 1, // Would track actual batter
-                batter_name: "Batter".to_string(),
-                pitcher_name: "Pitcher".to_string(),
-                result,
-                pitch_count: None,
-                runners: Vec::new(),
-                outs_before: 0,
-                outs_after: 0,
-                runs_scored: 0,
-                notes: None,
-            };
-
-            game.add_plate_appearance(pa);
-
-            // Update team stats based on result
-            update_team_stats(game);
+                    // TODO: Launch game scoring interface
+                    println!("\n🚧 Scoring interface under development...");
+                    Menu::wait_for_enter();
+                }
+            }
         }
         Err(e) => {
-            println!("❌ Errore: {}", e);
-            println!("💡 Usa 'help' per vedere i comandi disponibili");
+            Menu::show_error(&format!("Error loading teams: {}", e));
         }
     }
 }
 
-fn update_team_stats(game: &mut Game) {
-    // Count hits and errors from last play
-    if let Some(last_pa) = game.plate_appearances.last() {
-        let team = match last_pa.half_inning {
-            HalfInning::Top => &mut game.away_team,
-            HalfInning::Bottom => &mut game.home_team,
-        };
+fn handle_league_menu(db: &Database) {
+    loop {
+        match Menu::show_league_menu() {
+            LeagueMenuChoice::CreateLeague => create_league(db),
+            LeagueMenuChoice::ViewLeagues => view_leagues(db),
+            LeagueMenuChoice::EditLeague => edit_league(db),
+            LeagueMenuChoice::DeleteLeague => delete_league(db),
+            LeagueMenuChoice::Back => break,
+        }
+    }
+}
 
-        match &last_pa.result {
-            PlateAppearanceResult::Hit { .. } => {
-                team.hits += 1;
+fn create_league(db: &Database) {
+    Menu::show_header("CREATE NEW LEAGUE");
+
+    let name = Menu::read_string("League name: ");
+    if name.is_empty() {
+        Menu::show_error("Name is required!");
+        return;
+    }
+
+    let season = Menu::read_optional_string("Season (e.g. 2026) [optional]: ");
+    let description = Menu::read_optional_string("Description [optional]: ");
+
+    let mut league = League::new(name, season, description);
+
+    match league.create(db.get_connection()) {
+        Ok(id) => {
+            Menu::show_success(&format!("League created successfully! ID: {}", id));
+        }
+        Err(e) => {
+            Menu::show_error(&format!("Error creating: {}", e));
+        }
+    }
+}
+
+fn view_leagues(db: &Database) {
+    Menu::show_header("VIEW LEAGUES");
+
+    match League::get_all(db.get_connection()) {
+        Ok(leagues) => {
+            if leagues.is_empty() {
+                println!("📭 No leagues found.\n");
+            } else {
+                for league in leagues {
+                    println!(
+                        "  🏆 {} - {}",
+                        league.name,
+                        league.season.unwrap_or("N/A".to_string())
+                    );
+                    if let Some(desc) = league.description {
+                        println!("     {}", desc);
+                    }
+                    Menu::show_separator();
+                }
             }
-            PlateAppearanceResult::Error { .. } => {
-                team.errors += 1;
+            Menu::wait_for_enter();
+        }
+        Err(e) => {
+            Menu::show_error(&format!("Error loading: {}", e));
+        }
+    }
+}
+
+fn edit_league(db: &Database) {
+    Menu::show_header("EDIT LEAGUE");
+
+    match League::get_all(db.get_connection()) {
+        Ok(leagues) => {
+            if leagues.is_empty() {
+                Menu::show_error("No league disponibile");
+                return;
             }
-            _ => {}
-        }
 
-        if last_pa.runs_scored > 0 {
-            team.runs += last_pa.runs_scored;
+            for (i, league) in leagues.iter().enumerate() {
+                Menu::show_list_item(i + 1, &league.name);
+            }
+
+            if let Some(choice) = Menu::read_i64("\nSelect league to edit: ") {
+                if choice < 1 || choice as usize > leagues.len() {
+                    Menu::show_error("Invalid selection");
+                    return;
+                }
+
+                let mut league = leagues[(choice - 1) as usize].clone();
+
+                league.name = Menu::read_string(&format!("Name [{}]: ", league.name));
+                league.season = Menu::read_optional_string("Stagione: ");
+                league.description = Menu::read_optional_string("Descrizione: ");
+
+                match league.update(db.get_connection()) {
+                    Ok(_) => Menu::show_success("League updated!"),
+                    Err(e) => Menu::show_error(&format!("Error: {}", e)),
+                }
+            }
+        }
+        Err(e) => Menu::show_error(&format!("Error: {}", e)),
+    }
+}
+
+fn delete_league(db: &Database) {
+    Menu::show_header("DELETE LEAGUE");
+
+    match League::get_all(db.get_connection()) {
+        Ok(leagues) => {
+            if leagues.is_empty() {
+                Menu::show_error("No league disponibile");
+                return;
+            }
+
+            for (i, league) in leagues.iter().enumerate() {
+                Menu::show_list_item(i + 1, &league.name);
+            }
+
+            if let Some(choice) = Menu::read_i64("\nSelect league to delete: ") {
+                if choice < 1 || choice as usize > leagues.len() {
+                    Menu::show_error("Invalid selection");
+                    return;
+                }
+
+                let league = &leagues[(choice - 1) as usize];
+
+                if Menu::confirm(&format!(
+                    "Are you sure you want to delete '{}'?",
+                    league.name
+                )) && let Some(id) = league.id
+                {
+                    match League::delete(db.get_connection(), id) {
+                        Ok(_) => Menu::show_success("League deleted!"),
+                        Err(e) => Menu::show_error(&format!("Error: {}", e)),
+                    }
+                }
+            }
+        }
+        Err(e) => Menu::show_error(&format!("Error: {}", e)),
+    }
+}
+
+fn handle_team_menu(db: &Database) {
+    loop {
+        match Menu::show_team_menu() {
+            TeamMenuChoice::CreateTeam => create_team(db),
+            TeamMenuChoice::ViewTeams => view_teams(db),
+            TeamMenuChoice::EditTeam => edit_team(db),
+            TeamMenuChoice::ManageRoster => manage_roster(db),
+            TeamMenuChoice::ImportTeam => import_team(db),
+            TeamMenuChoice::DeleteTeam => delete_team(db),
+            TeamMenuChoice::Back => break,
         }
     }
 }
 
-fn next_batter(_game: &mut Game) {
-    println!("🏃 Prossimo battitore all'at-bat");
-    // In full implementation, would cycle through lineup
-}
+fn create_team(db: &Database) {
+    Menu::show_header("CREATE NEW TEAM");
 
-fn next_inning(game: &mut Game) {
-    match game.current_half {
-        HalfInning::Top => {
-            game.current_half = HalfInning::Bottom;
-            println!("⬇️  Cambio metà inning - Bottom of {}", game.current_inning);
+    let name = Menu::read_string("Team name: ");
+    if name.is_empty() {
+        Menu::show_error("Name is required!");
+        return;
+    }
+
+    let city = Menu::read_optional_string("City [optional]: ");
+    let abbreviation = Menu::read_optional_string("Abbreviation (e.g. BOS) [optional]: ");
+    let founded_year = Menu::read_i32("Founded year [optional]: ");
+
+    // Optional: select league
+    let league_id = match League::get_all(db.get_connection()) {
+        Ok(leagues) if !leagues.is_empty() => {
+            println!("\nAvailable leagues:");
+            for (i, league) in leagues.iter().enumerate() {
+                Menu::show_list_item(i + 1, &league.name);
+            }
+            Menu::show_list_item(0, "No league");
+
+            match Menu::read_i64("\nLeague (0 for none): ") {
+                Some(0) | None => None,
+                Some(choice) if choice > 0 && choice as usize <= leagues.len() => {
+                    leagues[(choice - 1) as usize].id
+                }
+                _ => None,
+            }
         }
-        HalfInning::Bottom => {
-            game.current_inning += 1;
-            game.current_half = HalfInning::Top;
-            println!("⬆️  Inning {} - Top", game.current_inning);
+        _ => None,
+    };
+
+    let mut team = Team::new(name, league_id, city, abbreviation, founded_year);
+
+    match team.create(db.get_connection()) {
+        Ok(id) => {
+            Menu::show_success(&format!("Team created successfully! ID: {}", id));
+        }
+        Err(e) => {
+            Menu::show_error(&format!("Error creating: {}", e));
         }
     }
 }
 
-fn save_game(game: &Game) {
-    let filename = format!("{}.json", game.game_id);
-    match game.save_to_file(&filename) {
-        Ok(_) => println!("💾 Partita salvata in: {}", filename),
-        Err(e) => println!("❌ Errore nel salvataggio: {}", e),
+fn view_teams(db: &Database) {
+    Menu::show_header("VIEW TEAMS");
+
+    match Team::get_all(db.get_connection()) {
+        Ok(teams) => {
+            if teams.is_empty() {
+                println!("📭 No teams found.\n");
+            } else {
+                for team in teams {
+                    print!("  ⚾ {}", team.name);
+                    if let Some(city) = team.city {
+                        print!(" ({})", city);
+                    }
+                    if let Some(abbr) = team.abbreviation {
+                        print!(" [{}]", abbr);
+                    }
+                    println!();
+                    Menu::show_separator();
+                }
+            }
+            Menu::wait_for_enter();
+        }
+        Err(e) => {
+            Menu::show_error(&format!("Error loading: {}", e));
+        }
     }
 }
 
-fn show_game(game: &Game) {
-    println!("\n📊 STATO PARTITA");
-    println!("================");
-    println!("🏟️  {}", game.venue);
-    println!("📅 {}", game.date);
-    println!("\n⚾ Inning: {} {}", 
-        game.current_inning,
-        match game.current_half {
-            HalfInning::Top => "(Top)",
-            HalfInning::Bottom => "(Bottom)",
+fn edit_team(_db: &Database) {
+    Menu::show_header("EDIT TEAM");
+    println!("🚧 Feature under development...\n");
+    Menu::wait_for_enter();
+}
+
+fn manage_roster(_db: &Database) {
+    Menu::show_header("MANAGE ROSTER");
+    println!("🚧 Feature under development...\n");
+    Menu::wait_for_enter();
+}
+
+fn import_team(_db: &Database) {
+    Menu::show_header("IMPORT TEAM");
+    println!("🚧 Feature under development...\n");
+    Menu::wait_for_enter();
+}
+
+fn delete_team(db: &Database) {
+    Menu::show_header("DELETE TEAM");
+
+    match Team::get_all(db.get_connection()) {
+        Ok(teams) => {
+            if teams.is_empty() {
+                Menu::show_error("No teams available");
+                return;
+            }
+
+            for (i, team) in teams.iter().enumerate() {
+                Menu::show_list_item(i + 1, &team.name);
+            }
+
+            if let Some(choice) = Menu::read_i64("\nSelect team to delete: ") {
+                if choice < 1 || choice as usize > teams.len() {
+                    Menu::show_error("Invalid selection");
+                    return;
+                }
+
+                let team = &teams[(choice - 1) as usize];
+
+                if Menu::confirm(&format!("Are you sure you want to delete '{}'?", team.name))
+                    && let Some(id) = team.id
+                {
+                    match Team::delete(db.get_connection(), id) {
+                        Ok(_) => Menu::show_success("Team deleted!"),
+                        Err(e) => Menu::show_error(&format!("Error: {}", e)),
+                    }
+                }
+            }
         }
-    );
-    
-    println!("\n📋 PUNTEGGIO:");
-    println!("  {} (Ospiti): {} runs, {} hits, {} errors",
-        game.away_team.name,
-        game.away_team.runs,
-        game.away_team.hits,
-        game.away_team.errors
-    );
-    println!("  {} (Casa): {} runs, {} hits, {} errors",
-        game.home_team.name,
-        game.home_team.runs,
-        game.home_team.hits,
-        game.home_team.errors
-    );
-    
-    println!("\n📝 Plate Appearances registrati: {}", game.plate_appearances.len());
+        Err(e) => Menu::show_error(&format!("Error: {}", e)),
+    }
+}
+
+fn handle_statistics(_db: &Database) {
+    Menu::show_header("STATISTICS");
+    println!("🚧 Statistics module under development...\n");
+    println!("  Here you will be able to view:");
+    println!("  - Player statistics");
+    println!("  - Batting average, ERA, OPS");
+    println!("  - League standings");
+    println!("  - Game history\n");
+    Menu::wait_for_enter();
 }
