@@ -6,6 +6,7 @@ pub enum MainMenuChoice {
     NewGame,
     ManageLeagues,
     ManageTeams,
+    ManagePlayers,
     Statistics,
     ManageDB,
     Exit,
@@ -44,6 +45,16 @@ pub enum DBMenuChoice {
     Back,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum PlayerMenuChoice {
+    AddPlayer,
+    ListPlayers,
+    UpdatePlayer,
+    DeletePlayer,
+    ChangeTeam,
+    Back,
+}
+
 pub struct Menu;
 
 impl Menu {
@@ -58,8 +69,9 @@ impl Menu {
             println!("  1. 🆕 New Game");
             println!("  2. 🏆 Manage Leagues");
             println!("  3. ⚾ Manage Teams");
-            println!("  4. 📊 Statistics");
-            println!("  5. 💾 Manage DB");
+            println!("  4. 👥 Manage Players");
+            println!("  5. 📊 Statistics");
+            println!("  6. 💾 Manage DB");
             println!();
             println!("  0. 🚪 Exit");
             println!();
@@ -71,8 +83,9 @@ impl Menu {
                 1 => return MainMenuChoice::NewGame,
                 2 => return MainMenuChoice::ManageLeagues,
                 3 => return MainMenuChoice::ManageTeams,
-                4 => return MainMenuChoice::Statistics,
-                5 => return MainMenuChoice::ManageDB,
+                4 => return MainMenuChoice::ManagePlayers,
+                5 => return MainMenuChoice::Statistics,
+                6 => return MainMenuChoice::ManageDB,
                 0 => return MainMenuChoice::Exit,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
@@ -144,6 +157,41 @@ impl Menu {
                 5 => return TeamMenuChoice::ImportTeam,
                 6 => return TeamMenuChoice::DeleteTeam,
                 0 => return TeamMenuChoice::Back,
+                _ => {
+                    println!("\n❌ Invalid choice. Press ENTER to continue...");
+                    utils::cli::wait_for_enter();
+                }
+            }
+        }
+    }
+
+    /// Display player management menu
+    pub fn show_player_menu() -> PlayerMenuChoice {
+        loop {
+            utils::cli::clear_screen();
+            println!("╔════════════════════════════════════════════╗");
+            println!("║         👥 PLAYER MANAGEMENT               ║");
+            println!("╚════════════════════════════════════════════╝");
+            println!();
+            println!("  1. ➕ Add New Player");
+            println!("  2. 📋 List All Players");
+            println!("  3. ✏️  Update Player");
+            println!("  4. 🗑️  Delete Player");
+            println!("  5. 🔄 Change Team");
+            println!();
+            println!("  0. 🔙 Back to Main Menu");
+            println!();
+            print!("Select an option (1-5 or 0): ");
+            io::stdout().flush().unwrap();
+
+            let choice = utils::cli::read_choice();
+            match choice {
+                1 => return PlayerMenuChoice::AddPlayer,
+                2 => return PlayerMenuChoice::ListPlayers,
+                3 => return PlayerMenuChoice::UpdatePlayer,
+                4 => return PlayerMenuChoice::DeletePlayer,
+                5 => return PlayerMenuChoice::ChangeTeam,
+                0 => return PlayerMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
                     utils::cli::wait_for_enter();
