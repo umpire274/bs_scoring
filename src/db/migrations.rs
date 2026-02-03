@@ -1,5 +1,5 @@
-use rusqlite::{Connection, Result};
 use chrono::Local;
+use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
 pub const CURRENT_SCHEMA_VERSION: i64 = 1;
@@ -62,16 +62,21 @@ pub fn run_migrations(conn: &Connection, current_version: i64) -> Result<i64> {
 
     for migration in migrations {
         if migration.version > current_version {
-            println!("🔄 Applying migration v{}: {}",
-                     migration.version, migration.description);
+            println!(
+                "🔄 Applying migration v{}: {}",
+                migration.version, migration.description
+            );
 
             // Run migration
             (migration.up)(conn)?;
 
             // Update schema version
             set_meta_value(conn, "schema_version", &migration.version.to_string())?;
-            set_meta_value(conn, "last_migration",
-                           &Local::now().format("%Y-%m-%d %H:%M:%S").to_string())?;
+            set_meta_value(
+                conn,
+                "last_migration",
+                &Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            )?;
 
             applied_count += 1;
             println!("✅ Migration v{} applied successfully", migration.version);
@@ -100,11 +105,9 @@ pub fn init_meta_table(conn: &Connection) -> Result<()> {
 
 /// Get meta value
 pub fn get_meta_value(conn: &Connection, key: &str) -> Result<Option<String>> {
-    match conn.query_row(
-        "SELECT value FROM meta WHERE key = ?1",
-        [key],
-        |row| row.get(0),
-    ) {
+    match conn.query_row("SELECT value FROM meta WHERE key = ?1", [key], |row| {
+        row.get(0)
+    }) {
         Ok(value) => Ok(Some(value)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(e),
@@ -124,9 +127,9 @@ pub fn set_meta_value(conn: &Connection, key: &str, value: &str) -> Result<()> {
 /// Get current schema version from DB
 pub fn get_schema_version(conn: &Connection) -> Result<i64> {
     match get_meta_value(conn, "schema_version")? {
-        Some(version_str) => version_str.parse().map_err(|_| {
-            rusqlite::Error::InvalidQuery
-        }),
+        Some(version_str) => version_str
+            .parse()
+            .map_err(|_| rusqlite::Error::InvalidQuery),
         None => Ok(0), // No version = pristine DB
     }
 }

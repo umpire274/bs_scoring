@@ -1,7 +1,7 @@
 use crate::core::menu::DBMenuChoice;
 use crate::db::migrations;
 use crate::utils::cli;
-use crate::{get_db_path, get_db_path_display, Database, Menu};
+use crate::{Database, Menu, get_db_path, get_db_path_display};
 use chrono::Local;
 use std::fs;
 use std::path::Path;
