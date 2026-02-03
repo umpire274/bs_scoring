@@ -1,6 +1,6 @@
 [package]
 name = "bs_scoring"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
 authors = ["Alessandro Maestri <umpire274@gmail.com>"]
 description = "A comprehensive baseball and softball scoring application with SQLite persistence"

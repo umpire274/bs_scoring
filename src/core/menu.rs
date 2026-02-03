@@ -35,6 +35,7 @@ pub enum TeamMenuChoice {
 pub enum DBMenuChoice {
     ViewInfo,
     ViewStatus,
+    RunMigrations,
     BackupDB,
     RestoreDB,
     VacuumDB,
@@ -160,26 +161,28 @@ impl Menu {
             println!();
             println!("  1. 📋 View DB Info");
             println!("  2. 🔍 View DB Status");
-            println!("  3. 💾 Backup Database");
-            println!("  4. 📥 Restore Database");
-            println!("  5. 🧹 Vacuum Database");
-            println!("  6. 🗑️  Clear All Data");
-            println!("  7. 📤 Export Game");
+            println!("  3. 🔄 Run Migrations");
+            println!("  4. 💾 Backup Database");
+            println!("  5. 📥 Restore Database");
+            println!("  6. 🧹 Vacuum Database");
+            println!("  7. 🗑️  Clear All Data");
+            println!("  8. 📤 Export Game");
             println!();
             println!("  0. 🔙 Back to Main Menu");
             println!();
-            print!("Select an option (1-7 or 0): ");
+            print!("Select an option (1-8 or 0): ");
             io::stdout().flush().unwrap();
 
             let choice = utils::cli::read_choice();
             match choice {
                 1 => return DBMenuChoice::ViewInfo,
                 2 => return DBMenuChoice::ViewStatus,
-                3 => return DBMenuChoice::BackupDB,
-                4 => return DBMenuChoice::RestoreDB,
-                5 => return DBMenuChoice::VacuumDB,
-                6 => return DBMenuChoice::ClearData,
-                7 => return DBMenuChoice::ExportGame,
+                3 => return DBMenuChoice::RunMigrations,
+                4 => return DBMenuChoice::BackupDB,
+                5 => return DBMenuChoice::RestoreDB,
+                6 => return DBMenuChoice::VacuumDB,
+                7 => return DBMenuChoice::ClearData,
+                8 => return DBMenuChoice::ExportGame,
                 0 => return DBMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
