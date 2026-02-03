@@ -5,6 +5,291 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-03
+
+### Added
+
+- **Game Management System**:
+    - New main menu option: "1. Manage Games" (replaces "New Game")
+    - Complete game lifecycle management interface
+    - Game metadata creation and tracking
+
+- **Game Management Menu**:
+    - **New Game**: Create game with metadata only
+        - Select away and home teams
+        - Set venue (required)
+        - Set game date (defaults to today)
+        - Auto-generate unique game ID
+        - Status: 'not_started' until scoring begins
+
+    - **List Games**: View all games with details
+        - Sorted by date (newest first)
+        - Shows: date, teams, score, venue, status, inning
+        - Status icons: 🆕 Not Started, ▶️ In Progress, ✅ Completed, ⏸️ Suspended
+        - Game ID display for reference
+
+    - **Edit Game**: Modify game metadata (placeholder for v0.3.1)
+        - Future: Edit date, venue, teams, metadata
+
+    - **Play Ball!**: Launch scoring interface (placeholder for v0.4.0)
+        - Future: Pitch-by-pitch scoring
+        - Future: Real-time display
+        - Future: Runner tracking
+
+- **Database Schema Redesign (Migration v2)**:
+    - **Removed obsolete tables**:
+        - `plate_appearances` (too simplistic)
+        - `base_runners` (insufficient granularity)
+
+    - **New comprehensive tables**:
+        - `at_bats`: Complete plate appearance tracking
+            - State before: outs, runners on base (1B, 2B, 3B)
+            - Player IDs: batter, pitcher, base runners
+            - Result: type and details (JSON)
+            - State after: outs, runs, RBIs
+            - Enables complete game reconstruction
+
+        - `pitches`: Individual pitch tracking
+            - Pitch-by-pitch sequence with numbering
+            - Count before each pitch (balls, strikes)
+            - Pitch type: BALL, CALLED_STRIKE, SWINGING_STRIKE, FOUL, IN_PLAY, HBP
+            - In-play result if applicable
+            - Foundation for pitch analytics
+
+        - `runner_movements`: Base runner tracking
+            - Per at-bat runner advancement
+            - Start and end base for each runner
+            - Advancement type: BATTED_BALL, STOLEN_BASE, WILD_PITCH, etc.
+            - Out tracking: caught stealing, picked off, force out
+            - Earned run tracking for ERA calculation
+
+        - `game_events`: Special events tracking
+            - Substitutions, injuries, delays
+            - Ejections, challenges, protests
+            - Flexible event data in JSON
+            - Links to at-bat if applicable
+
+### Changed
+
+- **Main Menu Structure**:
+    - Option 1: "New Game" → "Manage Games"
+    - Positions unchanged for options 2-6
+    - Better organization and workflow clarity
+
+- **Game Creation Workflow**:
+    - **Before v0.3.0**: Direct scoring start
+    - **After v0.3.0**: Two-phase approach
+        1. Create game metadata (New Game)
+        2. Start scoring later (Play Ball!)
+    - Allows game setup without immediate scoring
+    - Better for scheduling and planning
+
+- **Database Philosophy**:
+    - From: Simplified plate appearance summary
+    - To: Granular pitch-by-pitch tracking
+    - Captures complete game state at every moment
+    - Supports advanced analytics and sabermetrics
+
+- **Game ID Generation**:
+    - Auto-generated with timestamp
+    - Format: `GAME_YYYYMMDD_HHMMSS_AWAY_vs_HOME`
+    - Includes team abbreviations for clarity
+    - Unique and sortable
+
+### Improved
+
+- **Game State Tracking**:
+    - Complete snapshot before/after each at-bat
+    - All base runners identified by player ID
+    - Foreign key relationships maintain integrity
+    - Comprehensive event history
+
+- **Scalability for Analytics**:
+    - Pitch-by-pitch data enables:
+        - Pitch count tracking
+        - Strike zone analysis
+        - Batter tendencies
+        - Pitcher repertoire analysis
+
+    - At-bat data enables:
+        - Batting average (AVG)
+        - On-base percentage (OBP)
+        - Slugging percentage (SLG)
+        - Runs batted in (RBI)
+
+    - Runner movement data enables:
+        - Stolen base statistics
+        - Base running efficiency
+        - Earned run average (ERA) calculation
+        - Defensive efficiency metrics
+
+- **Database Normalization**:
+    - Proper foreign keys to players table
+    - Referential integrity enforced
+    - CHECK constraints validate data
+    - Indexes for query performance
+
+### Technical Details
+
+#### Migration v2 (Automatic)
+
+```sql
+-- Drop old tables
+DROP TABLE IF EXISTS base_runners;
+DROP TABLE IF EXISTS plate_appearances;
+
+-- Create new tables
+CREATE TABLE at_bats
+(...
+);
+CREATE TABLE pitches
+(...
+);
+CREATE TABLE runner_movements
+(...
+);
+CREATE TABLE game_events
+(...
+);
+
+-- Create indexes
+CREATE INDEX idx_at_bats_game ON at_bats (game_id);
+CREATE INDEX idx_pitches_at_bat ON pitches (at_bat_id);
+CREATE INDEX idx_runner_movements_at_bat ON runner_movements (at_bat_id);
+CREATE INDEX idx_game_events_game ON game_events (game_id);
+```
+
+#### Schema Version
+
+- Incremented: v1 → v2
+- Automatic migration on app startup
+- Manual execution: Manage DB → Run Migrations
+
+#### Table Relationships
+
+```
+games
+  ├── at_bats (1:N)
+  │   ├── pitches (1:N)
+  │   └── runner_movements (1:N)
+  └── game_events (1:N)
+
+players
+  ├── at_bats.batter_id (1:N)
+  ├── at_bats.pitcher_id (1:N)
+  ├── at_bats.runner_on_* (1:N)
+  └── runner_movements.runner_id (1:N)
+```
+
+#### At-Bat State Capture
+
+```rust
+// Before at-bat
+outs_before: 0 - 2
+runner_on_first: Option
+runner_on_second: Option
+runner_on_third: Option
+
+// After at-bat
+outs_after: 0 - 3
+runs_scored: i32
+rbis: i32
+```
+
+#### Pitch Sequence Example
+
+```
+Pitch 1: Count 0-0, BALL        → 1-0
+Pitch 2: Count 1-0, CALLED_STRIKE → 1-1
+Pitch 3: Count 1-1, FOUL        → 1-2
+Pitch 4: Count 1-2, IN_PLAY     → Result: SINGLE
+```
+
+### Files Added
+
+- None (only modified existing files)
+
+### Files Modified
+
+- `src/core/menu.rs`: Added GameMenuChoice enum, show_game_menu()
+- `src/cli/commands/game.rs`: Complete rewrite with game management
+- `src/cli/commands/main_menu.rs`: Updated routing for ManageGames
+- `src/db/migrations.rs`: Added migration_v2() for schema redesign
+- `src/db/database.rs`: Removed old table creation code
+- `src/lib.rs`: Updated re-exports for GameMenuChoice
+- `Cargo.toml`: Version bump to 0.3.0
+
+### Breaking Changes
+
+- **Database Schema**: Migration v2 drops `plate_appearances` and `base_runners`
+    - Impact: Any existing game data will be lost
+    - Mitigation: Backup database before upgrading (automatic prompt)
+    - New installations: No impact
+
+### Migration Notes
+
+- **Automatic**: Runs on first app start after upgrade
+- **Manual option**: Manage DB → Run Migrations
+- **Data loss warning**: Old game scoring data cannot be migrated
+- **Recommendation**: Fresh start for v0.3.0+
+
+### Deprecation Notice
+
+- Old `PlateAppearance` and `BaseRunner` types in models/types.rs
+    - Still present for backward compatibility
+    - Will be removed in v0.4.0
+    - Not used in new game scoring system
+
+### Future Roadmap (v0.4.0+)
+
+- **Play Ball! Interface**:
+    - Pitch-by-pitch input
+    - Real-time score display
+    - Base diagram visualization
+    - Substitution handling
+    - Game state persistence
+
+- **Analytics Dashboard**:
+    - Player statistics
+    - Pitch analytics
+    - Team performance metrics
+    - Historical comparisons
+
+### Developer Notes
+
+**Creating a Game:**
+
+```rust
+// Insert into games table
+game_id: auto -generated unique ID
+status: 'not_started'
+current_inning: 1
+current_half: 'Top'
+```
+
+**Recording an At-Bat:**
+
+```rust
+// 1. Create at_bats record with state before
+// 2. Add pitches in sequence
+// 3. Record runner movements
+// 4. Update at_bats with state after
+// 5. Update games table scores
+```
+
+**Query Example - Get Game Summary:**
+
+```sql
+SELECT COUNT(DISTINCT ab.id) as plate_appearances,
+       SUM(ab.runs_scored)   as runs,
+       COUNT(DISTINCT p.id)  as total_pitches
+FROM at_bats ab
+         LEFT JOIN pitches p ON ab.id = p.at_bat_id
+WHERE ab.game_id = ?
+```
+
+---
+
 ## [0.2.6] - 2026-02-03
 
 ### Added

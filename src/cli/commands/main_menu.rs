@@ -4,7 +4,7 @@ use crate::{Database, MainMenuChoice, Menu};
 pub fn run_main_menu(db: &Database) {
     loop {
         match Menu::show_main_menu() {
-            MainMenuChoice::NewGame => game::handle_new_game(db),
+            MainMenuChoice::ManageGames => game::handle_game_menu(db),
             MainMenuChoice::ManageLeagues => leagues::handle_league_menu(db),
             MainMenuChoice::ManageTeams => team::handle_team_menu(db),
             MainMenuChoice::ManagePlayers => players::handle_player_menu(db),
