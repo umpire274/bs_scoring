@@ -1,6 +1,6 @@
 use crate::core::menu::DBMenuChoice;
 use crate::utils::cli;
-use crate::{get_db_path, get_db_path_display, Database, Menu};
+use crate::{Database, Menu, get_db_path, get_db_path_display};
 use chrono::Local;
 use std::fs;
 use std::path::Path;
@@ -302,12 +302,11 @@ fn list_backup_files(dir: &Path) -> std::io::Result<Vec<(String, u64)>> {
 
         if let Some(name) = path.file_name() {
             let name_str = name.to_string_lossy();
-            if name_str.starts_with("baseball_scorer_backup_")
-                || name_str.starts_with("baseball_scorer_before_restore_")
+            if (name_str.starts_with("baseball_scorer_backup_")
+                || name_str.starts_with("baseball_scorer_before_restore_"))
+                && let Ok(metadata) = fs::metadata(&path)
             {
-                if let Ok(metadata) = fs::metadata(&path) {
-                    backups.push((name_str.to_string(), metadata.len()));
-                }
+                backups.push((name_str.to_string(), metadata.len()));
             }
         }
     }
@@ -575,22 +574,20 @@ fn export_game_csv(db: &Database, game_id: i64, game_id_str: &str) {
          (SELECT name FROM players WHERE id = batter_id) as batter, \
          result_type, rbis, runs_scored \
          FROM plate_appearances WHERE game_id = ? ORDER BY id",
-    ) {
-        if let Ok(rows) = stmt.query_map([game_id], |row| {
-            Ok(format!(
-                "{},{},{},{},{},{}\n",
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)
-                    .unwrap_or_else(|_| "Unknown".to_string()),
-                row.get::<_, String>(3)?,
-                row.get::<_, i64>(4).unwrap_or(0),
-                row.get::<_, i64>(5).unwrap_or(0)
-            ))
-        }) {
-            for row in rows.flatten() {
-                csv_data.push_str(&row);
-            }
+    ) && let Ok(rows) = stmt.query_map([game_id], |row| {
+        Ok(format!(
+            "{},{},{},{},{},{}\n",
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)
+                .unwrap_or_else(|_| "Unknown".to_string()),
+            row.get::<_, String>(3)?,
+            row.get::<_, i64>(4).unwrap_or(0),
+            row.get::<_, i64>(5).unwrap_or(0)
+        ))
+    }) {
+        for row in rows.flatten() {
+            csv_data.push_str(&row);
         }
     }
 
