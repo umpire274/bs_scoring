@@ -31,6 +31,7 @@ pub mod utils;
 pub use db::config::{get_app_data_dir, get_db_path, get_db_path_display, setup_db};
 pub use db::database::Database;
 pub use db::league::League;
+pub use db::migrations::{get_schema_version, migrations_needed, run_migrations};
 pub use db::team::{Player, Team};
 
 pub use core::menu::{LeagueMenuChoice, MainMenuChoice, Menu, TeamMenuChoice};

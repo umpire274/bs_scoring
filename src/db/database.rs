@@ -1,3 +1,4 @@
+use crate::db::migrations;
 use rusqlite::{Connection, Result};
 
 pub struct Database {
@@ -13,6 +14,19 @@ impl Database {
 
     /// Initialize database schema
     pub fn init_schema(&self) -> Result<()> {
+        // Initialize meta table first
+        migrations::init_meta_table(&self.conn)?;
+
+        // Check if this is a new database
+        let is_new_db = migrations::get_schema_version(&self.conn)? == 0;
+
+        if is_new_db {
+            // Set creation timestamp
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            migrations::set_meta_value(&self.conn, "created_at", &now)?;
+            migrations::set_meta_value(&self.conn, "app_version", crate::VERSION)?;
+        }
+
         // Leagues table
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS leagues (
@@ -142,6 +156,20 @@ impl Database {
             "CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id)",
             [],
         )?;
+
+        // Run any pending migrations
+        let current_version = migrations::get_schema_version(&self.conn)?;
+        if current_version < migrations::CURRENT_SCHEMA_VERSION {
+            println!("\n🔄 Database migrations needed...");
+            migrations::run_migrations(&self.conn, current_version)?;
+        } else if is_new_db {
+            // For new DB, set initial version
+            migrations::set_meta_value(
+                &self.conn,
+                "schema_version",
+                &migrations::CURRENT_SCHEMA_VERSION.to_string(),
+            )?;
+        }
 
         Ok(())
     }

@@ -1,4 +1,5 @@
 use crate::core::menu::DBMenuChoice;
+use crate::db::migrations;
 use crate::utils::cli;
 use crate::{Database, Menu, get_db_path, get_db_path_display};
 use chrono::Local;
@@ -9,10 +10,11 @@ pub fn handle_db_menu(db: &Database) {
     loop {
         match Menu::show_db_menu() {
             DBMenuChoice::ViewInfo => view_db_info(db),
-            DBMenuChoice::ViewStatus => view_db_status(db), // NUOVO
+            DBMenuChoice::ViewStatus => view_db_status(db),
+            DBMenuChoice::RunMigrations => run_migrations_manual(db),
             DBMenuChoice::BackupDB => backup_database(),
             DBMenuChoice::RestoreDB => restore_database(),
-            DBMenuChoice::VacuumDB => vacuum_database(db), // NUOVO
+            DBMenuChoice::VacuumDB => vacuum_database(db),
             DBMenuChoice::ClearData => clear_all_data(db),
             DBMenuChoice::ExportGame => export_game(db),
             DBMenuChoice::Back => break,
@@ -26,6 +28,18 @@ fn view_db_info(db: &Database) {
     println!("📁 Location: {}", get_db_path_display());
 
     let conn = db.get_connection();
+
+    // Schema version
+    let schema_version = migrations::get_schema_version(conn).unwrap_or(0);
+    let migrations_pending = migrations::migrations_needed(conn).unwrap_or(false);
+
+    println!("\n🔢 Schema:");
+    println!("   {:<12} {:<22}", "Version:", schema_version);
+    if migrations_pending {
+        println!("   {:<12} {:<22}", "Status:", "⚠️  Migrations pending!");
+    } else {
+        println!("   {:<12} {:<22}", "Status:", "✅ Up to date");
+    }
 
     // Count records
     let league_count: i64 = conn
@@ -162,6 +176,78 @@ fn view_db_status(db: &Database) {
     cli::wait_for_enter();
 }
 
+fn run_migrations_manual(db: &Database) {
+    cli::show_header("DATABASE MIGRATIONS");
+
+    let conn = db.get_connection();
+
+    // Get migration info
+    let info = match migrations::get_migration_info(conn) {
+        Ok(info) => info,
+        Err(e) => {
+            cli::show_error(&format!("Failed to get migration info: {}", e));
+            return;
+        }
+    };
+
+    println!("📊 Migration Status:\n");
+    println!("  Current schema version:  v{}", info.current_version);
+    println!("  Latest schema version:   v{}", info.latest_version);
+    println!("  Pending migrations:      {}", info.pending_count);
+
+    if let Some(last_migration) = &info.last_migration {
+        println!("  Last migration:          {}", last_migration);
+    } else {
+        println!("  Last migration:          Never");
+    }
+
+    if let Some(created) = &info.created_at {
+        println!("  Database created:        {}", created);
+    }
+    println!();
+
+    if info.pending_count == 0 {
+        println!("✅ Database schema is up to date!");
+        println!();
+        cli::wait_for_enter();
+        return;
+    }
+
+    println!("⚠️  {} migration(s) available:", info.pending_count);
+    println!();
+
+    // List pending migrations
+    let migrations_list = migrations::get_migrations();
+    for migration in migrations_list {
+        if migration.version > info.current_version {
+            println!("  • v{}: {}", migration.version, migration.description);
+        }
+    }
+    println!();
+
+    if cli::confirm("Run pending migrations?") {
+        println!("\n🔄 Running migrations...\n");
+
+        match migrations::run_migrations(conn, info.current_version) {
+            Ok(new_version) => {
+                cli::show_success(&format!(
+                    "Migrations completed!\n   Schema updated: v{} → v{}",
+                    info.current_version, new_version
+                ));
+            }
+            Err(e) => {
+                cli::show_error(&format!(
+                    "Migration failed: {}\n\n⚠️  Database may be in inconsistent state!\nConsider restoring from backup.",
+                    e
+                ));
+            }
+        }
+    } else {
+        println!("\n❌ Migrations cancelled");
+        cli::wait_for_enter();
+    }
+}
+
 fn backup_database() {
     cli::show_header("BACKUP DATABASE");
 
@@ -191,6 +277,12 @@ fn backup_database() {
     if cli::confirm("Create backup?") {
         match fs::copy(&db_path, &backup_path) {
             Ok(bytes) => {
+                // Update meta table
+                if let Ok(db) = Database::new(&db_path.to_string_lossy()) {
+                    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                    let _ = migrations::set_meta_value(db.get_connection(), "last_backup", &now);
+                }
+
                 let kb = bytes / 1024;
                 cli::show_success(&format!(
                     "Backup created successfully!\n   File: {}\n   Size: {} KB",
@@ -277,6 +369,13 @@ fn restore_database() {
             // Restore from backup
             match fs::copy(&backup_path, &db_path) {
                 Ok(_) => {
+                    // Update meta table
+                    if let Ok(db) = Database::new(&db_path.to_string_lossy()) {
+                        let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                        let _ =
+                            migrations::set_meta_value(db.get_connection(), "last_restore", &now);
+                    }
+
                     cli::show_success(&format!(
                         "Database restored successfully!\n   From: {}\n   Safety backup: {}",
                         backup_name, safety_backup
