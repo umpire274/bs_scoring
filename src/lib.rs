@@ -36,7 +36,8 @@ pub use db::player::Player;
 pub use db::team::Team;
 
 pub use core::menu::{
-    DBMenuChoice, LeagueMenuChoice, MainMenuChoice, Menu, PlayerMenuChoice, TeamMenuChoice,
+    DBMenuChoice, GameMenuChoice, LeagueMenuChoice, MainMenuChoice, Menu, PlayerMenuChoice,
+    TeamMenuChoice,
 };
 pub use core::parser::CommandParser;
 

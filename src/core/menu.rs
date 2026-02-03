@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 #[derive(Debug, Clone, Copy)]
 pub enum MainMenuChoice {
-    NewGame,
+    ManageGames,
     ManageLeagues,
     ManageTeams,
     ManagePlayers,
@@ -55,6 +55,15 @@ pub enum PlayerMenuChoice {
     Back,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum GameMenuChoice {
+    NewGame,
+    ListGames,
+    EditGame,
+    PlayBall,
+    Back,
+}
+
 pub struct Menu;
 
 impl Menu {
@@ -66,7 +75,7 @@ impl Menu {
             println!("║  ⚾  BASEBALL/SOFTBALL SCORER - MAIN MENU  ║");
             println!("╚════════════════════════════════════════════╝");
             println!();
-            println!("  1. 🆕 New Game");
+            println!("  1. 🎮 Manage Games");
             println!("  2. 🏆 Manage Leagues");
             println!("  3. ⚾ Manage Teams");
             println!("  4. 👥 Manage Players");
@@ -80,13 +89,46 @@ impl Menu {
 
             let choice = utils::cli::read_choice();
             match choice {
-                1 => return MainMenuChoice::NewGame,
+                1 => return MainMenuChoice::ManageGames,
                 2 => return MainMenuChoice::ManageLeagues,
                 3 => return MainMenuChoice::ManageTeams,
                 4 => return MainMenuChoice::ManagePlayers,
                 5 => return MainMenuChoice::Statistics,
                 6 => return MainMenuChoice::ManageDB,
                 0 => return MainMenuChoice::Exit,
+                _ => {
+                    println!("\n❌ Invalid choice. Press ENTER to continue...");
+                    utils::cli::wait_for_enter();
+                }
+            }
+        }
+    }
+
+    /// Display game management menu
+    pub fn show_game_menu() -> GameMenuChoice {
+        loop {
+            utils::cli::clear_screen();
+            println!("╔════════════════════════════════════════════╗");
+            println!("║         🎮 GAME MANAGEMENT                 ║");
+            println!("╚════════════════════════════════════════════╝");
+            println!();
+            println!("  1. 🆕 New Game");
+            println!("  2. 📋 List Games");
+            println!("  3. ✏️  Edit Game");
+            println!("  4. ⚾ Play Ball!");
+            println!();
+            println!("  0. 🔙 Back to Main Menu");
+            println!();
+            print!("Select an option (1-4 or 0): ");
+            io::stdout().flush().unwrap();
+
+            let choice = utils::cli::read_choice();
+            match choice {
+                1 => return GameMenuChoice::NewGame,
+                2 => return GameMenuChoice::ListGames,
+                3 => return GameMenuChoice::EditGame,
+                4 => return GameMenuChoice::PlayBall,
+                0 => return GameMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
                     utils::cli::wait_for_enter();

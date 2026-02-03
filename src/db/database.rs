@@ -98,49 +98,6 @@ impl Database {
             [],
         )?;
 
-        // Plate Appearances table
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS plate_appearances (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                game_id INTEGER NOT NULL,
-                inning INTEGER NOT NULL,
-                half_inning TEXT NOT NULL,
-                batter_id INTEGER NOT NULL,
-                pitcher_id INTEGER NOT NULL,
-                result_type TEXT NOT NULL,
-                result_data TEXT,
-                pitch_count_balls INTEGER,
-                pitch_count_strikes INTEGER,
-                pitch_sequence TEXT,
-                outs_before INTEGER NOT NULL,
-                outs_after INTEGER NOT NULL,
-                runs_scored INTEGER DEFAULT 0,
-                rbis INTEGER DEFAULT 0,
-                notes TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (game_id) REFERENCES games(id),
-                FOREIGN KEY (batter_id) REFERENCES players(id),
-                FOREIGN KEY (pitcher_id) REFERENCES players(id)
-            )",
-            [],
-        )?;
-
-        // Base Runners table (for tracking runner advancement)
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS base_runners (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                plate_appearance_id INTEGER NOT NULL,
-                runner_id INTEGER NOT NULL,
-                starting_base TEXT NOT NULL,
-                ending_base TEXT,
-                scored BOOLEAN DEFAULT 0,
-                advancement_type TEXT,
-                FOREIGN KEY (plate_appearance_id) REFERENCES plate_appearances(id),
-                FOREIGN KEY (runner_id) REFERENCES players(id)
-            )",
-            [],
-        )?;
-
         // Create indexes for better performance
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_games_date ON games(game_date)",
@@ -148,12 +105,107 @@ impl Database {
         )?;
 
         self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_pa_game ON plate_appearances(game_id)",
+            "CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id)",
+            [],
+        )?;
+
+        // Create new tables
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS at_bats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            inning INTEGER NOT NULL,
+            half_inning TEXT NOT NULL CHECK(half_inning IN ('Top', 'Bottom')),
+            batter_id INTEGER NOT NULL,
+            pitcher_id INTEGER NOT NULL,
+            outs_before INTEGER NOT NULL CHECK(outs_before BETWEEN 0 AND 2),
+            runner_on_first INTEGER,
+            runner_on_second INTEGER,
+            runner_on_third INTEGER,
+            result_type TEXT NOT NULL,
+            result_detail TEXT,
+            outs_after INTEGER NOT NULL CHECK(outs_after BETWEEN 0 AND 3),
+            runs_scored INTEGER DEFAULT 0,
+            rbis INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (batter_id) REFERENCES players(id),
+            FOREIGN KEY (pitcher_id) REFERENCES players(id),
+            FOREIGN KEY (runner_on_first) REFERENCES players(id),
+            FOREIGN KEY (runner_on_second) REFERENCES players(id),
+            FOREIGN KEY (runner_on_third) REFERENCES players(id)
+        )",
             [],
         )?;
 
         self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id)",
+            "CREATE TABLE IF NOT EXISTS pitches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            at_bat_id INTEGER NOT NULL,
+            pitch_number INTEGER NOT NULL,
+            balls_before INTEGER NOT NULL CHECK(balls_before BETWEEN 0 AND 3),
+            strikes_before INTEGER NOT NULL CHECK(strikes_before BETWEEN 0 AND 2),
+            pitch_type TEXT NOT NULL,
+            in_play_result TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (at_bat_id) REFERENCES at_bats(id)
+        )",
+            [],
+        )?;
+
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS runner_movements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            at_bat_id INTEGER NOT NULL,
+            runner_id INTEGER NOT NULL,
+            start_base TEXT NOT NULL CHECK(start_base IN ('1B', '2B', '3B', 'HOME')),
+            end_base TEXT CHECK(end_base IN ('1B', '2B', '3B', 'HOME', 'OUT')),
+            advancement_type TEXT NOT NULL,
+            is_out BOOLEAN DEFAULT 0,
+            out_type TEXT,
+            scored BOOLEAN DEFAULT 0,
+            is_earned BOOLEAN DEFAULT 1,
+            FOREIGN KEY (at_bat_id) REFERENCES at_bats(id),
+            FOREIGN KEY (runner_id) REFERENCES players(id)
+        )",
+            [],
+        )?;
+
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS game_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            at_bat_id INTEGER,
+            inning INTEGER NOT NULL,
+            half_inning TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            event_data TEXT,
+            description TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (at_bat_id) REFERENCES at_bats(id)
+        )",
+            [],
+        )?;
+
+        // Create indexes
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_at_bats_game ON at_bats(game_id)",
+            [],
+        )?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pitches_at_bat ON pitches(at_bat_id)",
+            [],
+        )?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_runner_movements_at_bat ON runner_movements(at_bat_id)",
+            [],
+        )?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_game_events_game ON game_events(game_id)",
             [],
         )?;
 
