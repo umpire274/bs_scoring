@@ -1,3 +1,4 @@
+use crate::utils;
 use std::io::{self, Write};
 
 #[derive(Debug, Clone, Copy)]
@@ -6,6 +7,7 @@ pub enum MainMenuChoice {
     ManageLeagues,
     ManageTeams,
     Statistics,
+    ManageDB,
     Exit,
 }
 
@@ -29,36 +31,49 @@ pub enum TeamMenuChoice {
     Back,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum DBMenuChoice {
+    ViewInfo,
+    BackupDB,
+    RestoreDB,
+    ClearData,
+    ChangeLocation,
+    Back,
+}
+
 pub struct Menu;
 
 impl Menu {
     /// Display main menu and get user choice
     pub fn show_main_menu() -> MainMenuChoice {
         loop {
-            Self::clear_screen();
+            utils::cli::clear_screen();
             println!("╔════════════════════════════════════════════╗");
-            println!("║      ⚾ BASEBALL SCORER - MAIN MENU        ║");
+            println!("║  ⚾  BASEBALL/SOFTBALL SCORER - MAIN MENU  ║");
             println!("╚════════════════════════════════════════════╝");
             println!();
             println!("  1. 🆕 New Game");
             println!("  2. 🏆 Manage Leagues");
             println!("  3. ⚾ Manage Teams");
             println!("  4. 📊 Statistics");
-            println!("  5. 🚪 Exit");
+            println!("  5. 💾 Manage DB");
             println!();
-            print!("Select an option (1-5): ");
+            println!("  0. 🚪 Exit");
+            println!();
+            print!("Select an option (1-5 or 0): ");
             io::stdout().flush().unwrap();
 
-            let choice = Self::read_choice();
+            let choice = utils::cli::read_choice();
             match choice {
                 1 => return MainMenuChoice::NewGame,
                 2 => return MainMenuChoice::ManageLeagues,
                 3 => return MainMenuChoice::ManageTeams,
                 4 => return MainMenuChoice::Statistics,
-                5 => return MainMenuChoice::Exit,
+                5 => return MainMenuChoice::ManageDB,
+                0 => return MainMenuChoice::Exit,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
-                    Self::wait_for_enter();
+                    utils::cli::wait_for_enter();
                 }
             }
         }
@@ -67,7 +82,7 @@ impl Menu {
     /// Display league management menu
     pub fn show_league_menu() -> LeagueMenuChoice {
         loop {
-            Self::clear_screen();
+            utils::cli::clear_screen();
             println!("╔════════════════════════════════════════════╗");
             println!("║         🏆 LEAGUE MANAGEMENT               ║");
             println!("╚════════════════════════════════════════════╝");
@@ -76,21 +91,22 @@ impl Menu {
             println!("  2. 📋 View Leagues");
             println!("  3. ✏️  Edit League");
             println!("  4. 🗑️  Delete League");
-            println!("  5. 🔙 Back to Main Menu");
             println!();
-            print!("Select an option (1-5): ");
+            println!("  0. 🔙 Back to Main Menu");
+            println!();
+            print!("Select an option (1-4 or 0): ");
             io::stdout().flush().unwrap();
 
-            let choice = Self::read_choice();
+            let choice = utils::cli::read_choice();
             match choice {
                 1 => return LeagueMenuChoice::CreateLeague,
                 2 => return LeagueMenuChoice::ViewLeagues,
                 3 => return LeagueMenuChoice::EditLeague,
                 4 => return LeagueMenuChoice::DeleteLeague,
-                5 => return LeagueMenuChoice::Back,
+                0 => return LeagueMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
-                    Self::wait_for_enter();
+                    utils::cli::wait_for_enter();
                 }
             }
         }
@@ -99,7 +115,7 @@ impl Menu {
     /// Display team management menu
     pub fn show_team_menu() -> TeamMenuChoice {
         loop {
-            Self::clear_screen();
+            utils::cli::clear_screen();
             println!("╔════════════════════════════════════════════╗");
             println!("║         ⚾ TEAM MANAGEMENT                 ║");
             println!("╚════════════════════════════════════════════╝");
@@ -110,12 +126,13 @@ impl Menu {
             println!("  4. 👥 Manage Roster");
             println!("  5. 📥 Import Team (JSON/CSV)");
             println!("  6. 🗑️  Delete Team");
-            println!("  7. 🔙 Back to Main Menu");
             println!();
-            print!("Select an option (1-7): ");
+            println!("  0. 🔙 Back to Main Menu");
+            println!();
+            print!("Select an option (1-6 or 0): ");
             io::stdout().flush().unwrap();
 
-            let choice = Self::read_choice();
+            let choice = utils::cli::read_choice();
             match choice {
                 1 => return TeamMenuChoice::CreateTeam,
                 2 => return TeamMenuChoice::ViewTeams,
@@ -123,98 +140,46 @@ impl Menu {
                 4 => return TeamMenuChoice::ManageRoster,
                 5 => return TeamMenuChoice::ImportTeam,
                 6 => return TeamMenuChoice::DeleteTeam,
-                7 => return TeamMenuChoice::Back,
+                0 => return TeamMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
-                    Self::wait_for_enter();
+                    utils::cli::wait_for_enter();
                 }
             }
         }
     }
 
-    /// Clear the screen (works on most terminals)
-    fn clear_screen() {
-        print!("\x1B[2J\x1B[1;1H");
-        io::stdout().flush().unwrap();
-    }
+    pub fn show_db_menu() -> DBMenuChoice {
+        loop {
+            utils::cli::clear_screen();
+            println!("╔════════════════════════════════════════════╗");
+            println!("║         💾 DATABASE MANAGEMENT             ║");
+            println!("╚════════════════════════════════════════════╝");
+            println!();
+            println!("  1. 📋 View DB Info");
+            println!("  2. 💾 Backup Database");
+            println!("  3. 📥 Restore Database");
+            println!("  4. 🗑️  Clear All Data");
+            println!("  5. 📁 Change DB Location");
+            println!();
+            println!("  0. 🔙 Back to Main Menu");
+            println!();
+            print!("Select an option (1-5 or 0): ");
+            io::stdout().flush().unwrap();
 
-    /// Read a numeric choice from user
-    fn read_choice() -> u32 {
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        input.trim().parse().unwrap_or(0)
-    }
-
-    /// Read a string input from user
-    pub fn read_string(prompt: &str) -> String {
-        print!("{}", prompt);
-        io::stdout().flush().unwrap();
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        input.trim().to_string()
-    }
-
-    /// Read an optional string (can be empty)
-    pub fn read_optional_string(prompt: &str) -> Option<String> {
-        let input = Self::read_string(prompt);
-        if input.is_empty() { None } else { Some(input) }
-    }
-
-    /// Read an integer
-    pub fn read_i32(prompt: &str) -> Option<i32> {
-        let input = Self::read_string(prompt);
-        input.parse().ok()
-    }
-
-    /// Read an i64
-    pub fn read_i64(prompt: &str) -> Option<i64> {
-        let input = Self::read_string(prompt);
-        input.parse().ok()
-    }
-
-    /// Wait for user to press enter
-    pub fn wait_for_enter() {
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-    }
-
-    /// Display a success message
-    pub fn show_success(message: &str) {
-        println!("\n✅ {}", message);
-        println!("\nPress ENTER to continue...");
-        Self::wait_for_enter();
-    }
-
-    /// Display an error message
-    pub fn show_error(message: &str) {
-        println!("\n❌ Error: {}", message);
-        println!("\nPress ENTER to continue...");
-        Self::wait_for_enter();
-    }
-
-    /// Confirm action
-    pub fn confirm(message: &str) -> bool {
-        print!("{} (y/n): ", message);
-        io::stdout().flush().unwrap();
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        input.trim().to_lowercase() == "y"
-    }
-
-    /// Display a header
-    pub fn show_header(title: &str) {
-        println!("\n╔═══════════════════════════════════════════════════╗");
-        println!("║ {: ^50}║", title);
-        println!("╚═══════════════════════════════════════════════════╝\n");
-    }
-
-    /// Display a list item
-    pub fn show_list_item(index: usize, item: &str) {
-        println!("  {}. {}", index, item);
-    }
-
-    /// Show a table separator
-    pub fn show_separator() {
-        println!("  ─────────────────────────────────────────────────");
+            let choice = utils::cli::read_choice();
+            match choice {
+                1 => return DBMenuChoice::ViewInfo,
+                2 => return DBMenuChoice::BackupDB,
+                3 => return DBMenuChoice::RestoreDB,
+                4 => return DBMenuChoice::ClearData,
+                5 => return DBMenuChoice::ChangeLocation,
+                0 => return DBMenuChoice::Back,
+                _ => {
+                    println!("\n❌ Invalid choice. Press ENTER to continue...");
+                    utils::cli::wait_for_enter();
+                }
+            }
+        }
     }
 }
