@@ -26,7 +26,6 @@ pub enum TeamMenuChoice {
     CreateTeam,
     ViewTeams,
     EditTeam,
-    ManageRoster,
     ImportTeam,
     DeleteTeam,
     Back,
@@ -75,10 +74,10 @@ impl Menu {
             println!("║  ⚾  BASEBALL/SOFTBALL SCORER - MAIN MENU  ║");
             println!("╚════════════════════════════════════════════╝");
             println!();
-            println!("  1. 🎮 Manage Games");
-            println!("  2. 🏆 Manage Leagues");
-            println!("  3. ⚾ Manage Teams");
-            println!("  4. 👥 Manage Players");
+            println!("  1. 🎮 Game Management");
+            println!("  2. 🏆 Leagues Management");
+            println!("  3. ⚾ Teams Management");
+            println!("  4. 👥 Player Management");
             println!("  5. 📊 Statistics");
             println!("  6. 💾 Manage DB");
             println!();
@@ -109,7 +108,7 @@ impl Menu {
         loop {
             utils::cli::clear_screen();
             println!("╔════════════════════════════════════════════╗");
-            println!("║         🎮 GAME MANAGEMENT                 ║");
+            println!("║           🎮  GAME MANAGEMENT              ║");
             println!("╚════════════════════════════════════════════╝");
             println!();
             println!("  1. 🆕 New Game");
@@ -141,9 +140,9 @@ impl Menu {
     pub fn show_league_menu() -> LeagueMenuChoice {
         loop {
             utils::cli::clear_screen();
-            println!("╔════════════════════════════════════════════╗");
-            println!("║         🏆 LEAGUE MANAGEMENT               ║");
-            println!("╚════════════════════════════════════════════╝");
+            println!("╔═════════════════════════════════════════════╗");
+            println!("║          🏆  LEAGUES MANAGEMENT             ║");
+            println!("╚═════════════════════════════════════════════╝");
             println!();
             println!("  1. ➕ Create New League");
             println!("  2. 📋 View Leagues");
@@ -175,15 +174,14 @@ impl Menu {
         loop {
             utils::cli::clear_screen();
             println!("╔════════════════════════════════════════════╗");
-            println!("║         ⚾ TEAM MANAGEMENT                 ║");
+            println!("║           ⚾  TEAMS MANAGEMENT             ║");
             println!("╚════════════════════════════════════════════╝");
             println!();
             println!("  1. ➕ Create New Team");
             println!("  2. 📋 View Teams");
             println!("  3. ✏️  Edit Team");
-            println!("  4. 👥 Manage Roster");
-            println!("  5. 📥 Import Team (JSON/CSV)");
-            println!("  6. 🗑️  Delete Team");
+            println!("  4. 📥 Import Team (JSON/CSV)");
+            println!("  5. 🗑️  Delete Team");
             println!();
             println!("  0. 🔙 Back to Main Menu");
             println!();
@@ -195,9 +193,8 @@ impl Menu {
                 1 => return TeamMenuChoice::CreateTeam,
                 2 => return TeamMenuChoice::ViewTeams,
                 3 => return TeamMenuChoice::EditTeam,
-                4 => return TeamMenuChoice::ManageRoster,
-                5 => return TeamMenuChoice::ImportTeam,
-                6 => return TeamMenuChoice::DeleteTeam,
+                4 => return TeamMenuChoice::ImportTeam,
+                5 => return TeamMenuChoice::DeleteTeam,
                 0 => return TeamMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
@@ -212,7 +209,7 @@ impl Menu {
         loop {
             utils::cli::clear_screen();
             println!("╔════════════════════════════════════════════╗");
-            println!("║         👥 PLAYER MANAGEMENT               ║");
+            println!("║          👥  PLAYER MANAGEMENT             ║");
             println!("╚════════════════════════════════════════════╝");
             println!();
             println!("  1. ➕ Add New Player");
@@ -246,7 +243,7 @@ impl Menu {
         loop {
             utils::cli::clear_screen();
             println!("╔════════════════════════════════════════════╗");
-            println!("║         💾 DATABASE MANAGEMENT             ║");
+            println!("║          💾  DATABASE MANAGEMENT           ║");
             println!("╚════════════════════════════════════════════╝");
             println!();
             println!("  1. 📋 View DB Info");

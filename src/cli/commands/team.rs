@@ -7,7 +7,6 @@ pub fn handle_team_menu(db: &Database) {
             TeamMenuChoice::CreateTeam => create_team(db),
             TeamMenuChoice::ViewTeams => view_teams(db),
             TeamMenuChoice::EditTeam => edit_team(db),
-            TeamMenuChoice::ManageRoster => manage_roster(db),
             TeamMenuChoice::ImportTeam => import_team(db),
             TeamMenuChoice::DeleteTeam => delete_team(db),
             TeamMenuChoice::Back => break,
@@ -90,12 +89,6 @@ fn view_teams(db: &Database) {
 
 fn edit_team(_db: &Database) {
     cli::show_header("EDIT TEAM");
-    println!("🚧 Feature under development...\n");
-    cli::wait_for_enter();
-}
-
-fn manage_roster(_db: &Database) {
-    cli::show_header("MANAGE ROSTER");
     println!("🚧 Feature under development...\n");
     cli::wait_for_enter();
 }
