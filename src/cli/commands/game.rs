@@ -2,15 +2,65 @@ use crate::core::menu::GameMenuChoice;
 use crate::utils::cli;
 use crate::{Database, Menu, Team};
 use chrono::Local;
+use std::io;
+use std::io::Write;
+
+#[derive(Debug, Clone, Copy)]
+pub enum EditGameMenuChoice {
+    EditTeams,
+    EditLineups,
+    EditInningsScore,
+    Back,
+}
 
 pub fn handle_game_menu(db: &Database) {
     loop {
         match Menu::show_game_menu() {
             GameMenuChoice::NewGame => create_new_game(db),
             GameMenuChoice::ListGames => list_games(db),
-            GameMenuChoice::EditGame => edit_game(db),
+            GameMenuChoice::EditGame => handle_edit_game_menu(db),
             GameMenuChoice::PlayBall => play_ball(db),
             GameMenuChoice::Back => break,
+        }
+    }
+}
+
+pub fn handle_edit_game_menu(db: &Database) {
+    loop {
+        match show_edit_game_menu() {
+            EditGameMenuChoice::EditTeams => edit_teams(db),
+            EditGameMenuChoice::EditLineups => edit_lineups(db),
+            EditGameMenuChoice::EditInningsScore => edit_innings_score(db),
+            EditGameMenuChoice::Back => break,
+        }
+    }
+}
+pub fn show_edit_game_menu() -> EditGameMenuChoice {
+    loop {
+        cli::clear_screen();
+        println!("╔════════════════════════════════════════════╗");
+        println!("║           🎮  EDIT GAME MENU               ║");
+        println!("╚════════════════════════════════════════════╝");
+        println!();
+        println!("  1. ⚾ Edit Teams");
+        println!("  2. 📋 Edit Lineups");
+        println!("  3. ✏️ Edit Innings/Score");
+        println!();
+        println!("  0. 🔙 Back to Main Menu");
+        println!();
+        print!("Select an option (1-3 or 0): ");
+        io::stdout().flush().unwrap();
+
+        let choice = cli::read_choice();
+        match choice {
+            1 => return EditGameMenuChoice::EditTeams,
+            2 => return EditGameMenuChoice::EditLineups,
+            3 => return EditGameMenuChoice::EditInningsScore,
+            0 => return EditGameMenuChoice::Back,
+            _ => {
+                println!("\n❌ Invalid choice. Press ENTER to continue...");
+                cli::wait_for_enter();
+            }
         }
     }
 }
@@ -250,17 +300,6 @@ fn list_games(db: &Database) {
     cli::wait_for_enter();
 }
 
-fn edit_game(_db: &Database) {
-    cli::show_header("EDIT GAME");
-    println!("🚧 Feature under development...\n");
-    println!("Future capabilities:");
-    println!("  - Edit game date");
-    println!("  - Change venue");
-    println!("  - Update team assignments");
-    println!("  - Modify game metadata\n");
-    cli::wait_for_enter();
-}
-
 fn play_ball(_db: &Database) {
     cli::show_header("PLAY BALL!");
     println!("⚾ Game Scoring Interface\n");
@@ -271,5 +310,24 @@ fn play_ball(_db: &Database) {
     println!("  - Real-time score display");
     println!("  - Base runner tracking");
     println!("  - Live statistics\n");
+    cli::wait_for_enter();
+}
+
+/// Edit Game functions (placeholder)
+fn edit_teams(_db: &Database) {
+    cli::show_header("EDIT TEAMS");
+    println!("🚧 Feature under development...\n");
+    cli::wait_for_enter();
+}
+
+fn edit_lineups(_db: &Database) {
+    cli::show_header("EDIT LINEUPS");
+    println!("🚧 Feature under development...\n");
+    cli::wait_for_enter();
+}
+
+fn edit_innings_score(_db: &Database) {
+    cli::show_header("EDIT INNINGS/SCORE");
+    println!("🚧 Feature under development...\n");
     cli::wait_for_enter();
 }

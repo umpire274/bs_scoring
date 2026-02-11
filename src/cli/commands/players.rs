@@ -91,6 +91,8 @@ fn add_player(db: &Database) {
                 println!("  9. Right Field");
                 println!();
 
+                print!("Select a defensive position (1-9): ");
+                io::stdout().flush().unwrap();
                 let position = match cli::read_choice() {
                     n if (1..=9).contains(&n) => Position::from_number(n as u8).unwrap(),
                     _ => {
@@ -113,8 +115,21 @@ fn add_player(db: &Database) {
                 match player.create(conn) {
                     Ok(id) => {
                         cli::show_success(&format!(
-                            "Player created successfully!\n   ID: {}\n   Name: {}\n   Number: {}\n   Team: {}",
-                            id, name, number, team.name
+                            "Player created successfully!\n\n   {:<14} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {:?}\n   {:<14} {}",
+                            "ID:",
+                            id,
+                            "Name:",
+                            name,
+                            "Number:",
+                            number,
+                            "Team:",
+                            team.name,
+                            "Position:",
+                            position,
+                            "Batting Order:",
+                            batting_order
+                                .map(|o| o.to_string())
+                                .unwrap_or("-".to_string())
                         ));
                     }
                     Err(e) => {
