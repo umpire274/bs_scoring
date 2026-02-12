@@ -615,8 +615,8 @@ fn insert_team_lineup(
         println!("\n📋 Team Roster:\n");
         for player in &roster {
             println!(
-                "  #{:<3} {} ({})",
-                player.number, player.name, player.position
+                "  #{:<3} {} {} ({})",
+                player.number, player.first_name, player.last_name, player.position
             );
         }
         println!();
@@ -705,8 +705,8 @@ fn insert_team_lineup(
             };
 
             println!(
-                "✓ Position {}: #{} {} - {}",
-                pos, jersey_number, player.name, position_display
+                "✓ Position {}: #{} {} {} - {}",
+                pos, jersey_number, player.first_name, player.last_name, position_display
             );
         }
 
@@ -736,8 +736,8 @@ fn insert_team_lineup(
 
             lineup.push((pitcher_id, 10, "1".to_string())); // Position 1 = Pitcher
             println!(
-                "✓ Position 10: #{} {} - Pitcher (P)",
-                pitcher_number, pitcher.name
+                "✓ Position 10: #{} {} {} - Pitcher (P)",
+                pitcher_number, pitcher.first_name, pitcher.last_name
             );
         }
 
@@ -781,8 +781,8 @@ fn display_lineup(
             };
 
             println!(
-                "  {:2}. #{:<3} {:<25} {}",
-                batting_order, player.number, player.name, position_display
+                "  {:2}. #{:<3} {:<20} {:<20} {}",
+                batting_order, player.number, player.first_name, player.last_name, position_display
             );
         }
     }

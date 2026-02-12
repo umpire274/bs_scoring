@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 4;
+pub const CURRENT_SCHEMA_VERSION: i64 = 5;
 
 /// Migration structure
 pub struct Migration {
@@ -34,6 +34,11 @@ pub fn get_migrations() -> Vec<Migration> {
             version: 4,
             description: "Change status field from TEXT to INTEGER, add GameStatus enum",
             up: migration_v4,
+        },
+        Migration {
+            version: 5,
+            description: "Restructure players table: remove batting_order and name, add first_name and last_name",
+            up: migration_v5,
         },
     ]
 }
@@ -298,6 +303,79 @@ fn migration_v4(conn: &Connection) -> Result<()> {
     // Recreate indexes
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_games_date ON games(game_date)",
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn migration_v5(conn: &Connection) -> Result<()> {
+    // Restructure players table:
+    // Remove: batting_order, name
+    // Add: first_name, last_name
+
+    // Check which columns exist
+    let mut stmt = conn.prepare("PRAGMA table_info(players)")?;
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(Result::ok)
+        .collect();
+
+    // Create new players table
+    conn.execute(
+        "CREATE TABLE players_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            is_active BOOLEAN DEFAULT 1,
+            FOREIGN KEY (team_id) REFERENCES teams(id),
+            UNIQUE(team_id, number)
+        )",
+        [],
+    )?;
+
+    // Copy data with name splitting
+    // If 'name' exists: split on first space into first_name/last_name
+    // If already has first_name/last_name: use those
+    if columns.contains(&"name".to_string()) {
+        // Old schema: split name
+        conn.execute(
+            "INSERT INTO players_new (id, team_id, number, first_name, last_name, position, is_active)
+             SELECT id, team_id, number,
+                    CASE 
+                        WHEN instr(name, ' ') > 0 THEN substr(name, 1, instr(name, ' ') - 1)
+                        ELSE name
+                    END as first_name,
+                    CASE 
+                        WHEN instr(name, ' ') > 0 THEN substr(name, instr(name, ' ') + 1)
+                        ELSE ''
+                    END as last_name,
+                    position, is_active
+             FROM players",
+            [],
+        )?;
+    } else {
+        // New schema: already has first_name/last_name
+        conn.execute(
+            "INSERT INTO players_new 
+             SELECT id, team_id, number, first_name, last_name, position, is_active
+             FROM players",
+            [],
+        )?;
+    }
+
+    // Drop old table
+    conn.execute("DROP TABLE players", [])?;
+
+    // Rename new table
+    conn.execute("ALTER TABLE players_new RENAME TO players", [])?;
+
+    // Recreate indexes
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id)",
         [],
     )?;
 
