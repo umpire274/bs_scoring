@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 2;
+pub const CURRENT_SCHEMA_VERSION: i64 = 3;
 
 /// Migration structure
 pub struct Migration {
@@ -24,6 +24,11 @@ pub fn get_migrations() -> Vec<Migration> {
             version: 2,
             description: "Remove old plate_appearances and base_runners, add new game scoring tables",
             up: migration_v2,
+        },
+        Migration {
+            version: 3,
+            description: "Add game_time and DH flags to games, create game_lineups table",
+            up: migration_v3,
         },
     ]
 }
@@ -137,6 +142,51 @@ fn migration_v2(conn: &Connection) -> Result<()> {
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_game_events_game ON game_events(game_id)",
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn migration_v3(conn: &Connection) -> Result<()> {
+    // Add new columns to games table
+    conn.execute("ALTER TABLE games ADD COLUMN game_time TEXT", [])?;
+    conn.execute(
+        "ALTER TABLE games ADD COLUMN at_uses_dh BOOLEAN DEFAULT 0",
+        [],
+    )?;
+    conn.execute(
+        "ALTER TABLE games ADD COLUMN ht_uses_dh BOOLEAN DEFAULT 0",
+        [],
+    )?;
+
+    // Create game_lineups table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS game_lineups (
+            game_id TEXT NOT NULL,
+            team_id INTEGER NOT NULL,
+            player_id INTEGER NOT NULL,
+            batting_order INTEGER NOT NULL CHECK(batting_order BETWEEN 1 AND 10),
+            defensive_position TEXT NOT NULL,
+            is_starting BOOLEAN DEFAULT 1,
+            substituted_at_inning INTEGER,
+            substituted_at_half TEXT CHECK(substituted_at_half IN ('Top', 'Bottom')),
+            PRIMARY KEY (game_id, team_id, batting_order),
+            FOREIGN KEY (game_id) REFERENCES games(game_id),
+            FOREIGN KEY (team_id) REFERENCES teams(id),
+            FOREIGN KEY (player_id) REFERENCES players(id)
+        )",
+        [],
+    )?;
+
+    // Create indexes for faster lookups
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_game_lineups_game ON game_lineups(game_id)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_game_lineups_team ON game_lineups(team_id)",
         [],
     )?;
 

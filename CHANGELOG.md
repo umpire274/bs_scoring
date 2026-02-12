@@ -5,6 +5,169 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+---
+
+## [0.4.0] - 2026-02-11
+
+### Added
+
+- **Complete Lineup Entry System**:
+    - Interactive lineup creation for both teams during game setup
+    - Full roster validation (minimum 12 players required)
+    - Jersey number-based player selection
+    - Defensive position assignment (1-9 or DH)
+    - Visual lineup confirmation with option to restart
+    - Real-time validation: unique positions, unique players
+
+- **Designated Hitter (DH) Support**:
+    - Independent DH option for each team
+    - **Without DH**: 9 players (pitcher bats in lineup)
+    - **With DH**: 9 batters + pitcher (position 10, informational only)
+    - Pitcher always defensive position 1 when DH is used
+    - DH can bat in any position 1-9 (manager's choice)
+    - Proper tracking in database with `at_uses_dh` and `ht_uses_dh` flags
+
+- **Enhanced Game Metadata**:
+    - Custom Game ID support (or auto-generated default)
+    - Game time field (HH:MM) in addition to date
+    - Auto-generated ID format: `GAME_YYYYMMDD_HHMMSS_AWAY_vs_HOME`
+    - User can override with custom ID (e.g., `B00A1AAAR0111`)
+
+- **Database Schema v3 (Migration)**:
+    - **Modified `games` table**:
+        - Added `game_time TEXT` - Time of game (HH:MM format)
+        - Added `at_uses_dh BOOLEAN DEFAULT 0` - Away team DH flag
+        - Added `ht_uses_dh BOOLEAN DEFAULT 0` - Home team DH flag
+        - `current_inning` and `current_half` left NULL until game starts
+
+    - **New `game_lineups` table**:
+        - Complete starting lineup tracking
+        - Fields: `game_id`, `team_id`, `player_id`, `batting_order` (1-10), `defensive_position`
+        - Support for substitution tracking: `is_starting`, `substituted_at_inning`, `substituted_at_half`
+        - Primary key: (game_id, team_id, batting_order)
+        - Foreign keys with referential integrity
+        - Indexes on game_id and team_id for performance
+        - Ready for future substitution implementation
+
+- **Position Display Support**:
+    - Implemented `fmt::Display` trait for `Position` enum
+    - Position abbreviations: P, C, 1B, 2B, 3B, SS, LF, CF, RF
+    - Used in roster display during lineup entry
+
+- **Application Icons**:
+    - 4 professional icon variants (SVG format, 1024x1024)
+    - **v1**: Baseball field with vertical pencil (realistic, sports-focused)
+    - **v2**: Scorecard with diagonal pencil (traditional, vintage)
+    - **v3**: Modern minimalist with blue gradient (clean, contemporary)
+    - **v4**: Professional app icon style (recommended, versatile)
+    - Complete conversion guide for PNG, .ico, .icns formats
+    - Integration instructions for Windows, macOS, Linux
+
+### Changed
+
+- **Game Creation Workflow**:
+    - **Old**: Select teams → Date → Venue → Done
+    - **New**: Game ID → Teams → Date → Time → Venue → Away Lineup → Home Lineup → Confirm
+    - Much more comprehensive pre-game setup
+    - All lineup information captured before game starts
+    - Better preparation for "Play Ball!" scoring interface
+
+- **Lineup Entry Logic**:
+    - Always 9 batting positions (regardless of DH)
+    - Pitcher in position 10 is informational only when DH used
+    - Clear prompts: "Defensive position (1-9 or DH)" when applicable
+    - Removed redundant position 10 batting entry
+    - Pitcher can be same player as one in lineup (rare but legal)
+
+- **Database Insert Queries**:
+    - Removed `current_inning` and `current_half` from game creation
+    - These fields now remain NULL until "Play Ball!" starts
+    - More semantically correct: NULL = game not started
+    - Values will be populated when scoring begins (v0.5.0)
+
+### Fixed
+
+- **Compilation Errors**:
+    - Added `Display` trait implementation for `Position` enum
+    - Fixed temporary value lifetime issue in lineup display
+    - Corrected defensive position variable usage
+    - All compiler warnings resolved
+
+- **DH Logic Corrections**:
+    - Fixed double "position 10" prompt bug
+    - Corrected loop to always be 1-9 (not 1-10)
+    - Pitcher entry now clearly labeled as informational
+    - Removed incorrect "already in lineup" check for pitcher
+
+### Technical Details
+
+- **Helper Functions Added** (`src/cli/commands/game.rs`):
+    - `insert_team_lineup()` - Interactive lineup entry with full validation
+    - `display_lineup()` - Pretty-print lineup for user confirmation
+    - `save_lineup()` - Persist lineup to database with transaction safety
+
+- **Migration v3** (`src/db/migrations.rs`):
+    - Automatic migration from schema v2 to v3
+    - Safe ALTER TABLE operations
+    - New table creation with proper constraints
+    - Index creation for query optimization
+
+- **Validation Rules**:
+    - Minimum 12 players in roster before lineup entry
+    - Each defensive position 1-9 used exactly once
+    - No duplicate players in batting lineup
+    - Jersey numbers must exist in team roster
+    - Proper error messages for all validation failures
+
+### Documentation
+
+- **New Files**:
+    - `ICONS_README.md` - Complete icon usage guide
+    - `FIX_DH_LOGIC.md` - DH implementation explanation
+    - `FIX_REMOVE_CURRENT_INNING.md` - Rationale for field changes
+    - `BUGFIX.md` - Compilation error fixes
+    - `IMPLEMENTATION_GUIDE_v0.4.0.md` - Technical implementation details
+
+- **Updated Files**:
+    - `README.md` - Updated for v0.4.0 features
+    - `CHANGELOG.md` - This file
+
+### Breaking Changes
+
+- **Database Schema**: Requires migration from v2 to v3
+    - Automatic migration on first run after upgrade
+    - Existing games compatible but without lineups
+    - Recommended: Backup database before upgrading
+    - Use "Manage DB > Backup Database" feature
+
+### Known Limitations
+
+- Lineup entry required for all new games (cannot skip)
+- No lineup editing after creation (coming in v0.5.0)
+- Pitcher position must be assigned even when DH not used
+- Substitutions not yet implemented (planned for v0.5.0+)
+
+### Future Enhancements (v0.5.0+)
+
+- "Play Ball!" live scoring interface
+- Mid-game substitutions
+- Lineup editing
+- Player position validation
+- Lineup templates for quick entry
+- Import/export lineups
+
+---
+
+**Migration Path**: v0.3.1 → v0.4.0
+
+- Automatic schema migration on startup
+- Backup recommended before upgrade
+- All existing data preserved
+
+**Next Version**: v0.5.0 will implement the "Play Ball!" scoring interface
+
+---
+
 ## [0.3.0] - 2026-02-03
 
 ### Added
