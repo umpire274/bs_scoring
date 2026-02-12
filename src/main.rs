@@ -2,9 +2,9 @@ use bs_scoring::cli::commands::main_menu;
 use bs_scoring::setup_db;
 
 fn main() {
-    let db = setup_db();
+    let mut db = setup_db();
     std::thread::sleep(std::time::Duration::from_secs(3));
     println!();
 
-    main_menu::run_main_menu(&db);
+    main_menu::run_main_menu(&mut db);
 }

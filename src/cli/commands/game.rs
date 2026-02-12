@@ -2,6 +2,7 @@ use crate::core::menu::GameMenuChoice;
 use crate::utils::cli;
 use crate::{Database, Menu, Team};
 use chrono::Local;
+use rusqlite::Connection;
 use std::io;
 use std::io::Write;
 
@@ -13,7 +14,7 @@ pub enum EditGameMenuChoice {
     Back,
 }
 
-pub fn handle_game_menu(db: &Database) {
+pub fn handle_game_menu(db: &mut Database) {
     loop {
         match Menu::show_game_menu() {
             GameMenuChoice::NewGame => create_new_game(db),
@@ -25,7 +26,7 @@ pub fn handle_game_menu(db: &Database) {
     }
 }
 
-pub fn handle_edit_game_menu(db: &Database) {
+pub fn handle_edit_game_menu(db: &mut Database) {
     loop {
         match show_edit_game_menu() {
             EditGameMenuChoice::EditTeams => edit_teams(db),
@@ -35,6 +36,7 @@ pub fn handle_edit_game_menu(db: &Database) {
         }
     }
 }
+
 pub fn show_edit_game_menu() -> EditGameMenuChoice {
     loop {
         cli::clear_screen();
@@ -362,14 +364,18 @@ fn edit_teams(_db: &Database) {
     cli::wait_for_enter();
 }
 
-fn edit_lineups(db: &Database) {
+fn edit_lineups(db: &mut Database) {
     cli::show_header("EDIT LINEUPS");
 
-    let conn = db.get_connection();
+    let conn = db.get_connection_mut();
 
     // Query only pregame games
-    let mut stmt = match conn.prepare(
-        "SELECT g.id, g.game_id, g.game_date, g.venue,
+    // (La query è eseguita nel blocco `pregame_games` qui sotto; evitare Statement inutilizzati
+    // che tengono un borrow immutabile su `conn` e impediscono usi mutabili successivi.)
+
+    let pregame_games: Vec<_> = {
+        let mut stmt = match conn.prepare(
+            "SELECT g.id, g.game_id, g.game_date, g.venue,
                 t1.name as away_team, t1.id as away_team_id,
                 t2.name as home_team, t2.id as home_team_id
          FROM games g
@@ -377,30 +383,30 @@ fn edit_lineups(db: &Database) {
          JOIN teams t2 ON g.home_team_id = t2.id
          WHERE g.status = 1
          ORDER BY g.game_date DESC, g.id DESC",
-    ) {
-        Ok(stmt) => stmt,
-        Err(e) => {
-            cli::show_error(&format!("Error querying games: {}", e));
-            return;
-        }
-    };
+        ) {
+            Ok(stmt) => stmt,
+            Err(e) => {
+                cli::show_error(&format!("Error querying games: {}", e));
+                return;
+            }
+        };
 
-    let pregame_games: Vec<_> = stmt
-        .query_map([], |row| {
+        stmt.query_map([], |row| {
             Ok((
-                row.get::<_, i64>(0)?,    // id
-                row.get::<_, String>(1)?, // game_id
-                row.get::<_, String>(2)?, // game_date
-                row.get::<_, String>(3)?, // venue
-                row.get::<_, String>(4)?, // away_team
-                row.get::<_, i64>(5)?,    // away_team_id
-                row.get::<_, String>(6)?, // home_team
-                row.get::<_, i64>(7)?,    // home_team_id
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, i64>(7)?,
             ))
         })
         .unwrap()
         .filter_map(Result::ok)
-        .collect();
+        .collect()
+    }; // <-- stmt viene droppato qui
 
     if pregame_games.is_empty() {
         println!("📭 No pre-game games found.");
@@ -462,72 +468,51 @@ fn edit_lineups(db: &Database) {
 
     let (team_id, team_name, team_type) = team_choice;
 
-    // Load current lineup
-    let mut current_lineup_stmt = match conn.prepare(
-        "SELECT gl.player_id, gl.batting_order, gl.defensive_position, p.number, p.name
-         FROM game_lineups gl
-         JOIN players p ON gl.player_id = p.id
-         WHERE gl.game_id = ?1 AND gl.team_id = ?2 AND gl.is_starting = 1
-         ORDER BY gl.batting_order",
-    ) {
-        Ok(stmt) => stmt,
-        Err(e) => {
-            cli::show_error(&format!("Error loading lineup: {}", e));
-            return;
-        }
-    };
+    // Load current lineup (blocca lo scope dello Statement per evitare E0502)
+    let current_lineup: Vec<(i64, i32, String, i32, String, String)> = {
+        let mut current_lineup_stmt = match conn.prepare(
+            "SELECT gl.player_id,
+            gl.batting_order,
+            gl.defensive_position,
+            p.number,
+            p.first_name,
+            p.last_name
+     FROM game_lineups gl
+     JOIN players p ON gl.player_id = p.id
+     WHERE gl.game_id = ?1
+       AND gl.team_id = ?2
+       AND gl.is_starting = 1
+     ORDER BY gl.batting_order",
+        ) {
+            Ok(stmt) => stmt,
+            Err(e) => {
+                cli::show_error(&format!("Error loading lineup: {}", e));
+                return;
+            }
+        };
 
-    let current_lineup: Vec<(i64, i32, String, i32, String)> = current_lineup_stmt
-        .query_map(rusqlite::params![game_id, team_id], |row| {
-            Ok((
-                row.get(0)?, // player_id
-                row.get(1)?, // batting_order
-                row.get(2)?, // defensive_position
-                row.get(3)?, // number
-                row.get(4)?, // name
-            ))
-        })
-        .unwrap()
-        .filter_map(Result::ok)
-        .collect();
+        current_lineup_stmt
+            .query_map(rusqlite::params![game_id, team_id], |row| {
+                Ok((
+                    row.get(0)?, // player_id
+                    row.get(1)?, // batting_order
+                    row.get(2)?, // defensive_position
+                    row.get(3)?, // number
+                    row.get(4)?, // first_name
+                    row.get(5)?, // last_name
+                ))
+            })
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect()
+    }; // <-- current_lineup_stmt viene droppato qui
 
     if current_lineup.is_empty() {
         cli::show_error("No lineup found for this team!");
         return;
     }
 
-    // Display current lineup
-    println!("\n╔═══════════════════════════════════════════════════╗");
-    println!(
-        "║ {: ^50}║",
-        format!(
-            "{} CURRENT LINEUP ({})",
-            team_name.to_uppercase(),
-            team_type
-        )
-    );
-    println!("╚═══════════════════════════════════════════════════╝\n");
-
-    let uses_dh = current_lineup.iter().any(|(_, _, pos, _, _)| pos == "DH");
-    if uses_dh {
-        println!("⚾ Designated Hitter: YES\n");
-    }
-
-    for (_player_id, batting_order, def_pos, number, name) in &current_lineup {
-        let position_display = if def_pos == "DH" {
-            "DH".to_string()
-        } else if *batting_order == 10 {
-            "P (does not bat)".to_string()
-        } else {
-            format!("Pos {}", def_pos)
-        };
-
-        println!(
-            "  {:2}. #{:<3} {:<25} {}",
-            batting_order, number, name, position_display
-        );
-    }
-    println!();
+    print_lineup(&team_name, team_type, &current_lineup);
 
     if !cli::confirm("Edit this lineup?") {
         println!("\n❌ Cancelled");
@@ -540,32 +525,7 @@ fn edit_lineups(db: &Database) {
     println!("    RE-ENTER {} LINEUP", team_name.to_uppercase());
     println!("═══════════════════════════════════════\n");
 
-    let new_lineup = match insert_team_lineup(conn, team_id, &team_name) {
-        Some(lineup) => lineup,
-        None => {
-            println!("\n❌ Lineup edit cancelled");
-            cli::wait_for_enter();
-            return;
-        }
-    };
-
-    // Delete old lineup entries
-    match conn.execute(
-        "DELETE FROM game_lineups WHERE game_id = ?1 AND team_id = ?2",
-        rusqlite::params![game_id, team_id],
-    ) {
-        Ok(_) => {}
-        Err(e) => {
-            cli::show_error(&format!("Failed to delete old lineup: {}", e));
-            return;
-        }
-    }
-
-    // Save new lineup
-    if let Err(e) = save_lineup(conn, game_id, team_id, &new_lineup) {
-        cli::show_error(&format!("Failed to save new lineup: {}", e));
-        return;
-    }
+    edit_lineup_helper(conn, game_id, team_id, &team_name, team_type);
 
     cli::show_success(&format!(
         "Lineup updated successfully for {} ({})!\n\n\
@@ -755,7 +715,7 @@ fn insert_team_lineup(
 
 /// Display lineup for confirmation
 fn display_lineup(
-    conn: &rusqlite::Connection,
+    conn: &Connection,
     lineup: &[(i64, i32, String)],
     team_name: &str,
     uses_dh: bool,
@@ -791,7 +751,7 @@ fn display_lineup(
 
 /// Save lineup to database
 fn save_lineup(
-    conn: &rusqlite::Connection,
+    conn: &Connection,
     game_id: &str,
     team_id: i64,
     lineup: &[(i64, i32, String)],
@@ -804,4 +764,277 @@ fn save_lineup(
         )?;
     }
     Ok(())
+}
+
+fn load_starting_lineup(
+    conn: &Connection,
+    game_id: &str,
+    team_id: i64,
+) -> rusqlite::Result<Vec<LineupRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT gl.player_id, gl.batting_order, gl.defensive_position,
+                p.number, p.first_name, p.last_name
+         FROM game_lineups gl
+         JOIN players p ON gl.player_id = p.id
+         WHERE gl.game_id = ?1 AND gl.team_id = ?2 AND gl.is_starting = 1
+         ORDER BY gl.batting_order",
+    )?;
+
+    let v = stmt
+        .query_map(rusqlite::params![game_id, team_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })?
+        .filter_map(Result::ok)
+        .collect();
+
+    Ok(v)
+}
+
+use std::collections::HashSet;
+
+fn load_bench_from_roster(
+    conn: &Connection,
+    team_id: i64,
+    current_lineup: &[(i64, i32, String, i32, String, String)],
+) -> Result<Vec<(i64, i32, String, String)>, String> {
+    use crate::db::player::Player;
+
+    let starters: HashSet<i64> = current_lineup
+        .iter()
+        .map(|(pid, _, _, _, _, _)| *pid)
+        .collect();
+
+    let roster =
+        Player::get_by_team(conn, team_id).map_err(|e| format!("Error loading roster: {e}"))?;
+
+    // (player_id, number, first, last)
+    let bench = roster
+        .into_iter()
+        .filter_map(|p| {
+            let id = p.id?;
+            if starters.contains(&id) {
+                return None;
+            }
+            Some((id, p.number, p.first_name, p.last_name))
+        })
+        .collect::<Vec<_>>();
+
+    Ok(bench)
+}
+
+fn swap_spots(
+    conn: &mut Connection,
+    game_id: &str,
+    team_id: i64,
+    a: i32,
+    b: i32,
+) -> rusqlite::Result<()> {
+    let tx = conn.transaction()?;
+
+    let (a_player, a_pos): (i64, String) = tx.query_row(
+        "SELECT player_id, defensive_position
+         FROM game_lineups
+         WHERE game_id = ?1 AND team_id = ?2 AND is_starting = 1 AND batting_order = ?3",
+        rusqlite::params![game_id, team_id, a],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+
+    let (b_player, b_pos): (i64, String) = tx.query_row(
+        "SELECT player_id, defensive_position
+         FROM game_lineups
+         WHERE game_id = ?1 AND team_id = ?2 AND is_starting = 1 AND batting_order = ?3",
+        rusqlite::params![game_id, team_id, b],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+
+    tx.execute(
+        "UPDATE game_lineups
+         SET player_id = ?4, defensive_position = ?5
+         WHERE game_id = ?1 AND team_id = ?2 AND is_starting = 1 AND batting_order = ?3",
+        rusqlite::params![game_id, team_id, a, b_player, b_pos],
+    )?;
+
+    tx.execute(
+        "UPDATE game_lineups
+         SET player_id = ?4, defensive_position = ?5
+         WHERE game_id = ?1 AND team_id = ?2 AND is_starting = 1 AND batting_order = ?3",
+        rusqlite::params![game_id, team_id, b, a_player, a_pos],
+    )?;
+
+    tx.commit()?;
+    Ok(())
+}
+
+fn replace_with_roster_player(
+    conn: &mut rusqlite::Connection,
+    game_id: &str,
+    team_id: i64,
+    spot: i32,
+    new_player_id: i64,
+) -> rusqlite::Result<()> {
+    let tx = conn.transaction()?;
+
+    // Evita duplicato: stesso giocatore già nello starting lineup
+    let already_in_lineup: i64 = tx.query_row(
+        "SELECT COUNT(1)
+         FROM game_lineups
+         WHERE game_id = ?1 AND team_id = ?2
+           AND is_starting = 1
+           AND player_id = ?3",
+        rusqlite::params![game_id, team_id, new_player_id],
+        |r| r.get(0),
+    )?;
+
+    if already_in_lineup > 0 {
+        return Err(rusqlite::Error::InvalidQuery); // oppure errore custom
+    }
+
+    // Sostituisce direttamente il player nello spot
+    tx.execute(
+        "UPDATE game_lineups
+         SET player_id = ?4
+         WHERE game_id = ?1
+           AND team_id = ?2
+           AND is_starting = 1
+           AND batting_order = ?3",
+        rusqlite::params![game_id, team_id, spot, new_player_id],
+    )?;
+
+    tx.commit()?;
+    Ok(())
+}
+
+type LineupRow = (i64, i32, String, i32, String, String);
+
+fn print_lineup(team_name: &str, team_type: &str, lineup: &[LineupRow]) {
+    println!("\n╔═══════════════════════════════════════════════════╗");
+    println!(
+        "║ {: ^50}║",
+        format!(
+            "{} CURRENT LINEUP ({})",
+            team_name.to_uppercase(),
+            team_type
+        )
+    );
+    println!("╚═══════════════════════════════════════════════════╝\n");
+
+    let uses_dh = lineup.iter().any(|(_, _, pos, _, _, _)| pos == "DH");
+    if uses_dh {
+        println!("⚾ Designated Hitter: YES\n");
+    }
+
+    for (_player_id, batting_order, def_pos, number, first_name, last_name) in lineup {
+        let position_display = if def_pos == "DH" {
+            "DH".to_string()
+        } else if *batting_order == 10 {
+            "P (does not bat)".to_string()
+        } else {
+            format!("Pos {}", def_pos)
+        };
+
+        println!(
+            "  {:2}. #{:<3} {:<25} {}",
+            batting_order,
+            number,
+            format!("{first_name} {last_name}"),
+            position_display
+        );
+    }
+    println!();
+}
+
+fn edit_lineup_helper(
+    conn: &mut Connection,
+    game_id: &str,
+    team_id: i64,
+    team_name: &str,
+    team_type: &str,
+) {
+    loop {
+        let lineup = match load_starting_lineup(conn, game_id, team_id) {
+            Ok(v) => v,
+            Err(e) => {
+                cli::show_error(&format!("Error loading lineup: {e}"));
+                return;
+            }
+        };
+
+        // stampa lineup (puoi riusare il tuo blocco)
+        print_lineup(&team_name, team_type, &lineup);
+
+        println!("\nActions:");
+        println!("  1) Swap two spots");
+        println!("  2) Replace a spot with bench player");
+        println!("\n  0) Done\n");
+
+        print!("Select an action: ");
+        io::stdout().flush().unwrap();
+        match cli::read_choice() {
+            1 => {
+                println!();
+                let a = match cli::read_i64("Spot A (batting order): ") {
+                    Some(x) => x as i32,
+                    None => continue,
+                };
+                let b = match cli::read_i64("Spot B (batting order): ") {
+                    Some(x) => x as i32,
+                    None => continue,
+                };
+                if let Err(e) = swap_spots(conn, game_id, team_id, a, b) {
+                    cli::show_error(&format!("Swap failed: {e}"));
+                }
+            }
+            2 => {
+                println!();
+                let spot = match cli::read_i64("Spot to replace (batting order): ") {
+                    Some(x) => x as i32,
+                    None => continue,
+                };
+
+                let bench = match load_bench_from_roster(conn, team_id, &lineup) {
+                    Ok(v) => v,
+                    Err(msg) => {
+                        cli::show_error(&msg);
+                        continue;
+                    }
+                };
+
+                if bench.is_empty() {
+                    cli::show_error("Bench is empty");
+                    continue;
+                }
+
+                // mostra panchina e fai scegliere
+                for (i, (_pid, num, f, l)) in bench.iter().enumerate() {
+                    println!("  {}. #{:<3} {} {}", i + 1, num, f, l);
+                }
+
+                let pick = match cli::read_i64("Select bench player (0 cancel): ") {
+                    Some(0) | None => continue,
+                    Some(x) if (x as usize) <= bench.len() => x as usize,
+                    _ => {
+                        cli::show_error("Invalid selection");
+                        continue;
+                    }
+                };
+
+                let bench_player_id = bench[pick - 1].0;
+
+                if let Err(e) =
+                    replace_with_roster_player(conn, game_id, team_id, spot, bench_player_id)
+                {
+                    cli::show_error(&format!("Replace failed: {e}"));
+                }
+            }
+            0 => break,
+            _ => cli::show_error("Invalid selection"),
+        }
+    }
 }

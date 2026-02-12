@@ -87,10 +87,113 @@ fn view_teams(db: &Database) {
     }
 }
 
-fn edit_team(_db: &Database) {
+fn edit_team(db: &Database) {
     cli::show_header("EDIT TEAM");
-    println!("🚧 Feature under development...\n");
-    cli::wait_for_enter();
+
+    match Team::get_all(db.get_connection()) {
+        Ok(teams) => {
+            if teams.is_empty() {
+                cli::show_error("No teams available");
+                return;
+            }
+
+            for (i, team) in teams.iter().enumerate() {
+                cli::show_list_item(i + 1, &team.name);
+            }
+
+            if let Some(choice) = cli::read_i64("\nSelect team to edit: ") {
+                if choice < 1 || choice as usize > teams.len() {
+                    cli::show_error("Invalid selection");
+                    return;
+                }
+
+                let mut team = teams[(choice - 1) as usize].clone();
+
+                let current_name = team.name.clone();
+                let name = cli::read_string(&format!("Team name [{}]: ", current_name));
+                if !name.is_empty() {
+                    team.name = name;
+                }
+
+                let city = cli::read_string(&format!(
+                    "City [optional] [{}]: ",
+                    team.city.clone().unwrap_or_else(|| "None".to_string())
+                ));
+                if !city.is_empty() {
+                    team.city = Some(city);
+                }
+
+                let abbreviation = cli::read_string(&format!(
+                    "Abbreviation (e.g. BOS) [optional] [{}]: ",
+                    team.abbreviation
+                        .clone()
+                        .unwrap_or_else(|| "None".to_string())
+                ));
+                if !abbreviation.is_empty() {
+                    team.abbreviation = Some(abbreviation);
+                }
+
+                let founded_year_input = cli::read_string(&format!(
+                    "Founded year [optional] [{}]: ",
+                    team.founded_year
+                        .map(|year| year.to_string())
+                        .unwrap_or_else(|| "None".to_string())
+                ));
+                if !founded_year_input.is_empty() {
+                    match founded_year_input.parse() {
+                        Ok(year) => team.founded_year = Some(year),
+                        Err(_) => {
+                            cli::show_error("Invalid founded year");
+                            return;
+                        }
+                    }
+                }
+
+                let league_id = match League::get_all(db.get_connection()) {
+                    Ok(leagues) if !leagues.is_empty() => {
+                        println!("\nAvailable leagues:");
+                        for (i, league) in leagues.iter().enumerate() {
+                            cli::show_list_item(i + 1, &league.name);
+                        }
+                        cli::show_list_item(0, "No league");
+
+                        let current_league_label = team
+                            .league_id
+                            .and_then(|id| {
+                                leagues
+                                    .iter()
+                                    .find(|league| league.id == Some(id))
+                                    .map(|league| league.name.clone())
+                            })
+                            .unwrap_or_else(|| "None".to_string());
+
+                        match cli::read_i64(&format!(
+                            "\nLeague [{}] (ENTER to keep, 0 for none): ",
+                            current_league_label
+                        )) {
+                            None => team.league_id,
+                            Some(0) => None,
+                            Some(choice) if choice > 0 && choice as usize <= leagues.len() => {
+                                leagues[(choice - 1) as usize].id
+                            }
+                            _ => {
+                                cli::show_error("Invalid league selection");
+                                return;
+                            }
+                        }
+                    }
+                    _ => team.league_id,
+                };
+                team.league_id = league_id;
+
+                match team.update(db.get_connection()) {
+                    Ok(_) => cli::show_success("Team updated!"),
+                    Err(e) => cli::show_error(&format!("Error: {}", e)),
+                }
+            }
+        }
+        Err(e) => cli::show_error(&format!("Error: {}", e)),
+    }
 }
 
 fn import_team(_db: &Database) {

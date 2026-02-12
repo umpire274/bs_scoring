@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Batch import with progress reporting
     - Export with automatic formatting
 
+- **Interactive lineup editing** for games in **Pre-Game** status
+    - Swap two batting spots without recreating the entire lineup
+    - Replace a lineup spot with any eligible roster player
+- **Dynamic bench detection** (roster − current lineup)
+- **Transaction-safe lineup updates**
+
 ### Changed
 
 - **Database Schema v5 (Migration)**:
@@ -50,6 +56,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Update Player: separate first/last name updates
     - All displays use `full_name()` method
     - Removed batting order prompts
+
+- **Lineup editing** no longer requires full lineup re-entry
+- Replace logic **now updates** the existing lineup slot directly (no bench persistence)
+- **Swap logic** now exchanges players between spots instead of modifying batting_order
+- Improved borrow handling with scoped statements to allow safe transactions
+
+### 🛠 Fixed
+
+- Resolved UNIQUE constraint violations during lineup swap
+- Resolved CHECK constraint violations on `batting_order`
+- Corrected transaction mutability handling (`&mut Connection`)
+- Eliminated duplicate index conflicts during replace operations
+
+### 🧱 Internal
+
+- Introduced helper functions for:
+    - Lineup printing
+    - Roster-based bench computation
+    - Safe transactional replace and swap
+- Improved separation between read-only and write operations
 
 ### Technical Details
 
