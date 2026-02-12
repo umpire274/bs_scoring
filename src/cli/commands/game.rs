@@ -967,7 +967,7 @@ fn edit_lineup_helper(
         };
 
         // stampa lineup (puoi riusare il tuo blocco)
-        print_lineup(&team_name, team_type, &lineup);
+        print_lineup(team_name, team_type, &lineup);
 
         println!("\nActions:");
         println!("  1) Swap two spots");
