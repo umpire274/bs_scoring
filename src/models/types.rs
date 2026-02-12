@@ -63,6 +63,48 @@ impl fmt::Display for Position {
     }
 }
 
+/// Game status
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum GameStatus {
+    Pregame = 1,
+    InProgress = 2,
+    Finished = 3,
+}
+
+impl GameStatus {
+    pub fn from_i64(n: i64) -> Option<Self> {
+        match n {
+            1 => Some(GameStatus::Pregame),
+            2 => Some(GameStatus::InProgress),
+            3 => Some(GameStatus::Finished),
+            _ => None,
+        }
+    }
+
+    pub fn to_i64(self) -> i64 {
+        self as i64
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GameStatus::Pregame => "pregame",
+            GameStatus::InProgress => "in_progress",
+            GameStatus::Finished => "finished",
+        }
+    }
+}
+
+impl fmt::Display for GameStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            GameStatus::Pregame => "Pre-Game",
+            GameStatus::InProgress => "In Progress",
+            GameStatus::Finished => "Finished",
+        };
+        write!(f, "{}", name)
+    }
+}
+
 /// Type of hit
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum HitType {

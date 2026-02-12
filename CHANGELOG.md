@@ -7,6 +7,168 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.1] - 2026-02-11
+
+### Added
+
+- **GameStatus Enum**:
+    - New enum for game status tracking
+    - `Pregame = 1` - Game created, lineups can be freely edited
+    - `InProgress = 2` - Game started, lineup changes are substitutions
+    - `Finished = 3` - Game completed
+    - Display trait implementation for user-friendly output
+    - Conversion methods: `from_i64()`, `to_i64()`, `as_str()`
+
+- **Edit Lineups Functionality**:
+    - Access via: Main Menu → Game Management → Edit Game → Edit Lineups
+    - Shows only games with status = Pregame
+    - Select game from list of pre-game games
+    - Choose team (Away or Home) to edit
+    - View current lineup before editing
+    - Complete lineup re-entry using same interface as game creation
+    - Changes are NOT substitutions (pre-game modifications)
+    - Old lineup completely replaced with new one
+
+- **Pre-Game Lineup Management**:
+    - Freely modify lineups before game starts
+    - No substitution tracking for pre-game changes
+    - Players can be moved, swapped, or replaced without restrictions
+    - Useful for last-minute roster adjustments
+
+### Changed
+
+- **Database Schema v4 (Migration)**:
+    - **Modified `games` table**:
+        - Changed `status` field from TEXT to INTEGER
+        - **Removed** `current_inning` and `current_half` fields
+            - These are now derived from `at_bats` table
+            - Current inning = MAX(inning) from at_bats for this game
+            - No redundant data storage
+        - Default status value: 1 (Pregame)
+        - Data migration:
+            - 'not_started'/'pregame' → 1
+            - 'in_progress' → 2
+            - 'completed'/'finished' → 3
+    - Migration uses table recreation approach (SQLite limitation)
+    - Automatic conversion of existing games
+    - Added index on `game_date` for performance
+
+- **Game Status Display**:
+    - Updated `list_games()` to use new GameStatus enum
+    - Status icons:
+        - 🆕 Pregame (was "not started")
+        - ▶️ In Progress
+        - ✅ Finished (was "completed")
+    - Removed "suspended" status (not used)
+    - Better visual consistency
+
+- **Inning Display**:
+    - Removed from game list (no longer stored in games table)
+    - Current inning/half now derived from at_bats table
+    - Cleaner games table schema (no redundant data)
+
+### Fixed
+
+- **Optional Fields Handling**:
+    - `current_inning` and `current_half` properly handled as Option<>
+    - No more errors when these fields are NULL
+    - Graceful fallback to "-" in display
+
+### Technical Details
+
+- **GameStatus Enum** (`src/models/types.rs`):
+    - Implements Debug, Clone, Copy, Serialize, Deserialize, PartialEq
+    - Numeric representation matches database INTEGER values
+    - Type-safe status handling throughout codebase
+
+- **Migration v4** (`src/db/migrations.rs`):
+    - Complete table recreation (SQLite doesn't support ALTER COLUMN TYPE)
+    - Steps:
+        1. Create `games_new` with INTEGER status
+        2. Copy data with CASE conversion
+        3. Drop old `games` table
+        4. Rename `games_new` to `games`
+    - Safe migration with data preservation
+    - Recreates indexes after table swap
+
+- **Edit Lineups Flow**:
+    1. Query games WHERE status = 1 (Pregame only)
+    2. Display available games with metadata
+    3. User selects game and team
+    4. Load current lineup from game_lineups table
+    5. Display current lineup for review
+    6. Re-enter complete lineup using `insert_team_lineup()`
+    7. DELETE old lineup entries
+    8. INSERT new lineup entries
+    9. Transaction ensures atomicity
+
+### User Experience
+
+**Before v0.4.1:**
+
+```
+Create game → Enter lineups → Cannot edit before game starts
+```
+
+**After v0.4.1:**
+
+```
+Create game → Enter lineups → Edit if needed → Play Ball!
+                    ↑                ↑
+                    └─ Can modify freely while status = Pregame
+```
+
+### Breaking Changes
+
+- **Database Schema**: Requires migration from v3 to v4
+    - Status field type changed: TEXT → INTEGER
+    - Automatic migration on first run
+    - Existing status values converted automatically
+    - Backup recommended before upgrade
+
+### Database Migration Details
+
+**Status Value Mapping:**
+
+```
+OLD (TEXT)           → NEW (INTEGER)
+─────────────────────────────────────
+'not_started'        → 1 (Pregame)
+'pregame'            → 1 (Pregame)
+'in_progress'        → 2 (InProgress)
+'completed'          → 3 (Finished)
+'finished'           → 3 (Finished)
+(any other value)    → 1 (Pregame, default)
+```
+
+### Known Limitations
+
+- Lineup editing only available for Pregame games
+- Once game status changes to InProgress (via Play Ball), lineup editing becomes substitutions
+- Complete lineup replacement only (no individual player swap yet)
+- Substitution tracking not yet implemented (coming in v0.5.0+)
+
+### Future Enhancements (v0.5.0+)
+
+- Play Ball interface (changes status to InProgress)
+- Mid-game substitutions with tracking
+- Individual player position/order changes
+- Substitution history and reporting
+- Lineup comparison before/after changes
+
+---
+
+**Migration Path**: v0.4.0 → v0.4.1
+
+- Automatic schema migration v3 → v4 on startup
+- Status field converted from TEXT to INTEGER
+- All existing games preserved
+- Backup recommended before upgrade
+
+**Next Version**: v0.5.0 will implement "Play Ball!" interface and set status to InProgress
+
+---
+
 ## [0.4.0] - 2026-02-11
 
 ### Added
