@@ -3,8 +3,10 @@ use crate::db::player::Player;
 use crate::models::types::Position;
 use crate::utils::cli;
 use crate::{Database, Menu, Team};
+use std::fs;
 use std::io;
 use std::io::Write;
+use std::path::Path;
 
 pub fn handle_player_menu(db: &Database) {
     loop {
@@ -14,8 +16,407 @@ pub fn handle_player_menu(db: &Database) {
             PlayerMenuChoice::UpdatePlayer => update_player(db),
             PlayerMenuChoice::DeletePlayer => delete_player(db),
             PlayerMenuChoice::ChangeTeam => change_team(db),
+            PlayerMenuChoice::ImportExport => import_export_menu(db),
             PlayerMenuChoice::Back => break,
         }
+    }
+}
+
+fn import_export_menu(db: &Database) {
+    loop {
+        cli::show_header("IMPORT/EXPORT PLAYERS");
+        println!("  1. 📥 Import from CSV");
+        println!("  2. 📥 Import from JSON");
+        println!("  3. 📤 Export to CSV");
+        println!("  4. 📤 Export to JSON");
+        println!();
+        println!("  0. 🔙 Back");
+        println!();
+        print!("Select an option: ");
+        io::stdout().flush().unwrap();
+
+        match cli::read_choice() {
+            1 => import_csv(db),
+            2 => import_json(db),
+            3 => export_csv(db),
+            4 => export_json(db),
+            0 => break,
+            _ => {
+                println!("\n❌ Invalid choice. Press ENTER to continue...");
+                cli::wait_for_enter();
+            }
+        }
+    }
+}
+
+fn import_csv(db: &Database) {
+    cli::show_header("IMPORT PLAYERS FROM CSV");
+
+    let filepath = cli::read_string("CSV file path: ");
+    if filepath.is_empty() {
+        cli::show_error("File path is required!");
+        return;
+    }
+
+    let path = Path::new(&filepath);
+    if !path.exists() {
+        cli::show_error("File not found!");
+        return;
+    }
+
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            cli::show_error(&format!("Failed to read file: {}", e));
+            return;
+        }
+    };
+
+    let conn = db.get_connection();
+    let mut imported = 0;
+    let mut errors = 0;
+
+    // CSV format: team,number,first_name,last_name,position
+    for (line_num, line) in content.lines().enumerate() {
+        // Skip header if present
+        if line_num == 0 && line.to_lowercase().contains("team") {
+            continue;
+        }
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
+        if parts.len() != 5 {
+            println!(
+                "⚠️  Line {}: Invalid format (expected 5 fields, got {})",
+                line_num + 1,
+                parts.len()
+            );
+            errors += 1;
+            continue;
+        }
+
+        let team_name = parts[0];
+        let number = match parts[1].parse::<i32>() {
+            Ok(n) if n > 0 && n <= 99 => n,
+            _ => {
+                println!(
+                    "⚠️  Line {}: Invalid jersey number '{}'",
+                    line_num + 1,
+                    parts[1]
+                );
+                errors += 1;
+                continue;
+            }
+        };
+        let first_name = parts[2].to_string();
+        let last_name = parts[3].to_string();
+        let position_num = match parts[4].parse::<u8>() {
+            Ok(n) if (1..=9).contains(&n) => n,
+            _ => {
+                println!("⚠️  Line {}: Invalid position '{}'", line_num + 1, parts[4]);
+                errors += 1;
+                continue;
+            }
+        };
+
+        if first_name.is_empty() {
+            println!("⚠️  Line {}: First name is required", line_num + 1);
+            errors += 1;
+            continue;
+        }
+
+        // Get or create team
+        let team_id = match get_or_create_team(conn, team_name) {
+            Ok(id) => id,
+            Err(e) => {
+                println!(
+                    "⚠️  Line {}: Failed to get/create team '{}': {}",
+                    line_num + 1,
+                    team_name,
+                    e
+                );
+                errors += 1;
+                continue;
+            }
+        };
+
+        // Create player
+        let position = Position::from_number(position_num).unwrap();
+        let mut player = Player::new(
+            team_id,
+            number,
+            first_name.clone(),
+            last_name.clone(),
+            position,
+        );
+
+        match player.create(conn) {
+            Ok(_) => {
+                println!(
+                    "✓ Imported: #{} {} {} ({}) - {}",
+                    number, first_name, last_name, team_name, position
+                );
+                imported += 1;
+            }
+            Err(e) => {
+                println!("⚠️  Line {}: Failed to create player: {}", line_num + 1, e);
+                errors += 1;
+            }
+        }
+    }
+
+    println!("\n═══════════════════════════════════════");
+    println!("✅ Import complete!");
+    println!("   Imported: {}", imported);
+    if errors > 0 {
+        println!("   Errors:   {}", errors);
+    }
+    println!("═══════════════════════════════════════\n");
+    cli::wait_for_enter();
+}
+
+fn import_json(db: &Database) {
+    cli::show_header("IMPORT PLAYERS FROM JSON");
+
+    let filepath = cli::read_string("JSON file path: ");
+    if filepath.is_empty() {
+        cli::show_error("File path is required!");
+        return;
+    }
+
+    let path = Path::new(&filepath);
+    if !path.exists() {
+        cli::show_error("File not found!");
+        return;
+    }
+
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            cli::show_error(&format!("Failed to read file: {}", e));
+            return;
+        }
+    };
+
+    // Parse JSON - continua nella prossima parte...
+    let players_data: Vec<serde_json::Value> = match serde_json::from_str(&content) {
+        Ok(data) => data,
+        Err(e) => {
+            cli::show_error(&format!("Invalid JSON format: {}", e));
+            return;
+        }
+    };
+
+    let conn = db.get_connection();
+    let mut imported = 0;
+    let mut errors = 0;
+
+    for (idx, player_data) in players_data.iter().enumerate() {
+        let team_name = match player_data.get("team").and_then(|v| v.as_str()) {
+            Some(t) => t,
+            None => {
+                println!("⚠️  Player {}: Missing 'team' field", idx + 1);
+                errors += 1;
+                continue;
+            }
+        };
+
+        let number = match player_data.get("number").and_then(|v| v.as_i64()) {
+            Some(n) if n > 0 && n <= 99 => n as i32,
+            _ => {
+                println!("⚠️  Player {}: Invalid 'number' field", idx + 1);
+                errors += 1;
+                continue;
+            }
+        };
+
+        let first_name = match player_data.get("first_name").and_then(|v| v.as_str()) {
+            Some(n) if !n.is_empty() => n.to_string(),
+            _ => {
+                println!(
+                    "⚠️  Player {}: Missing or empty 'first_name' field",
+                    idx + 1
+                );
+                errors += 1;
+                continue;
+            }
+        };
+
+        let last_name = match player_data.get("last_name").and_then(|v| v.as_str()) {
+            Some(n) => n.to_string(),
+            None => String::new(),
+        };
+
+        let position_num = match player_data.get("position").and_then(|v| v.as_i64()) {
+            Some(n) if (1..=9).contains(&n) => n as u8,
+            _ => {
+                println!("⚠️  Player {}: Invalid 'position' field", idx + 1);
+                errors += 1;
+                continue;
+            }
+        };
+
+        // Get or create team
+        let team_id = match get_or_create_team(conn, team_name) {
+            Ok(id) => id,
+            Err(e) => {
+                println!(
+                    "⚠️  Player {}: Failed to get/create team '{}': {}",
+                    idx + 1,
+                    team_name,
+                    e
+                );
+                errors += 1;
+                continue;
+            }
+        };
+
+        // Create player
+        let position = Position::from_number(position_num).unwrap();
+        let mut player = Player::new(
+            team_id,
+            number,
+            first_name.clone(),
+            last_name.clone(),
+            position,
+        );
+
+        match player.create(conn) {
+            Ok(_) => {
+                println!(
+                    "✓ Imported: #{} {} {} ({}) - {}",
+                    number, first_name, last_name, team_name, position
+                );
+                imported += 1;
+            }
+            Err(e) => {
+                println!("⚠️  Player {}: Failed to create player: {}", idx + 1, e);
+                errors += 1;
+            }
+        }
+    }
+
+    println!("\n═══════════════════════════════════════");
+    println!("✅ Import complete!");
+    println!("   Imported: {}", imported);
+    if errors > 0 {
+        println!("   Errors:   {}", errors);
+    }
+    println!("═══════════════════════════════════════\n");
+    cli::wait_for_enter();
+}
+
+fn export_csv(db: &Database) {
+    cli::show_header("EXPORT PLAYERS TO CSV");
+
+    let conn = db.get_connection();
+    let players = get_all_players_with_teams(conn);
+
+    if players.is_empty() {
+        cli::show_error("No players to export!");
+        return;
+    }
+
+    let filepath = cli::read_string("Output CSV file path (e.g., players.csv): ");
+    if filepath.is_empty() {
+        cli::show_error("File path is required!");
+        return;
+    }
+
+    let mut csv_content = String::from("team,number,first_name,last_name,position\n");
+
+    for (player, team_name) in &players {
+        csv_content.push_str(&format!(
+            "{},{},{},{},{}\n",
+            team_name,
+            player.number,
+            player.first_name,
+            player.last_name,
+            player.position.to_number()
+        ));
+    }
+
+    match fs::write(&filepath, csv_content) {
+        Ok(_) => {
+            cli::show_success(&format!(
+                "Exported {} players to '{}'\n\nFormat: team,number,first_name,last_name,position",
+                players.len(),
+                filepath
+            ));
+        }
+        Err(e) => {
+            cli::show_error(&format!("Failed to write file: {}", e));
+        }
+    }
+}
+
+fn export_json(db: &Database) {
+    cli::show_header("EXPORT PLAYERS TO JSON");
+
+    let conn = db.get_connection();
+    let players = get_all_players_with_teams(conn);
+
+    if players.is_empty() {
+        cli::show_error("No players to export!");
+        return;
+    }
+
+    let filepath = cli::read_string("Output JSON file path (e.g., players.json): ");
+    if filepath.is_empty() {
+        cli::show_error("File path is required!");
+        return;
+    }
+
+    let mut players_json = Vec::new();
+
+    for (player, team_name) in &players {
+        let player_obj = serde_json::json!({
+            "team": team_name,
+            "number": player.number,
+            "first_name": player.first_name,
+            "last_name": player.last_name,
+            "position": player.position.to_number()
+        });
+        players_json.push(player_obj);
+    }
+
+    let json_content = match serde_json::to_string_pretty(&players_json) {
+        Ok(json) => json,
+        Err(e) => {
+            cli::show_error(&format!("Failed to serialize JSON: {}", e));
+            return;
+        }
+    };
+
+    match fs::write(&filepath, json_content) {
+        Ok(_) => {
+            cli::show_success(&format!(
+                "Exported {} players to '{}'",
+                players.len(),
+                filepath
+            ));
+        }
+        Err(e) => {
+            cli::show_error(&format!("Failed to write file: {}", e));
+        }
+    }
+}
+
+fn get_or_create_team(conn: &rusqlite::Connection, team_name: &str) -> rusqlite::Result<i64> {
+    // Try to find existing team
+    let mut stmt = conn.prepare("SELECT id FROM teams WHERE name = ?1")?;
+
+    match stmt.query_row([team_name], |row| row.get(0)) {
+        Ok(id) => Ok(id),
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            // Team doesn't exist, create it
+            let mut team = Team::new(team_name.to_string(), None, None, None, None);
+            team.create(conn)
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -64,11 +465,13 @@ fn add_player(db: &Database) {
                 let team_id = team.id.unwrap();
 
                 // Get player info
-                let name = cli::read_string("Player name: ");
-                if name.is_empty() {
-                    cli::show_error("Name is required!");
+                let first_name = cli::read_string("First name: ");
+                if first_name.is_empty() {
+                    cli::show_error("First name is required!");
                     return;
                 }
+
+                let last_name = cli::read_string("Last name: ");
 
                 let number = match cli::read_i32("Jersey number: ") {
                     Some(n) if n > 0 && n <= 99 => n,
@@ -101,35 +504,30 @@ fn add_player(db: &Database) {
                     }
                 };
 
-                let batting_order = cli::read_i32("Batting order (optional, 0 to skip): ");
-                let batting_order = if batting_order == Some(0) {
-                    None
-                } else {
-                    batting_order
-                };
-
                 // Create player
-                let mut player =
-                    Player::new(team_id, number, name.clone(), position, batting_order);
+                let mut player = Player::new(
+                    team_id,
+                    number,
+                    first_name.clone(),
+                    last_name.clone(),
+                    position,
+                );
 
                 match player.create(conn) {
                     Ok(id) => {
                         cli::show_success(&format!(
-                            "Player created successfully!\n\n   {:<14} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {:?}\n   {:<14} {}",
+                            "Player created successfully!\n\n   {:<14} {}\n   {:<14} {} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {:?}",
                             "ID:",
                             id,
                             "Name:",
-                            name,
+                            first_name,
+                            last_name,
                             "Number:",
                             number,
                             "Team:",
                             team.name,
                             "Position:",
-                            position,
-                            "Batting Order:",
-                            batting_order
-                                .map(|o| o.to_string())
-                                .unwrap_or("-".to_string())
+                            position
                         ));
                     }
                     Err(e) => {
@@ -203,15 +601,11 @@ fn list_players(db: &Database) {
 
         for (player, team_name) in players {
             println!(
-                "  #{:<3} {:<25} {:<15} {:<12} Order: {}",
+                "  #{:<3} {:<25} {:<15} {:?}",
                 player.number,
-                player.name,
+                player.full_name(),
                 format!("({})", team_name),
-                format!("{:?}", player.position),
-                player
-                    .batting_order
-                    .map(|o| o.to_string())
-                    .unwrap_or("-".to_string())
+                player.position
             );
         }
         cli::show_separator();
@@ -223,7 +617,7 @@ fn list_players(db: &Database) {
 fn get_all_players_with_teams(conn: &rusqlite::Connection) -> Vec<(Player, String)> {
     let mut stmt = conn
         .prepare(
-            "SELECT p.id, p.team_id, p.number, p.name, p.position, p.batting_order, p.is_active, t.name as team_name
+            "SELECT p.id, p.team_id, p.number, p.first_name, p.last_name, p.position, p.is_active, t.name as team_name
              FROM players p
              JOIN teams t ON p.team_id = t.id
              WHERE p.is_active = 1
@@ -268,10 +662,16 @@ fn update_player(db: &Database) {
 
         println!("\nCurrent values (press ENTER to keep):\n");
 
-        // Update name
-        let new_name = cli::read_string(&format!("Name [{}]: ", player.name));
-        if !new_name.is_empty() {
-            player.name = new_name;
+        // Update first name
+        let new_first = cli::read_string(&format!("First name [{}]: ", player.first_name));
+        if !new_first.is_empty() {
+            player.first_name = new_first;
+        }
+
+        // Update last name
+        let new_last = cli::read_string(&format!("Last name [{}]: ", player.last_name));
+        if !new_last.is_empty() {
+            player.last_name = new_last;
         }
 
         // Update number
@@ -293,17 +693,6 @@ fn update_player(db: &Database) {
             && let Some(new_pos) = Position::from_number(pos as u8)
         {
             player.position = new_pos;
-        }
-
-        // Update batting order
-        if let Some(new_order) = cli::read_i32(&format!(
-            "Batting order [{}]: ",
-            player
-                .batting_order
-                .map(|o| o.to_string())
-                .unwrap_or("-".to_string())
-        )) {
-            player.batting_order = if new_order > 0 { Some(new_order) } else { None };
         }
 
         match player.update(conn) {
@@ -345,7 +734,9 @@ fn delete_player(db: &Database) {
 
         if cli::confirm(&format!(
             "Are you sure you want to delete '#{} {} ({})'?",
-            player.number, player.name, team_name
+            player.number,
+            player.full_name(),
+            team_name
         )) {
             if let Some(id) = player.id {
                 match Player::delete(conn, id) {
@@ -452,7 +843,7 @@ fn display_player_list(players: &[(Player, String)]) {
     for (i, (player, team_name)) in players.iter().enumerate() {
         cli::show_list_item(
             i + 1,
-            &format!("#{} {} ({})", player.number, player.name, team_name),
+            &format!("#{} {} ({})", player.number, player.full_name(), team_name),
         );
     }
 }

@@ -6,9 +6,9 @@ pub struct Player {
     pub id: Option<i64>,
     pub team_id: i64,
     pub number: i32,
-    pub name: String,
+    pub first_name: String,
+    pub last_name: String,
     pub position: Position,
-    pub batting_order: Option<i32>,
     pub is_active: bool,
 }
 
@@ -16,37 +16,42 @@ impl Player {
     pub fn new(
         team_id: i64,
         number: i32,
-        name: String,
+        first_name: String,
+        last_name: String,
         position: Position,
-        batting_order: Option<i32>,
     ) -> Self {
         Player {
             id: None,
             team_id,
             number,
-            name,
+            first_name,
+            last_name,
             position,
-            batting_order,
             is_active: true,
         }
     }
 
+    /// Get full name
+    pub fn full_name(&self) -> String {
+        format!("{} {}", self.first_name, self.last_name)
+    }
+
     /// Helper function to map a database row to a Player struct
     fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
-        let position_num: u8 = row.get(4)?;
+        let position_num: u8 = row.get(5)?;
         Ok(Player {
             id: Some(row.get(0)?),
             team_id: row.get(1)?,
             number: row.get(2)?,
-            name: row.get(3)?,
+            first_name: row.get(3)?,
+            last_name: row.get(4)?,
             position: Position::from_number(position_num).unwrap_or(Position::RightField),
-            batting_order: row.get(5)?,
             is_active: row.get(6)?,
         })
     }
 
     /// Helper to map a database row with team_name to (Player, String)
-    /// Expects columns: id, team_id, number, name, position, batting_order, is_active, team_name
+    /// Expects columns: id, team_id, number, first_name, last_name, position, is_active, team_name
     pub fn from_row_with_team(row: &rusqlite::Row) -> rusqlite::Result<(Self, String)> {
         let player = Self::from_row(row)?;
         let team_name: String = row.get(7)?;
@@ -56,14 +61,14 @@ impl Player {
     /// Create a new player
     pub fn create(&mut self, conn: &Connection) -> Result<i64> {
         conn.execute(
-            "INSERT INTO players (team_id, number, name, position, batting_order, is_active)
+            "INSERT INTO players (team_id, number, first_name, last_name, position, is_active)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 self.team_id,
                 self.number,
-                self.name,
+                self.first_name,
+                self.last_name,
                 self.position.to_number(),
-                self.batting_order,
                 self.is_active
             ],
         )?;
@@ -76,7 +81,7 @@ impl Player {
     /// Get player by ID
     pub fn get_by_id(conn: &Connection, id: i64) -> Result<Player> {
         let mut stmt = conn.prepare(
-            "SELECT id, team_id, number, name, position, batting_order, is_active
+            "SELECT id, team_id, number, first_name, last_name, position, is_active
              FROM players WHERE id = ?1",
         )?;
 
@@ -86,9 +91,9 @@ impl Player {
     /// Get all players for a team
     pub fn get_by_team(conn: &Connection, team_id: i64) -> Result<Vec<Player>> {
         let mut stmt = conn.prepare(
-            "SELECT id, team_id, number, name, position, batting_order, is_active
+            "SELECT id, team_id, number, first_name, last_name, position, is_active
              FROM players WHERE team_id = ?1 AND is_active = 1
-             ORDER BY batting_order, number",
+             ORDER BY number",
         )?;
 
         let players = stmt.query_map(params![team_id], Self::from_row)?;
@@ -100,14 +105,14 @@ impl Player {
     pub fn update(&self, conn: &Connection) -> Result<()> {
         if let Some(id) = self.id {
             conn.execute(
-                "UPDATE players SET team_id = ?1, number = ?2, name = ?3,
-                 position = ?4, batting_order = ?5, is_active = ?6 WHERE id = ?7",
+                "UPDATE players SET team_id = ?1, number = ?2, first_name = ?3, last_name = ?4,
+                 position = ?5, is_active = ?6 WHERE id = ?7",
                 params![
                     self.team_id,
                     self.number,
-                    self.name,
+                    self.first_name,
+                    self.last_name,
                     self.position.to_number(),
-                    self.batting_order,
                     self.is_active,
                     id
                 ],
@@ -141,14 +146,15 @@ mod tests {
         let mut player = Player::new(
             team_id,
             99,
-            "Aaron Judge".to_string(),
+            "Aaron".to_string(),
+            "Judge".to_string(),
             Position::RightField,
-            Some(1),
         );
         let player_id = player.create(conn).unwrap();
         assert!(player_id > 0);
 
         let roster = Player::get_by_team(conn, team_id).unwrap();
         assert_eq!(roster.len(), 1);
+        assert_eq!(roster[0].full_name(), "Aaron Judge");
     }
 }

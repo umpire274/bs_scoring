@@ -227,6 +227,10 @@ impl Database {
     pub fn get_connection(&self) -> &Connection {
         &self.conn
     }
+
+    pub fn get_connection_mut(&mut self) -> &mut Connection {
+        &mut self.conn
+    }
 }
 
 #[cfg(test)]

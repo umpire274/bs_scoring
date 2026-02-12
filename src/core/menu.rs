@@ -51,6 +51,7 @@ pub enum PlayerMenuChoice {
     UpdatePlayer,
     DeletePlayer,
     ChangeTeam,
+    ImportExport,
     Back,
 }
 
@@ -83,7 +84,7 @@ impl Menu {
             println!();
             println!("  0. 🚪 Exit");
             println!();
-            print!("Select an option (1-5 or 0): ");
+            print!("Select an option (1-6 or 0): ");
             io::stdout().flush().unwrap();
 
             let choice = utils::cli::read_choice();
@@ -185,7 +186,7 @@ impl Menu {
             println!();
             println!("  0. 🔙 Back to Main Menu");
             println!();
-            print!("Select an option (1-6 or 0): ");
+            print!("Select an option (1-5 or 0): ");
             io::stdout().flush().unwrap();
 
             let choice = utils::cli::read_choice();
@@ -217,10 +218,11 @@ impl Menu {
             println!("  3. ✏️  Update Player");
             println!("  4. 🗑️  Delete Player");
             println!("  5. 🔄 Change Team");
+            println!("  6. 📥 Import/Export Players (JSON/CSV)");
             println!();
             println!("  0. 🔙 Back to Main Menu");
             println!();
-            print!("Select an option (1-5 or 0): ");
+            print!("Select an option (1-6 or 0): ");
             io::stdout().flush().unwrap();
 
             let choice = utils::cli::read_choice();
@@ -230,6 +232,7 @@ impl Menu {
                 3 => return PlayerMenuChoice::UpdatePlayer,
                 4 => return PlayerMenuChoice::DeletePlayer,
                 5 => return PlayerMenuChoice::ChangeTeam,
+                6 => return PlayerMenuChoice::ImportExport,
                 0 => return PlayerMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");

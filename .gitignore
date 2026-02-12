@@ -26,6 +26,8 @@ Cargo.lock
 *.sqlite3
 *.bak
 *.backup
+*.csv
+*.json
 
 *.zip
 *.tar.gz
@@ -44,6 +46,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
 dist/
 build/
 .cache/

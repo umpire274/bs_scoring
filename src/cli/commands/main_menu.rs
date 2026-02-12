@@ -1,7 +1,7 @@
 use crate::cli::commands::{db, game, leagues, players, statistics, team};
 use crate::{Database, MainMenuChoice, Menu};
 
-pub fn run_main_menu(db: &Database) {
+pub fn run_main_menu(db: &mut Database) {
     loop {
         match Menu::show_main_menu() {
             MainMenuChoice::ManageGames => game::handle_game_menu(db),

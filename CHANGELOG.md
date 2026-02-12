@@ -7,6 +7,172 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.2] - 2026-02-12
+
+### Added
+
+- **Player Import/Export System**:
+    - Import players from CSV files
+    - Import players from JSON files
+    - Export players to CSV files
+    - Export players to JSON files
+    - Auto-creation of teams during import
+    - Comprehensive error handling and reporting
+    - Format: `team,number,first_name,last_name,position`
+
+- **Import/Export Menu**:
+    - New submenu: Player Management → Import/Export Players
+    - CSV format support with header detection
+    - JSON format support with validation
+    - Batch import with progress reporting
+    - Export with automatic formatting
+
+- **Interactive lineup editing** for games in **Pre-Game** status
+    - Swap two batting spots without recreating the entire lineup
+    - Replace a lineup spot with any eligible roster player
+- **Dynamic bench detection** (roster − current lineup)
+- **Transaction-safe lineup updates**
+
+### Changed
+
+- **Database Schema v5 (Migration)**:
+    - **Modified `players` table**:
+        - **Removed** `batting_order` field (now managed in game_lineups)
+        - **Removed** `name` field (split into first_name and last_name)
+        - **Added** `first_name TEXT NOT NULL`
+        - **Added** `last_name TEXT NOT NULL`
+    - Automatic name splitting during migration (split on first space)
+    - Maintains backward compatibility
+
+- **Player Model Updates**:
+    - `Player::new()` now takes `first_name` and `last_name` separately
+    - Added `full_name()` method: returns "FirstName LastName"
+    - Removed `batting_order` from all operations
+    - Updated all database queries and display functions
+
+- **Player Management UI**:
+    - Add Player: separate fields for first/last name
+    - List Players: displays full name via `full_name()`
+    - Update Player: separate first/last name updates
+    - All displays use `full_name()` method
+    - Removed batting order prompts
+
+- **Lineup editing** no longer requires full lineup re-entry
+- Replace logic **now updates** the existing lineup slot directly (no bench persistence)
+- **Swap logic** now exchanges players between spots instead of modifying batting_order
+- Improved borrow handling with scoped statements to allow safe transactions
+
+### 🛠 Fixed
+
+- Resolved UNIQUE constraint violations during lineup swap
+- Resolved CHECK constraint violations on `batting_order`
+- Corrected transaction mutability handling (`&mut Connection`)
+- Eliminated duplicate index conflicts during replace operations
+
+### 🧱 Internal
+
+- Introduced helper functions for:
+    - Lineup printing
+    - Roster-based bench computation
+    - Safe transactional replace and swap
+- Improved separation between read-only and write operations
+
+### Technical Details
+
+- **Migration v5** (`src/db/migrations.rs`):
+    - Table recreation approach for schema changes
+    - Name splitting logic: `substr(name, 1, instr(name, ' ') - 1)` for first_name
+    - Handles edge cases: single-word names, empty last names
+    - Preserves all existing player data
+
+- **Import Functions**:
+    - `import_csv()`: Line-by-line CSV parsing with validation
+    - `import_json()`: JSON array parsing with field validation
+    - `get_or_create_team()`: Auto-creates missing teams
+    - Error tracking per line/player
+    - Progress reporting during import
+
+- **Export Functions**:
+    - `export_csv()`: Generates CSV with header row
+    - `export_json()`: Pretty-printed JSON output
+    - Uses `serde_json` for JSON serialization
+    - File path validation
+
+- **Format Specifications**:
+    - **CSV**: `team,number,first_name,last_name,position`
+    - **JSON**: Array of objects with fields: team, number, first_name, last_name, position
+    - Position: numeric value 1-9 (1=P, 2=C, 3=1B, etc.)
+    - Number: 1-99
+    - Team: full team name (auto-created if doesn't exist)
+
+### File Changes
+
+- `src/db/player.rs`: Complete rewrite for first_name/last_name
+- `src/db/migrations.rs`: Added migration_v5
+- `src/cli/commands/players.rs`: Complete rewrite with import/export
+- `src/core/menu.rs`: Added ImportExport to PlayerMenuChoice
+- `src/cli/commands/game.rs`: Updated all player.name → player.full_name()
+- `examples/players_example.csv`: Sample CSV file
+- `examples/players_example.json`: Sample JSON file
+
+### Breaking Changes
+
+- **Database migration required (v4 → v5)**
+- **Player struct changed**:
+    - Old: `name: String, batting_order: Option<i32>`
+    - New: `first_name: String, last_name: String`
+- **Player::new() signature changed**
+- All code using `player.name` must use `player.full_name()`
+
+### Example Import/Export
+
+**CSV Example:**
+
+```csv
+team,number,first_name,last_name,position
+Bologna,5,John,Smith,6
+Modena,10,Carlos,Rodriguez,3
+```
+
+**JSON Example:**
+
+```json
+[
+  {
+    "team": "Bologna",
+    "number": 5,
+    "first_name": "John",
+    "last_name": "Smith",
+    "position": 6
+  }
+]
+```
+
+### Migration Notes
+
+**Name Splitting Logic:**
+
+- "John Smith" → first_name="John", last_name="Smith"
+- "John" → first_name="John", last_name=""
+- "John Paul Jones" → first_name="John", last_name="Paul Jones"
+
+**Batting Order:**
+
+- Previously stored in players table (per-player default)
+- Now only in game_lineups table (per-game specific)
+- More flexible: players can bat in different positions per game
+
+---
+
+**Migration Path**: v0.4.1 → v0.4.2
+
+- Automatic schema migration v4 → v5
+- All player names split automatically
+- batting_order removed (use game_lineups instead)
+- Backup recommended before upgrade
+
+---
+
 ## [0.4.1] - 2026-02-11
 
 ### Added
