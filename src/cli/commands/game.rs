@@ -616,9 +616,7 @@ fn insert_team_lineup(
         for player in &roster {
             println!(
                 "  #{:<3} {} ({})",
-                player.number,
-                player.name,
-                player.position
+                player.number, player.name, player.position
             );
         }
         println!();
