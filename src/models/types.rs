@@ -46,6 +46,23 @@ impl Position {
     }
 }
 
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Position::Pitcher => "P",
+            Position::Catcher => "C",
+            Position::FirstBase => "1B",
+            Position::SecondBase => "2B",
+            Position::ThirdBase => "3B",
+            Position::Shortstop => "SS",
+            Position::LeftField => "LF",
+            Position::CenterField => "CF",
+            Position::RightField => "RF",
+        };
+        write!(f, "{}", name)
+    }
+}
+
 /// Type of hit
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum HitType {

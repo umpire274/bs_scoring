@@ -87,8 +87,6 @@ impl Database {
                 away_hits INTEGER DEFAULT 0,
                 home_errors INTEGER DEFAULT 0,
                 away_errors INTEGER DEFAULT 0,
-                current_inning INTEGER DEFAULT 1,
-                current_half TEXT DEFAULT 'Top',
                 status TEXT DEFAULT 'in_progress',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (home_team_id) REFERENCES teams(id),

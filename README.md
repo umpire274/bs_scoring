@@ -1,20 +1,22 @@
-# ⚾ Baseball Scorer - v0.2.5
+# ⚾ Baseball Scorer - v0.4.0
 
 A comprehensive baseball and softball scoring application with SQLite persistence, official scoring symbols support,
-cross-platform compatibility, and professional database management.
+cross-platform compatibility, professional database management, and complete lineup management with DH support.
 
-## 🆕 What's New in v0.2.5
+## 🆕 What's New in v0.4.0
 
-- ✅ **Database Migration System**: Automatic and manual schema migrations with version tracking
-- ✅ **Meta Table**: Application metadata storage (schema version, backup/restore dates)
-- ✅ **Incremental Migrations**: Safe, tracked database schema updates
-- ✅ **Migration Interface**: Manual migration execution via DB management menu
+- ✅ **Complete Lineup Entry**: Full lineup management during game creation with validation
+- ✅ **Designated Hitter Support**: Independent DH option for each team with proper pitcher handling
+- ✅ **Game Time Field**: Record both date and time for each game
+- ✅ **Custom Game IDs**: Option to use custom game identifiers
+- ✅ **Schema v3**: New `game_lineups` table for complete lineup tracking
 
 ### Recent Versions
 
-**v0.2.4** - Complete database management suite with backup/restore, VACUUM, status monitoring, and game export  
-**v0.2.3** - CLI commands refactoring, main menu loop extraction, DB management menu  
-**v0.2.2** - Library support and standard Rust project structure
+**v0.3.1** - Complete CLI menu system, game metadata management  
+**v0.3.0** - Game management system with metadata tracking  
+**v0.2.5** - Database migration system with meta table  
+**v0.2.4** - Complete database management suite
 
 ## 📁 Project Structure
 
@@ -32,7 +34,7 @@ bs_scoring/
     │   ├── mod.rs
     │   └── commands/      # Command handlers
     │       ├── db.rs      # Database management
-    │       ├── game.rs    # Game operations
+    │       ├── game.rs    # Game operations + LINEUP ENTRY (NEW v0.4.0)
     │       ├── leagues.rs # League management
     │       ├── main_menu.rs # Main menu loop
     │       ├── statistics.rs # Statistics display
@@ -45,7 +47,8 @@ bs_scoring/
     │   ├── database.rs    # SQLite schema and operations
     │   ├── league.rs      # League CRUD
     │   ├── team.rs        # Team and Player CRUD
-    │   └── migrations.rs  # Schema migration system (NEW v0.2.5)
+    │   ├── player.rs      # Player operations
+    │   └── migrations.rs  # Schema migration system (v3 in v0.4.0)
     ├── models/            # Data types
     │   └── types.rs       # Game scoring types
     └── utils/             # Utilities
@@ -82,7 +85,7 @@ On first run, the application will:
 1. Create platform-specific database directory
 2. Initialize SQLite database
 3. Create schema with all tables
-4. Set initial schema version
+4. Run migrations to latest version (v3)
 5. Display database location
 
 **Database Locations:**
@@ -97,7 +100,7 @@ On first run, the application will:
 ║  ⚾  BASEBALL/SOFTBALL SCORER - MAIN MENU  ║
 ╚════════════════════════════════════════════╝
 
-  1. 🆕 New Game
+  1. 🎮 Manage Games
   2. 🏆 Manage Leagues
   3. ⚾ Manage Teams
   4. 📊 Statistics
@@ -108,108 +111,93 @@ On first run, the application will:
 Select an option (1-5 or 0):
 ```
 
-## 💾 Database Management (NEW in v0.2.4-0.2.5)
-
-Complete database lifecycle management:
+## 🎮 Game Management (Enhanced in v0.4.0)
 
 ```
-DATABASE MANAGEMENT
+GAME MANAGEMENT
 ═══════════════════════════════════
-  1. 📋 View DB Info
-  2. 🔍 View DB Status
-  3. 🔄 Run Migrations      ← NEW v0.2.5
-  4. 💾 Backup Database
-  5. 📥 Restore Database
-  6. 🧹 Vacuum Database
-  7. 🗑️  Clear All Data
-  8. 📤 Export Game
+  1. 🆕 New Game          ← ENHANCED with full lineup entry
+  2. 📋 List Games
+  3. ✏️  Edit Game
+  4. ⚾ Play Ball!
 
   0. 🔙 Back to Main Menu
 ```
 
-### Features:
+### Creating a New Game (v0.4.0 Workflow)
 
-**View DB Info**
+The new game creation process guides you through:
 
-- Record counts (leagues, teams, players, games)
-- Database file location and size
-- Schema version and status
+#### 1. **Game Metadata**
 
-**View DB Status**
+- **Game ID**: Auto-generated or custom (e.g., `B00A1AAAR0111`)
+- **Teams**: Select away and home teams
+- **Date**: Game date (YYYY-MM-DD, default today)
+- **Time**: Game time (HH:MM, default now)
+- **Venue**: Game location (required)
 
-- Comprehensive health metrics
-- Page statistics and fragmentation
-- Journal mode, synchronous settings
-- Integrity check with suggestions
+#### 2. **Away Team Lineup**
 
-**Run Migrations** ⭐ NEW
+1. Check roster (minimum 12 players required)
+2. Choose DH option (Y/N)
+3. For each batting position (1-9 or 1-10 if DH):
+    - Enter jersey number
+    - Assign defensive position (1-9 or DH)
+4. If DH used: Enter pitcher (position 10, doesn't bat)
+5. Review complete lineup
+6. Confirm or restart
 
-- Check current schema version
-- List pending migrations
-- Execute migrations manually
-- Automatic on app startup if needed
+#### 3. **Home Team Lineup**
 
-**Backup Database**
+(Same process as away team)
 
-- Timestamped backups: `baseball_scorer_backup_YYYYMMDD_HHMMSS.db`
-- Size reporting
-- Records backup date in metadata
+#### 4. **Confirmation**
 
-**Restore Database**
+Review all game details and lineups before saving.
 
-- List available backups
-- Automatic safety backup before restore
-- Records restore date in metadata
+### Lineup Entry Rules
 
-**Vacuum Database**
+**With DH (Designated Hitter):**
 
-- Reclaim unused space
-- Optimize database performance
-- Before/after statistics
+- 10 players in batting order
+- Positions 1-9: Regular batters with defensive positions
+- Position 10: Pitcher (defensive position 1, does NOT bat)
+- DH can bat in any position 1-9
+- DH defensive position: "DH" (does not field)
 
-**Export Game**
+**Without DH:**
 
-- JSON format (complete structured data)
-- CSV format (Excel-compatible)
+- 9 players in batting order
+- All players bat and field
+- Pitcher bats at his position in the order
 
-## 🔄 Database Migration System (v0.2.5)
+**Validations:**
 
-### Automatic Migrations
+- Each defensive position (1-9) assigned exactly once
+- Each player used only once in lineup
+- Jersey numbers must exist in team roster
+- Minimum 12 players in roster required
 
-Migrations run automatically on app startup when:
+**Example Lineup with DH:**
 
-- Database schema version < current app version
-- New migrations are available
+```
+═══════════════════════════════════════════════════
+║              BOSTON RED SOX LINEUP                ║
+═══════════════════════════════════════════════════
 
-### Manual Migrations
+⚾ Designated Hitter: YES
 
-Execute via: `Main Menu > 5. Manage DB > 3. Run Migrations`
-
-Shows:
-
-- Current schema version
-- Latest schema version
-- Number of pending migrations
-- List of migrations to be applied
-- Confirmation before execution
-
-### Migration Safety
-
-- Backup recommended before migrations
-- Version tracking in `meta` table
-- Incremental application (only missing migrations)
-- Detailed migration descriptions
-
-### Meta Table
-
-Stores application metadata:
-
-- `schema_version`: Current database schema version
-- `app_version`: Application version
-- `created_at`: Database creation timestamp
-- `last_backup`: Last backup timestamp
-- `last_restore`: Last restore timestamp
-- `last_migration`: Last migration timestamp
+  1.  #50 Mookie Betts           Pos 9 (RF)
+  2.  #16 Andrew Benintendi      Pos 7 (LF)
+  3.  #28 J.D. Martinez          DH
+  4.  #15 Dustin Pedroia         Pos 4 (2B)
+  5.  #2  Xander Bogaerts        Pos 6 (SS)
+  6.  #11 Rafael Devers          Pos 5 (3B)
+  7.  #36 Eduardo Núñez          Pos 3 (1B)
+  8.  #23 Blake Swihart          Pos 2 (C)
+  9.  #19 Jackie Bradley Jr.     Pos 8 (CF)
+  10. #41 Chris Sale             P (does not bat)
+```
 
 ## 🏆 Manage Leagues
 
@@ -220,14 +208,6 @@ Create and manage leagues/championships:
 - ✏️ **Edit League**: Update information
 - 🗑️ **Delete League**: Remove league (with confirmation)
 
-**Example:**
-
-```
-League name: MLB
-Season: 2026
-Description: Major League Baseball
-```
-
 ## ⚾ Manage Teams
 
 Complete team management:
@@ -235,27 +215,18 @@ Complete team management:
 - ➕ **Create Team**: Name, city, abbreviation, founded year
 - 📋 **View Teams**: List all teams with details
 - ✏️ **Edit Team**: Update team information
-- 👥 **Manage Roster**: Add/edit/remove players (in development)
+- 👥 **Manage Roster**: Add/edit/remove players
+    - ⚠️ **Important**: Need minimum 12 players to create games!
 - 📥 **Import Team**: From JSON/CSV (in development)
 - 🗑️ **Delete Team**: Remove team and all players
-
-**Example:**
-
-```
-Team name: Boston Red Sox
-City: Boston
-Abbreviation: BOS
-Founded year: 1901
-League: MLB (optional)
-```
 
 ## 🗄️ Database Schema
 
 ### Core Tables
 
-**meta** (NEW v0.2.5)
+**meta**
 
-- Stores application metadata and schema version
+- Application metadata and schema version tracking
 
 **leagues**
 
@@ -269,125 +240,125 @@ League: MLB (optional)
 
 - Player roster with positions and batting order
 
-**games**
+**games** (Enhanced in v0.4.0)
 
-- Game records with scores and status
+- Game metadata including:
+    - `game_id`: Unique identifier
+    - `game_date`: Date of game
+    - `game_time`: Time of game (NEW v0.4.0)
+    - `at_uses_dh`: Away team uses DH (NEW v0.4.0)
+    - `ht_uses_dh`: Home team uses DH (NEW v0.4.0)
+    - Status, scores, current inning
 
-**plate_appearances**
+**game_lineups** (NEW in v0.4.0)
 
-- Detailed scoring of each at-bat
+- Starting lineups for both teams:
+    - `game_id`: Reference to game
+    - `team_id`: Reference to team
+    - `player_id`: Reference to player
+    - `batting_order`: Position in order (1-10)
+    - `defensive_position`: Field position (1-9 or "DH")
+    - Substitution tracking (for future use)
 
-**base_runners**
+**at_bats**
 
-- Runner advancement tracking
+- Detailed scoring of each plate appearance
 
-## 🎯 Scoring Symbols
+**pitches**
 
-*See [SCORING_GUIDE.md](SCORING_GUIDE.md) for complete reference*
+- Individual pitch tracking
 
-### Quick Reference
+**runner_movements**
 
-**Hits:** 1B, 2B, 3B, HR, GRD  
-**Outs:** K, KL, 6-3, F8, L9, P5, DP, TP  
-**Walks:** BB, IBB, HBP  
-**Errors:** E1-E9 (by position)  
-**Advanced:** SB2, SB3, CS, WP, PB, BK, SF, SH
+- Base runner advancement tracking
 
-### Defensive Positions
+**game_events**
 
-1=Pitcher, 2=Catcher, 3=First Base, 4=Second Base, 5=Third Base,  
-6=Shortstop, 7=Left Field, 8=Center Field, 9=Right Field
+- Special events (substitutions, delays, etc.)
 
-## 🔧 Development
+## 💾 Database Management
 
-### Build Commands
+Complete database lifecycle management:
 
-```bash
-# Development build
-cargo build
+```
+DATABASE MANAGEMENT
+═══════════════════════════════════
+  1. 📋 View DB Info
+  2. 🔍 View DB Status
+  3. 🔄 Run Migrations      ← Includes v3 migration
+  4. 💾 Backup Database
+  5. 📥 Restore Database
+  6. 🧹 Vacuum Database
+  7. 🗑️  Clear All Data
+  8. 📤 Export Game
 
-# Release build (optimized)
-cargo build --release
-
-# Run tests
-cargo test
-
-# Check code
-cargo check
-
-# Format code
-cargo fmt
-
-# Lint
-cargo clippy
+  0. 🔙 Back to Main Menu
 ```
 
-### Adding Database Migrations
+## 🔄 Database Migrations
 
-1. **Increment schema version** in `src/db/migrations.rs`:
+### Schema Version 3 (v0.4.0)
 
-```rust
-   pub const CURRENT_SCHEMA_VERSION: i64 = 2; // was 1
-```
+**Changes:**
 
-2. **Add migration to list**:
+1. ALTER TABLE games:
+    - Add `game_time TEXT`
+    - Add `at_uses_dh BOOLEAN DEFAULT 0`
+    - Add `ht_uses_dh BOOLEAN DEFAULT 0`
 
-```rust
-   Migration {
-version: 2,
-description: "Add statistics table",
-up: migration_v2,
-}
-```
+2. CREATE TABLE game_lineups:
+    - Complete lineup tracking
+    - Support for starting lineups
+    - Ready for substitution tracking
 
-3. **Implement migration function**:
+**Migration Path:**
 
-```rust
-   fn migration_v2(conn: &Connection) -> Result<()> {
-    conn.execute("CREATE TABLE stats (...)", [])?;
-    Ok(())
-}
-```
+- Automatic on app startup
+- Manual via "Manage DB > Run Migrations"
+- Recommended: Backup database first
 
 ## 📊 Features by Version
 
-| Version | Key Features                                   |
-|---------|------------------------------------------------|
-| 0.2.5   | Migration system, meta table, version tracking |
-| 0.2.4   | DB backup/restore, VACUUM, status, export      |
-| 0.2.3   | CLI refactor, DB management menu               |
-| 0.2.2   | Library support, standard structure            |
-| 0.2.1   | Cross-platform DB paths                        |
-| 0.2.0   | SQLite persistence, menu system                |
-| 0.1.0   | Initial CLI scoring tool                       |
+| Version | Key Features                                 |
+|---------|----------------------------------------------|
+| 0.4.0   | Complete lineup entry, DH support, game time |
+| 0.3.1   | Complete CLI menu structure                  |
+| 0.3.0   | Game management system                       |
+| 0.2.5   | Migration system, meta table                 |
+| 0.2.4   | DB backup/restore, VACUUM, export            |
+| 0.2.3   | CLI refactor, DB management menu             |
+| 0.2.2   | Library support, standard structure          |
 
 ## 🚀 Roadmap
 
-### v0.3.0 (Planned)
+### v0.5.0 (Next)
 
-- Live game scoring interface
+- **Play Ball!** - Live game scoring interface
 - Pitch-by-pitch tracking
 - Real-time score display
-- Complete roster management
+- Base runner tracking
+- Automatic lineup advancement
 
-### v0.4.0 (Planned)
+### v0.6.0 (Planned)
+
+- Mid-game substitutions
+- Pinch hitters/runners
+- Defensive replacements
+- Lineup editing
+
+### Future
 
 - Player statistics (AVG, ERA, OPS, WHIP)
 - Team statistics and rankings
 - League standings
 - Season summaries
-
-### Future
-
 - Web interface
-- Mobile app
 - PDF scorecard generation
-- Advanced analytics
-- Multi-season support
 
 ## 📚 Documentation
 
-- [CHANGELOG.md](CHANGELOG.md) - Version history
+- [CHANGELOG.md](CHANGELOG.md) - Complete version history
+- [CHANGELOG_v0.4.0.md](CHANGELOG_v0.4.0.md) - Detailed v0.4.0 changes
 - [SCORING_GUIDE.md](SCORING_GUIDE.md) - Official scoring symbols
 - [STRUCTURE.md](STRUCTURE.md) - Project architecture
 - [RELEASE.md](RELEASE.md) - Release process
@@ -414,7 +385,8 @@ MIT License - Free to use for your games! ⚾
 
 ---
 
-**Version:** 0.2.5  
+**Version:** 0.4.0  
+**Schema:** v3  
 **Edition:** Rust 2024  
 **Author:** Alessandro Maestri
 
