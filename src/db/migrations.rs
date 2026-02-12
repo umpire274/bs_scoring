@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 3;
+pub const CURRENT_SCHEMA_VERSION: i64 = 4;
 
 /// Migration structure
 pub struct Migration {
@@ -29,6 +29,11 @@ pub fn get_migrations() -> Vec<Migration> {
             version: 3,
             description: "Add game_time and DH flags to games, create game_lineups table",
             up: migration_v3,
+        },
+        Migration {
+            version: 4,
+            description: "Change status field from TEXT to INTEGER, add GameStatus enum",
+            up: migration_v4,
         },
     ]
 }
@@ -187,6 +192,112 @@ fn migration_v3(conn: &Connection) -> Result<()> {
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_game_lineups_team ON game_lineups(team_id)",
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn migration_v4(conn: &Connection) -> Result<()> {
+    // SQLite doesn't support ALTER COLUMN, so we need to:
+    // 1. Create new table with INTEGER status (and remove current_inning/current_half)
+    // 2. Copy data with conversion
+    // 3. Drop old table
+    // 4. Rename new table
+
+    // First, check which columns exist in the current games table
+    let mut stmt = conn.prepare("PRAGMA table_info(games)")?;
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(Result::ok)
+        .collect();
+
+    let has_game_time = columns.contains(&"game_time".to_string());
+    let has_at_uses_dh = columns.contains(&"at_uses_dh".to_string());
+    let has_ht_uses_dh = columns.contains(&"ht_uses_dh".to_string());
+
+    // Create temporary table with new schema (NO current_inning/current_half)
+    conn.execute(
+        "CREATE TABLE games_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id TEXT UNIQUE NOT NULL,
+            home_team_id INTEGER NOT NULL,
+            away_team_id INTEGER NOT NULL,
+            venue TEXT NOT NULL,
+            game_date TEXT NOT NULL,
+            game_time TEXT,
+            at_uses_dh BOOLEAN DEFAULT 0,
+            ht_uses_dh BOOLEAN DEFAULT 0,
+            home_score INTEGER DEFAULT 0,
+            away_score INTEGER DEFAULT 0,
+            status INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (home_team_id) REFERENCES teams(id),
+            FOREIGN KEY (away_team_id) REFERENCES teams(id)
+        )",
+        [],
+    )?;
+
+    // Build dynamic INSERT based on available columns
+    let mut select_fields = vec![
+        "id",
+        "game_id",
+        "home_team_id",
+        "away_team_id",
+        "venue",
+        "game_date",
+    ];
+
+    if has_game_time {
+        select_fields.push("game_time");
+    } else {
+        select_fields.push("NULL as game_time");
+    }
+
+    if has_at_uses_dh {
+        select_fields.push("at_uses_dh");
+    } else {
+        select_fields.push("0 as at_uses_dh");
+    }
+
+    if has_ht_uses_dh {
+        select_fields.push("ht_uses_dh");
+    } else {
+        select_fields.push("0 as ht_uses_dh");
+    }
+
+    select_fields.push("home_score");
+    select_fields.push("away_score");
+
+    // Status conversion
+    select_fields.push(
+        "CASE 
+            WHEN status IN ('not_started', 'pregame') THEN 1
+            WHEN status = 'in_progress' THEN 2
+            WHEN status IN ('completed', 'finished') THEN 3
+            ELSE 1
+        END as status",
+    );
+
+    select_fields.push("created_at");
+
+    let insert_query = format!(
+        "INSERT INTO games_new SELECT {} FROM games",
+        select_fields.join(", ")
+    );
+
+    // Copy data with status conversion (current_inning and current_half NOT copied)
+    conn.execute(&insert_query, [])?;
+
+    // Drop old table
+    conn.execute("DROP TABLE games", [])?;
+
+    // Rename new table
+    conn.execute("ALTER TABLE games_new RENAME TO games", [])?;
+
+    // Recreate indexes
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_games_date ON games(game_date)",
         [],
     )?;
 

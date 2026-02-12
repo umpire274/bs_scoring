@@ -218,7 +218,7 @@ fn create_new_game(db: &Database) {
     match conn.execute(
         "INSERT INTO games (game_id, home_team_id, away_team_id, venue, game_date, game_time,
                             at_uses_dh, ht_uses_dh, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'not_started')",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1)",
         rusqlite::params![
             game_id,
             home_team_id,
@@ -275,7 +275,7 @@ fn list_games(db: &Database) {
     let mut stmt = match conn.prepare(
         "SELECT g.id, g.game_id, g.game_date, g.venue, g.status,
                 t1.name as away_team, t2.name as home_team,
-                g.away_score, g.home_score, g.current_inning, g.current_half
+                g.away_score, g.home_score
          FROM games g
          JOIN teams t1 ON g.away_team_id = t1.id
          JOIN teams t2 ON g.home_team_id = t2.id
@@ -290,17 +290,15 @@ fn list_games(db: &Database) {
 
     let games = stmt.query_map([], |row| {
         Ok((
-            row.get::<_, i64>(0)?,     // id
-            row.get::<_, String>(1)?,  // game_id
-            row.get::<_, String>(2)?,  // date
-            row.get::<_, String>(3)?,  // venue
-            row.get::<_, String>(4)?,  // status
-            row.get::<_, String>(5)?,  // away_team
-            row.get::<_, String>(6)?,  // home_team
-            row.get::<_, i64>(7)?,     // away_score
-            row.get::<_, i64>(8)?,     // home_score
-            row.get::<_, i64>(9)?,     // inning
-            row.get::<_, String>(10)?, // half
+            row.get::<_, i64>(0)?,    // id
+            row.get::<_, String>(1)?, // game_id
+            row.get::<_, String>(2)?, // date
+            row.get::<_, String>(3)?, // venue
+            row.get::<_, i64>(4)?,    // status (now INTEGER)
+            row.get::<_, String>(5)?, // away_team
+            row.get::<_, String>(6)?, // home_team
+            row.get::<_, i64>(7)?,    // away_score
+            row.get::<_, i64>(8)?,    // home_score
         ))
     });
 
@@ -314,36 +312,23 @@ fn list_games(db: &Database) {
                 println!("\n📋 Games ({} total):\n", game_list.len());
                 cli::show_separator();
 
-                for (
-                    _id,
-                    game_id,
-                    date,
-                    venue,
-                    status,
-                    away,
-                    home,
-                    away_score,
-                    home_score,
-                    inning,
-                    half,
-                ) in game_list
+                for (_id, game_id, date, venue, status_int, away, home, away_score, home_score) in
+                    game_list
                 {
-                    let status_icon = match status.as_str() {
-                        "not_started" => "🆕",
-                        "in_progress" => "▶️",
-                        "completed" => "✅",
-                        "suspended" => "⏸️",
-                        _ => "❓",
+                    use crate::models::types::GameStatus;
+
+                    let status = GameStatus::from_i64(status_int).unwrap_or(GameStatus::Pregame);
+                    let status_icon = match status {
+                        GameStatus::Pregame => "🆕",
+                        GameStatus::InProgress => "▶️",
+                        GameStatus::Finished => "✅",
                     };
 
                     println!(
                         "  {} {} - {} @ {} ({}-{})",
                         status_icon, date, away, home, away_score, home_score
                     );
-                    println!(
-                        "     Venue: {} | Status: {} | Inning: {} {}",
-                        venue, status, inning, half
-                    );
+                    println!("     Venue: {} | Status: {}", venue, status);
                     println!("     ID: {}", game_id);
                     cli::show_separator();
                 }
@@ -377,10 +362,217 @@ fn edit_teams(_db: &Database) {
     cli::wait_for_enter();
 }
 
-fn edit_lineups(_db: &Database) {
+fn edit_lineups(db: &Database) {
     cli::show_header("EDIT LINEUPS");
-    println!("🚧 Feature under development...\n");
-    cli::wait_for_enter();
+
+    let conn = db.get_connection();
+
+    // Query only pregame games
+    let mut stmt = match conn.prepare(
+        "SELECT g.id, g.game_id, g.game_date, g.venue,
+                t1.name as away_team, t1.id as away_team_id,
+                t2.name as home_team, t2.id as home_team_id
+         FROM games g
+         JOIN teams t1 ON g.away_team_id = t1.id
+         JOIN teams t2 ON g.home_team_id = t2.id
+         WHERE g.status = 1
+         ORDER BY g.game_date DESC, g.id DESC",
+    ) {
+        Ok(stmt) => stmt,
+        Err(e) => {
+            cli::show_error(&format!("Error querying games: {}", e));
+            return;
+        }
+    };
+
+    let pregame_games: Vec<_> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,    // id
+                row.get::<_, String>(1)?, // game_id
+                row.get::<_, String>(2)?, // game_date
+                row.get::<_, String>(3)?, // venue
+                row.get::<_, String>(4)?, // away_team
+                row.get::<_, i64>(5)?,    // away_team_id
+                row.get::<_, String>(6)?, // home_team
+                row.get::<_, i64>(7)?,    // home_team_id
+            ))
+        })
+        .unwrap()
+        .filter_map(Result::ok)
+        .collect();
+
+    if pregame_games.is_empty() {
+        println!("📭 No pre-game games found.");
+        println!("\nOnly games with status 'Pre-Game' can have their lineups edited.");
+        println!("Once a game starts, lineup changes become substitutions.\n");
+        cli::wait_for_enter();
+        return;
+    }
+
+    // Display available games
+    println!("\n📋 Pre-Game Games:\n");
+    for (i, (_id, game_id, date, venue, away, _away_id, home, _home_id)) in
+        pregame_games.iter().enumerate()
+    {
+        println!("  {}. {} - {} @ {}", i + 1, date, away, home);
+        println!("     Venue: {} | ID: {}", venue, game_id);
+        println!();
+    }
+
+    // Select game
+    let game_choice = match cli::read_i64("Select game (number, 0 to cancel): ") {
+        Some(0) | None => {
+            println!("\n❌ Edit lineups cancelled");
+            cli::wait_for_enter();
+            return;
+        }
+        Some(choice) if choice > 0 && (choice as usize) <= pregame_games.len() => choice as usize,
+        _ => {
+            cli::show_error("Invalid selection");
+            return;
+        }
+    };
+
+    let selected_game = &pregame_games[game_choice - 1];
+    let (_, game_id, _date, _venue, away_team, away_team_id, home_team, home_team_id) =
+        selected_game;
+
+    // Select which team's lineup to edit
+    println!("\n═══════════════════════════════════════");
+    println!("Select team to edit:");
+    println!("  1. {} (Away)", away_team);
+    println!("  2. {} (Home)", home_team);
+    println!("  0. Cancel");
+    println!();
+
+    let team_choice = match cli::read_choice() {
+        1 => (*away_team_id, away_team.clone(), "Away"),
+        2 => (*home_team_id, home_team.clone(), "Home"),
+        0 => {
+            println!("\n❌ Cancelled");
+            cli::wait_for_enter();
+            return;
+        }
+        _ => {
+            cli::show_error("Invalid selection");
+            return;
+        }
+    };
+
+    let (team_id, team_name, team_type) = team_choice;
+
+    // Load current lineup
+    let mut current_lineup_stmt = match conn.prepare(
+        "SELECT gl.player_id, gl.batting_order, gl.defensive_position, p.number, p.name
+         FROM game_lineups gl
+         JOIN players p ON gl.player_id = p.id
+         WHERE gl.game_id = ?1 AND gl.team_id = ?2 AND gl.is_starting = 1
+         ORDER BY gl.batting_order",
+    ) {
+        Ok(stmt) => stmt,
+        Err(e) => {
+            cli::show_error(&format!("Error loading lineup: {}", e));
+            return;
+        }
+    };
+
+    let current_lineup: Vec<(i64, i32, String, i32, String)> = current_lineup_stmt
+        .query_map(rusqlite::params![game_id, team_id], |row| {
+            Ok((
+                row.get(0)?, // player_id
+                row.get(1)?, // batting_order
+                row.get(2)?, // defensive_position
+                row.get(3)?, // number
+                row.get(4)?, // name
+            ))
+        })
+        .unwrap()
+        .filter_map(Result::ok)
+        .collect();
+
+    if current_lineup.is_empty() {
+        cli::show_error("No lineup found for this team!");
+        return;
+    }
+
+    // Display current lineup
+    println!("\n╔═══════════════════════════════════════════════════╗");
+    println!(
+        "║ {: ^50}║",
+        format!(
+            "{} CURRENT LINEUP ({})",
+            team_name.to_uppercase(),
+            team_type
+        )
+    );
+    println!("╚═══════════════════════════════════════════════════╝\n");
+
+    let uses_dh = current_lineup.iter().any(|(_, _, pos, _, _)| pos == "DH");
+    if uses_dh {
+        println!("⚾ Designated Hitter: YES\n");
+    }
+
+    for (_player_id, batting_order, def_pos, number, name) in &current_lineup {
+        let position_display = if def_pos == "DH" {
+            "DH".to_string()
+        } else if *batting_order == 10 {
+            "P (does not bat)".to_string()
+        } else {
+            format!("Pos {}", def_pos)
+        };
+
+        println!(
+            "  {:2}. #{:<3} {:<25} {}",
+            batting_order, number, name, position_display
+        );
+    }
+    println!();
+
+    if !cli::confirm("Edit this lineup?") {
+        println!("\n❌ Cancelled");
+        cli::wait_for_enter();
+        return;
+    }
+
+    // Re-enter lineup (using same function as create_new_game)
+    println!("\n═══════════════════════════════════════");
+    println!("    RE-ENTER {} LINEUP", team_name.to_uppercase());
+    println!("═══════════════════════════════════════\n");
+
+    let new_lineup = match insert_team_lineup(conn, team_id, &team_name) {
+        Some(lineup) => lineup,
+        None => {
+            println!("\n❌ Lineup edit cancelled");
+            cli::wait_for_enter();
+            return;
+        }
+    };
+
+    // Delete old lineup entries
+    match conn.execute(
+        "DELETE FROM game_lineups WHERE game_id = ?1 AND team_id = ?2",
+        rusqlite::params![game_id, team_id],
+    ) {
+        Ok(_) => {}
+        Err(e) => {
+            cli::show_error(&format!("Failed to delete old lineup: {}", e));
+            return;
+        }
+    }
+
+    // Save new lineup
+    if let Err(e) = save_lineup(conn, game_id, team_id, &new_lineup) {
+        cli::show_error(&format!("Failed to save new lineup: {}", e));
+        return;
+    }
+
+    cli::show_success(&format!(
+        "Lineup updated successfully for {} ({})!\n\n\
+         The lineup has been completely replaced.\n\
+         Since the game is still in Pre-Game status, this is NOT a substitution.",
+        team_name, team_type
+    ));
 }
 
 fn edit_innings_score(_db: &Database) {
