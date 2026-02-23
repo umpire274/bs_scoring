@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-02-23
+
+### 🚀 Added
+
+- Initial implementation of the **Play Ball engine**
+- Dynamic game prompt:
+    - Inning indicator (↑ Top / ↓ Bottom)
+    - Inning number
+    - Outs counter
+    - Live score display
+    - Team abbreviations
+- `GameState` model (inning, half, outs, score)
+- Engine command loop with support for:
+    - Multiple commands separated by commas
+    - Case-insensitive input
+- Engine control commands:
+    - `exit` / `quit`
+- Game status commands (available at any time):
+    - `regular` → Regulation game
+    - `post` → Postponed
+    - `cancel` → Cancelled
+    - `susp` → Suspended
+    - `forf` → Forfeited
+    - `protest` → Protested
+- Unified `set_game_status()` function using `GameStatus` enum
+- Removed legacy `start_game_live()` function
+- Added `GameStatus::icon()` support
+- Rewritten `SCORING_GUIDE.md` (engine command documentation)
+
+### 🧹 Refactored
+
+- Replaced status magic numbers with `GameStatus` enum everywhere
+- Centralized prompt rendering via `print_prompt()`
+- Improved separation between CLI and core engine
+
+### 🗑 Removed
+
+- Deprecated `start_game_live()` function
+- Unused `has_starting_lineup()` helper
+
+---
+
 ## [0.4.3] - 2026-02-23
 
 ### ✨ Added

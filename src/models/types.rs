@@ -68,7 +68,12 @@ impl fmt::Display for Position {
 pub enum GameStatus {
     Pregame = 1,
     InProgress = 2,
-    Finished = 3,
+    Regulation = 3,
+    Postponed = 4,
+    Cancelled = 5,
+    Suspended = 6,
+    Forfeited = 7,
+    Protested = 8,
 }
 
 impl GameStatus {
@@ -76,7 +81,12 @@ impl GameStatus {
         match n {
             1 => Some(GameStatus::Pregame),
             2 => Some(GameStatus::InProgress),
-            3 => Some(GameStatus::Finished),
+            3 => Some(GameStatus::Regulation),
+            4 => Some(GameStatus::Postponed),
+            5 => Some(GameStatus::Cancelled),
+            6 => Some(GameStatus::Suspended),
+            7 => Some(GameStatus::Forfeited),
+            8 => Some(GameStatus::Protested),
             _ => None,
         }
     }
@@ -89,19 +99,46 @@ impl GameStatus {
         match self {
             GameStatus::Pregame => "pregame",
             GameStatus::InProgress => "in_progress",
-            GameStatus::Finished => "finished",
+            GameStatus::Regulation => "regulation_game",
+            GameStatus::Postponed => "postponed",
+            GameStatus::Cancelled => "cancelled",
+            GameStatus::Suspended => "suspended",
+            GameStatus::Forfeited => "forfeited",
+            GameStatus::Protested => "protested",
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            GameStatus::Pregame => "🆕",
+            GameStatus::InProgress => "▶️",
+            GameStatus::Regulation => "✅",
+            GameStatus::Postponed => "⏳",
+            GameStatus::Cancelled => "❌",
+            GameStatus::Suspended => "⏸️",
+            GameStatus::Forfeited => "⚠️",
+            GameStatus::Protested => "🚩",
         }
     }
 }
 
 impl fmt::Display for GameStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match self {
-            GameStatus::Pregame => "Pre-Game",
-            GameStatus::InProgress => "In Progress",
-            GameStatus::Finished => "Finished",
-        };
-        write!(f, "{}", name)
+        write!(
+            f,
+            "{} {}",
+            self.icon(),
+            match self {
+                GameStatus::Pregame => "Pre-Game",
+                GameStatus::InProgress => "In Progress",
+                GameStatus::Regulation => "Regulation Game",
+                GameStatus::Postponed => "Postponed Game",
+                GameStatus::Cancelled => "Cancelled Game",
+                GameStatus::Suspended => "Suspended Game",
+                GameStatus::Forfeited => "Forfeited Game",
+                GameStatus::Protested => "Protested Game",
+            }
+        )
     }
 }
 
@@ -265,6 +302,24 @@ pub struct PlateAppearance {
 pub enum HalfInning {
     Top,    // Visiting team batting
     Bottom, // Home team batting
+}
+
+#[derive(Debug, Clone)]
+pub struct Score {
+    pub away: u16,
+    pub home: u16,
+}
+
+impl Score {
+    pub fn new() -> Self {
+        Self { away: 0, home: 0 }
+    }
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Pitch count details
