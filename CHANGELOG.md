@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-02-23
+
+### ✨ Added
+
+- Import Teams feature (Main Menu → Teams Management → Import Teams)
+    - Supports CSV and JSON formats
+    - Transaction-safe bulk import
+    - Automatic upsert logic (update if existing, insert otherwise)
+    - League name resolution during import
+- Interactive import workflow with validation and rollback on error
+
+### 🔄 Improved
+
+- Team editing now correctly loads full team data via `get_by_id`
+- Edit prompts display current database values as defaults
+- Pressing ENTER now preserves existing values correctly
+- Optional fields support explicit clearing via `none`
+
+### 🛠 Fixed
+
+- Prevented accidental nullification of team fields during edit
+- Corrected incomplete struct cloning during team modification
+- Improved error handling during bulk operations (no partial imports)
+
+### 🧱 Internal
+
+- Refactored DB interaction patterns for safer transactional handling
+- Improved separation between read-only and write operations in Teams Management
+
 ---
 
 ## [0.4.2] - 2026-02-12
