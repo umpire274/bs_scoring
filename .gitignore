@@ -28,6 +28,7 @@ Cargo.lock
 *.backup
 *.csv
 *.json
+*.pdf
 
 *.zip
 *.tar.gz

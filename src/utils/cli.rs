@@ -54,6 +54,10 @@ pub fn show_success(message: &str) {
     wait_for_enter();
 }
 
+pub fn show_success_no_wait_for_enter(message: &str) {
+    println!("\n✅ {}", message);
+}
+
 /// Display an error message
 pub fn show_error(message: &str) {
     println!("\n❌ Error: {}", message);

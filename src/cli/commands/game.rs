@@ -1,3 +1,4 @@
+use crate::cli::commands::play_ball::play_ball;
 use crate::core::menu::GameMenuChoice;
 use crate::utils::cli;
 use crate::{Database, Menu, Team};
@@ -202,7 +203,10 @@ fn create_new_game(db: &Database) {
     println!("    AWAY TEAM LINEUP: {}", away_team.name);
     println!("═══════════════════════════════════════\n");
 
-    let away_lineup = match insert_team_lineup(conn, away_team_id, &away_team.name) {
+    let at_uses_dh = ask_team_dh("AWAY", &away_team.name);
+    let away_required = if at_uses_dh { 10 } else { 9 };
+
+    let away_lineup = match insert_team_lineup(conn, away_team_id, &away_team.name, away_required) {
         Some(lineup) => lineup,
         None => {
             println!("\n❌ Away team lineup cancelled. Game creation aborted.");
@@ -216,7 +220,10 @@ fn create_new_game(db: &Database) {
     println!("    HOME TEAM LINEUP: {}", home_team.name);
     println!("═══════════════════════════════════════\n");
 
-    let home_lineup = match insert_team_lineup(conn, home_team_id, &home_team.name) {
+    let ht_uses_dh = ask_team_dh("HOME", &home_team.name);
+    let home_required = if ht_uses_dh { 10 } else { 9 };
+
+    let home_lineup = match insert_team_lineup(conn, home_team_id, &home_team.name, home_required) {
         Some(lineup) => lineup,
         None => {
             println!("\n❌ Home team lineup cancelled. Game creation aborted.");
@@ -226,9 +233,6 @@ fn create_new_game(db: &Database) {
     };
 
     // STEP 7: Save game to database
-    let at_uses_dh = away_lineup.iter().any(|p| p.2 == "DH");
-    let ht_uses_dh = home_lineup.iter().any(|p| p.2 == "DH");
-
     match conn.execute(
         "INSERT INTO games (game_id, home_team_id, away_team_id, venue, game_date, game_time,
                             at_uses_dh, ht_uses_dh, status)
@@ -332,11 +336,7 @@ fn list_games(db: &Database) {
                     use crate::models::types::GameStatus;
 
                     let status = GameStatus::from_i64(status_int).unwrap_or(GameStatus::Pregame);
-                    let status_icon = match status {
-                        GameStatus::Pregame => "🆕",
-                        GameStatus::InProgress => "▶️",
-                        GameStatus::Finished => "✅",
-                    };
+                    let status_icon = status.icon();
 
                     println!(
                         "  {} {} - {} @ {} ({}-{})",
@@ -353,19 +353,6 @@ fn list_games(db: &Database) {
         }
     }
 
-    cli::wait_for_enter();
-}
-
-fn play_ball(_db: &Database) {
-    cli::show_header("PLAY BALL!");
-    println!("⚾ Game Scoring Interface\n");
-    println!("🚧 This is where the magic happens...\n");
-    println!("Coming in next version:");
-    println!("  - Select game to score");
-    println!("  - Pitch-by-pitch input");
-    println!("  - Real-time score display");
-    println!("  - Base runner tracking");
-    println!("  - Live statistics\n");
     cli::wait_for_enter();
 }
 
@@ -450,14 +437,31 @@ fn edit_innings_score(_db: &Database) {
     cli::wait_for_enter();
 }
 
+fn ask_team_dh(team_label: &str, team_name: &str) -> bool {
+    println!("\n═══════════════════════════════════════");
+    println!("{} TEAM DH SETTING: {}", team_label, team_name);
+    println!("═══════════════════════════════════════\n");
+
+    cli::confirm("Use Designated Hitter (DH)?")
+}
+
 /// Insert lineup for a team
 /// Returns: Option<Vec<(player_id, batting_order, defensive_position)>>
-fn insert_team_lineup(
+pub(crate) fn insert_team_lineup(
     conn: &rusqlite::Connection,
     team_id: i64,
     team_name: &str,
+    required_players: usize, // 9 oppure 10
 ) -> Option<Vec<(i64, i32, String)>> {
     use crate::db::player::Player;
+    use std::io::{self, Write};
+
+    if required_players != 9 && required_players != 10 {
+        cli::show_error("Internal error: required_players must be 9 or 10");
+        return None;
+    }
+
+    let uses_dh = required_players == 10;
 
     loop {
         // Get roster for this team
@@ -478,8 +482,11 @@ fn insert_team_lineup(
             return None;
         }
 
-        // Ask if using DH
-        let uses_dh = cli::confirm("Use Designated Hitter (DH)?");
+        println!(
+            "\nLineup mode: {} players required ({})",
+            required_players,
+            if uses_dh { "DH = YES" } else { "DH = NO" }
+        );
 
         println!("\n📋 Team Roster:\n");
         for player in &roster {
@@ -494,7 +501,7 @@ fn insert_team_lineup(
         let mut used_positions: Vec<String> = Vec::new();
         let mut used_numbers: Vec<i32> = Vec::new();
 
-        // Collect lineup positions 1-9 (ALWAYS 9, regardless of DH)
+        // Collect batting order positions 1..=9 (always)
         for pos in 1..=9 {
             println!("\n─────────────────────────────────────");
             println!("Batting order position: {}", pos);
@@ -509,12 +516,8 @@ fn insert_team_lineup(
                         }
                         break num;
                     }
-                    Some(num) => {
-                        println!("❌ Player #{} not found in roster!", num);
-                    }
-                    None => {
-                        println!("❌ Invalid number!");
-                    }
+                    Some(num) => println!("❌ Player #{} not found in roster!", num),
+                    None => println!("❌ Invalid number!"),
                 }
             };
 
@@ -530,15 +533,14 @@ fn insert_team_lineup(
                 print!("): ");
                 io::stdout().flush().unwrap();
 
-                let input = cli::read_string("");
+                let input = cli::read_string("").trim().to_string();
 
-                // Validate input
-                let position = if input.to_uppercase() == "DH" {
+                let position = if input.eq_ignore_ascii_case("DH") {
                     if !uses_dh {
-                        println!("❌ DH not being used for this team!");
+                        println!("❌ DH is NOT allowed for this lineup (DH=NO).");
                         continue;
                     }
-                    if used_positions.contains(&"DH".to_string()) {
+                    if used_positions.iter().any(|p| p == "DH") {
                         println!("❌ DH position already assigned!");
                         continue;
                     }
@@ -554,7 +556,10 @@ fn insert_team_lineup(
                             pos_str
                         }
                         _ => {
-                            println!("❌ Invalid position! Enter 1-9 or DH");
+                            println!(
+                                "❌ Invalid position! Enter 1-9{}",
+                                if uses_dh { " or DH" } else { "" }
+                            );
                             continue;
                         }
                     }
@@ -579,24 +584,31 @@ fn insert_team_lineup(
             );
         }
 
-        // If DH used, ask for pitcher (informational only, position 10)
+        // Enforce DH consistency:
+        // - if uses_dh = true => must have exactly one DH among 1..9
+        // - if uses_dh = false => must have zero DH (already enforced above)
+        if uses_dh {
+            let dh_count = used_positions.iter().filter(|p| p.as_str() == "DH").count();
+            if dh_count != 1 {
+                cli::show_error(
+                    "DH lineup requires exactly ONE 'DH' assigned among batting spots 1-9.",
+                );
+                println!("🔄 Restarting lineup entry...\n");
+                cli::wait_for_enter();
+                continue;
+            }
+        }
+
+        // If DH used, ask for pitcher info (position 10)
         if uses_dh {
             println!("\n─────────────────────────────────────");
-            println!("PITCHER INFO (does not bat, informational only)");
+            println!("PITCHER INFO (does not bat, required for DH lineup)");
 
             let pitcher_number = loop {
                 match cli::read_i32("Pitcher jersey number: ") {
-                    Some(num) if roster.iter().any(|p| p.number == num) => {
-                        // Pitcher CAN be in the batting lineup if they're also playing a position
-                        // This is rare but legal
-                        break num;
-                    }
-                    Some(num) => {
-                        println!("❌ Player #{} not found in roster!", num);
-                    }
-                    None => {
-                        println!("❌ Invalid number!");
-                    }
+                    Some(num) if roster.iter().any(|p| p.number == num) => break num,
+                    Some(num) => println!("❌ Player #{} not found in roster!", num),
+                    None => println!("❌ Invalid number!"),
                 }
             };
 
@@ -659,7 +671,7 @@ fn display_lineup(
 }
 
 /// Save lineup to database
-fn save_lineup(
+pub(crate) fn save_lineup(
     conn: &Connection,
     game_id: &str,
     team_id: i64,
