@@ -2,16 +2,25 @@ use crate::core::menu::GameMenuChoice;
 use crate::utils::cli;
 use crate::{Database, Menu, Team};
 use chrono::Local;
-use rusqlite::Connection;
-use std::io;
+use rusqlite::{Connection, params};
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
+use std::{fs, io};
 
 #[derive(Debug, Clone, Copy)]
 pub enum EditGameMenuChoice {
     EditTeams,
     EditLineups,
+    ImportLineup,
     EditInningsScore,
     Back,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct ImportLineupRow {
+    batting_order: i32,
+    defensive_position: String,
+    player_number: i32,
 }
 
 pub fn handle_game_menu(db: &mut Database) {
@@ -31,6 +40,7 @@ pub fn handle_edit_game_menu(db: &mut Database) {
         match show_edit_game_menu() {
             EditGameMenuChoice::EditTeams => edit_teams(db),
             EditGameMenuChoice::EditLineups => edit_lineups(db),
+            EditGameMenuChoice::ImportLineup => import_lineup(db),
             EditGameMenuChoice::EditInningsScore => edit_innings_score(db),
             EditGameMenuChoice::Back => break,
         }
@@ -46,7 +56,8 @@ pub fn show_edit_game_menu() -> EditGameMenuChoice {
         println!();
         println!("  1. ⚾ Edit Teams");
         println!("  2. 📋 Edit Lineups");
-        println!("  3. ✏️ Edit Innings/Score");
+        println!("  3. 📥 Import Lineup (JSON/CSV)");
+        println!("  4. ✏️ Edit Innings/Score");
         println!();
         println!("  0. 🔙 Back to Main Menu");
         println!();
@@ -57,7 +68,8 @@ pub fn show_edit_game_menu() -> EditGameMenuChoice {
         match choice {
             1 => return EditGameMenuChoice::EditTeams,
             2 => return EditGameMenuChoice::EditLineups,
-            3 => return EditGameMenuChoice::EditInningsScore,
+            3 => return EditGameMenuChoice::ImportLineup,
+            4 => return EditGameMenuChoice::EditInningsScore,
             0 => return EditGameMenuChoice::Back,
             _ => {
                 println!("\n❌ Invalid choice. Press ENTER to continue...");
@@ -369,143 +381,41 @@ fn edit_lineups(db: &mut Database) {
 
     let conn = db.get_connection_mut();
 
-    // Query only pregame games
-    // (La query è eseguita nel blocco `pregame_games` qui sotto; evitare Statement inutilizzati
-    // che tengono un borrow immutabile su `conn` e impediscono usi mutabili successivi.)
+    let (game_id, team_id, team_name, team_type) = match select_pregame_game_and_team(conn) {
+        Some(v) => v,
+        None => return,
+    };
 
-    let pregame_games: Vec<_> = {
+    let current_lineup: Vec<(i64, i32, String, i32, String, String)> = {
         let mut stmt = match conn.prepare(
-            "SELECT g.id, g.game_id, g.game_date, g.venue,
-                t1.name as away_team, t1.id as away_team_id,
-                t2.name as home_team, t2.id as home_team_id
-         FROM games g
-         JOIN teams t1 ON g.away_team_id = t1.id
-         JOIN teams t2 ON g.home_team_id = t2.id
-         WHERE g.status = 1
-         ORDER BY g.game_date DESC, g.id DESC",
+            "SELECT gl.player_id, gl.batting_order, gl.defensive_position,
+                    p.number, p.first_name, p.last_name
+             FROM game_lineups gl
+             JOIN players p ON gl.player_id = p.id
+             WHERE gl.game_id = ?1 AND gl.team_id = ?2 AND gl.is_starting = 1
+             ORDER BY gl.batting_order",
         ) {
-            Ok(stmt) => stmt,
+            Ok(s) => s,
             Err(e) => {
-                cli::show_error(&format!("Error querying games: {}", e));
+                cli::show_error(&format!("Error loading lineup: {e}"));
                 return;
             }
         };
 
-        stmt.query_map([], |row| {
+        stmt.query_map(rusqlite::params![&game_id, team_id], |row| {
             Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, i64>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, i64>(7)?,
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
             ))
         })
         .unwrap()
         .filter_map(Result::ok)
         .collect()
-    }; // <-- stmt viene droppato qui
-
-    if pregame_games.is_empty() {
-        println!("📭 No pre-game games found.");
-        println!("\nOnly games with status 'Pre-Game' can have their lineups edited.");
-        println!("Once a game starts, lineup changes become substitutions.\n");
-        cli::wait_for_enter();
-        return;
-    }
-
-    // Display available games
-    println!("\n📋 Pre-Game Games:\n");
-    for (i, (_id, game_id, date, venue, away, _away_id, home, _home_id)) in
-        pregame_games.iter().enumerate()
-    {
-        println!("  {}. {} - {} @ {}", i + 1, date, away, home);
-        println!("     Venue: {} | ID: {}", venue, game_id);
-        println!();
-    }
-
-    // Select game
-    let game_choice = match cli::read_i64("Select game (number, 0 to cancel): ") {
-        Some(0) | None => {
-            println!("\n❌ Edit lineups cancelled");
-            cli::wait_for_enter();
-            return;
-        }
-        Some(choice) if choice > 0 && (choice as usize) <= pregame_games.len() => choice as usize,
-        _ => {
-            cli::show_error("Invalid selection");
-            return;
-        }
     };
-
-    let selected_game = &pregame_games[game_choice - 1];
-    let (_, game_id, _date, _venue, away_team, away_team_id, home_team, home_team_id) =
-        selected_game;
-
-    // Select which team's lineup to edit
-    println!("\n═══════════════════════════════════════");
-    println!("Select team to edit:");
-    println!("  1. {} (Away)", away_team);
-    println!("  2. {} (Home)", home_team);
-    println!("  0. Cancel");
-    println!();
-
-    let team_choice = match cli::read_choice() {
-        1 => (*away_team_id, away_team.clone(), "Away"),
-        2 => (*home_team_id, home_team.clone(), "Home"),
-        0 => {
-            println!("\n❌ Cancelled");
-            cli::wait_for_enter();
-            return;
-        }
-        _ => {
-            cli::show_error("Invalid selection");
-            return;
-        }
-    };
-
-    let (team_id, team_name, team_type) = team_choice;
-
-    // Load current lineup (blocca lo scope dello Statement per evitare E0502)
-    let current_lineup: Vec<(i64, i32, String, i32, String, String)> = {
-        let mut current_lineup_stmt = match conn.prepare(
-            "SELECT gl.player_id,
-            gl.batting_order,
-            gl.defensive_position,
-            p.number,
-            p.first_name,
-            p.last_name
-     FROM game_lineups gl
-     JOIN players p ON gl.player_id = p.id
-     WHERE gl.game_id = ?1
-       AND gl.team_id = ?2
-       AND gl.is_starting = 1
-     ORDER BY gl.batting_order",
-        ) {
-            Ok(stmt) => stmt,
-            Err(e) => {
-                cli::show_error(&format!("Error loading lineup: {}", e));
-                return;
-            }
-        };
-
-        current_lineup_stmt
-            .query_map(rusqlite::params![game_id, team_id], |row| {
-                Ok((
-                    row.get(0)?, // player_id
-                    row.get(1)?, // batting_order
-                    row.get(2)?, // defensive_position
-                    row.get(3)?, // number
-                    row.get(4)?, // first_name
-                    row.get(5)?, // last_name
-                ))
-            })
-            .unwrap()
-            .filter_map(Result::ok)
-            .collect()
-    }; // <-- current_lineup_stmt viene droppato qui
 
     if current_lineup.is_empty() {
         cli::show_error("No lineup found for this team!");
@@ -520,12 +430,11 @@ fn edit_lineups(db: &mut Database) {
         return;
     }
 
-    // Re-enter lineup (using same function as create_new_game)
     println!("\n═══════════════════════════════════════");
     println!("    RE-ENTER {} LINEUP", team_name.to_uppercase());
     println!("═══════════════════════════════════════\n");
 
-    edit_lineup_helper(conn, game_id, team_id, &team_name, team_type);
+    edit_lineup_helper(conn, &game_id, team_id, &team_name, team_type);
 
     cli::show_success(&format!(
         "Lineup updated successfully for {} ({})!\n\n\
@@ -797,8 +706,6 @@ fn load_starting_lineup(
     Ok(v)
 }
 
-use std::collections::HashSet;
-
 fn load_bench_from_roster(
     conn: &Connection,
     team_id: i64,
@@ -1035,6 +942,275 @@ fn edit_lineup_helper(
             }
             0 => break,
             _ => cli::show_error("Invalid selection"),
+        }
+    }
+}
+
+fn import_lineup(db: &mut Database) {
+    cli::show_header("IMPORT LINEUP");
+
+    let conn = db.get_connection_mut();
+
+    // 1) scegli game pregame + team (riusa la tua logica)
+    // Qui assumo che tu abbia già ottenuto:
+    // - game_id: String
+    // - team_id: i64
+    // - team_name: String
+    // Se vuoi, posso adattarla al tuo codice esatto.
+    let (game_id, team_id, team_name, team_type) = match select_pregame_game_and_team(conn) {
+        Some(v) => v,
+        None => return,
+    };
+
+    // 2) path file
+    let path = cli::read_string("CSV/JSON file path: ").trim().to_string();
+    if path.is_empty() {
+        cli::show_error("No file path provided");
+        return;
+    }
+
+    let content = match fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            cli::show_error(&format!("Cannot read file: {e}"));
+            return;
+        }
+    };
+
+    // 3) parse
+    let rows = match parse_lineup_file(&path, &content) {
+        Ok(r) => r,
+        Err(msg) => {
+            cli::show_error(&msg);
+            return;
+        }
+    };
+
+    // 4) validate + resolve player_id tramite player_number nel roster team
+    let resolved = match validate_and_resolve(conn, team_id, &rows) {
+        Ok(v) => v,
+        Err(msg) => {
+            cli::show_error(&msg);
+            return;
+        }
+    };
+
+    // 5) save (replace)
+    if let Err(e) = save_imported_lineup(conn, &game_id, team_id, &resolved) {
+        cli::show_error(&format!("Import failed: {e}"));
+        return;
+    }
+
+    cli::show_success(&format!(
+        "Lineup imported for {} ({}) - game {}!",
+        team_name, team_type, game_id
+    ));
+}
+
+// ---------- parsing ----------
+
+fn parse_lineup_file(path: &str, content: &str) -> Result<Vec<ImportLineupRow>, String> {
+    let lower = path.to_lowercase();
+    if lower.ends_with(".json") {
+        serde_json::from_str::<Vec<ImportLineupRow>>(content)
+            .map_err(|e| format!("JSON parse error: {e}"))
+    } else if lower.ends_with(".csv") {
+        let mut rdr = csv::Reader::from_reader(content.as_bytes());
+        let mut out = Vec::new();
+        for rec in rdr.deserialize::<ImportLineupRow>() {
+            out.push(rec.map_err(|e| format!("CSV parse error: {e}"))?);
+        }
+        Ok(out)
+    } else {
+        Err("Unsupported format: use .csv or .json".to_string())
+    }
+}
+
+// ---------- validation + resolve ----------
+// ritorna: Vec<(batting_order, def_pos, player_id)>
+fn validate_and_resolve(
+    conn: &Connection,
+    team_id: i64,
+    rows: &[ImportLineupRow],
+) -> Result<Vec<(i32, String, i64)>, String> {
+    if rows.is_empty() {
+        return Err("File is empty".to_string());
+    }
+    if rows.len() > 10 {
+        return Err("Too many rows: max 10".to_string());
+    }
+
+    let mut seen_orders = HashSet::new();
+    let mut seen_numbers = HashSet::new();
+
+    for r in rows {
+        if !(1..=10).contains(&r.batting_order) {
+            return Err(format!(
+                "Invalid batting_order {} (must be 1..10)",
+                r.batting_order
+            ));
+        }
+        if !seen_orders.insert(r.batting_order) {
+            return Err(format!("Duplicate batting_order {}", r.batting_order));
+        }
+        if !seen_numbers.insert(r.player_number) {
+            return Err(format!("Duplicate player_number {}", r.player_number));
+        }
+        if r.defensive_position.trim().is_empty() {
+            return Err(format!(
+                "Empty defensive_position for order {}",
+                r.batting_order
+            ));
+        }
+    }
+
+    // carica roster team: mappa number -> player_id
+    let roster_map =
+        load_roster_number_map(conn, team_id).map_err(|e| format!("Error loading roster: {e}"))?;
+
+    let mut out = Vec::new();
+    for r in rows {
+        let pid = roster_map.get(&r.player_number).copied().ok_or_else(|| {
+            format!(
+                "Player number {} not found in roster for team_id={}",
+                r.player_number, team_id
+            )
+        })?;
+        out.push((
+            r.batting_order,
+            r.defensive_position.trim().to_string(),
+            pid,
+        ));
+    }
+
+    // ordinamento per batting_order (così inserisci sempre ordinato)
+    out.sort_by_key(|(bo, _, _)| *bo);
+    Ok(out)
+}
+
+fn load_roster_number_map(conn: &Connection, team_id: i64) -> rusqlite::Result<HashMap<i32, i64>> {
+    // ⚠️ Adatta la query in base al tuo schema roster.
+    // Se hai players.team_id:
+    let mut stmt = conn.prepare(
+        "SELECT id, number
+         FROM players
+         WHERE team_id = ?1",
+    )?;
+
+    let mut map = HashMap::new();
+    let mut rows = stmt.query(params![team_id])?;
+    while let Some(r) = rows.next()? {
+        let id: i64 = r.get(0)?;
+        let num: i32 = r.get(1)?;
+        map.insert(num, id);
+    }
+    Ok(map)
+}
+
+// ---------- save (replace) ----------
+
+fn save_imported_lineup(
+    conn: &mut Connection,
+    game_id: &str,
+    team_id: i64,
+    resolved: &[(i32, String, i64)],
+) -> rusqlite::Result<()> {
+    let tx = conn.transaction()?;
+
+    tx.execute(
+        "DELETE FROM game_lineups
+         WHERE game_id = ?1 AND team_id = ?2",
+        params![game_id, team_id],
+    )?;
+
+    for (batting_order, def_pos, player_id) in resolved {
+        tx.execute(
+            "INSERT INTO game_lineups (game_id, team_id, player_id, batting_order, defensive_position, is_starting)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1)",
+            params![game_id, team_id, player_id, batting_order, def_pos],
+        )?;
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
+fn select_pregame_game_and_team(
+    conn: &mut rusqlite::Connection,
+) -> Option<(String, i64, String, &'static str)> {
+    let pregame_games: Vec<_> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT g.id, g.game_id, g.game_date, g.venue,
+                    t1.name as away_team, t1.id as away_team_id,
+                    t2.name as home_team, t2.id as home_team_id
+             FROM games g
+             JOIN teams t1 ON g.away_team_id = t1.id
+             JOIN teams t2 ON g.home_team_id = t2.id
+             WHERE g.status = 1
+             ORDER BY g.game_date DESC, g.id DESC",
+            )
+            .ok()?;
+
+        stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, i64>(7)?,
+            ))
+        })
+        .ok()?
+        .filter_map(Result::ok)
+        .collect()
+    };
+
+    if pregame_games.is_empty() {
+        println!("📭 No pre-game games found.");
+        cli::wait_for_enter();
+        return None;
+    }
+
+    println!("\n📋 Pre-Game Games:\n");
+    for (i, (_id, game_id, date, venue, away, _away_id, home, _home_id)) in
+        pregame_games.iter().enumerate()
+    {
+        println!("  {}. {} - {} @ {}", i + 1, date, away, home);
+        println!("     Venue: {} | ID: {}", venue, game_id);
+        println!();
+    }
+
+    let game_choice = match cli::read_i64("Select game (number, 0 to cancel): ") {
+        Some(0) | None => return None,
+        Some(choice) if choice > 0 && (choice as usize) <= pregame_games.len() => choice as usize,
+        _ => {
+            cli::show_error("Invalid selection");
+            return None;
+        }
+    };
+
+    let selected_game = &pregame_games[game_choice - 1];
+    let (_id, game_id, _date, _venue, away_team, away_team_id, home_team, home_team_id) =
+        selected_game;
+
+    println!("\n═══════════════════════════════════════");
+    println!("Select team:");
+    println!("  1. {} (Away)", away_team);
+    println!("  2. {} (Home)", home_team);
+    println!("  0. Cancel");
+    println!();
+
+    match cli::read_choice() {
+        1 => Some((game_id.clone(), *away_team_id, away_team.clone(), "Away")),
+        2 => Some((game_id.clone(), *home_team_id, home_team.clone(), "Home")),
+        0 => None,
+        _ => {
+            cli::show_error("Invalid selection");
+            None
         }
     }
 }
