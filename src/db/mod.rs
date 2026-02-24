@@ -1,5 +1,6 @@
 pub mod config;
 pub mod database;
+pub mod game_events;
 pub mod league;
 pub mod migrations;
 pub mod player;

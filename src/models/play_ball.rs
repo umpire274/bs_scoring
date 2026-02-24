@@ -1,5 +1,5 @@
 pub(crate) use crate::HalfInning;
-use crate::models::types::Score;
+use crate::models::types::{GameStatus, Score};
 
 #[derive(Debug, Clone)]
 pub struct PlayBallGameContext {
@@ -15,6 +15,8 @@ pub struct PlayBallGameContext {
     pub home_team_id: i64,
     pub home_team_name: String,
     pub home_team_abbr: Option<String>,
+
+    pub status: GameStatus,
 }
 
 #[derive(Debug, Clone, Copy)]

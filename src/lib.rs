@@ -22,9 +22,12 @@
 //! ```
 
 pub mod cli;
+pub mod commands;
 pub mod core;
 pub mod db;
+pub mod engine;
 pub mod models;
+pub mod ui;
 pub mod utils;
 
 // Re-export commonly used items for convenience

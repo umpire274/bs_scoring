@@ -1,11 +1,13 @@
-use crate::core::play_ball::{gate_check_lineups, list_pregame_games, set_game_status};
+use crate::core::play_ball::{gate_check_lineups, list_playable_games, set_game_status};
 use crate::models::play_ball::{LineupSide, PlayBallGameContext, PlayBallGate};
 use rusqlite::params;
 
 use crate::Database;
 use crate::cli::commands::game::{insert_team_lineup, save_lineup};
-use crate::core::play_ball;
+use crate::engine;
 use crate::models::types::GameStatus;
+use crate::ui::cli::CliUi;
+use crate::ui::tui::TuiUi;
 use crate::utils::cli;
 
 pub fn play_ball(db: &mut Database) {
@@ -13,7 +15,7 @@ pub fn play_ball(db: &mut Database) {
 
     let conn = db.get_connection_mut();
 
-    let games = match list_pregame_games(conn) {
+    let games = match list_playable_games(conn) {
         Ok(v) => v,
         Err(e) => {
             cli::show_error(&format!("Error querying games: {e}"));
@@ -27,16 +29,23 @@ pub fn play_ball(db: &mut Database) {
         return;
     }
 
-    println!("\n📋 Pre-Game Games:\n");
+    println!("\n📋 Available Games:\n");
     for (i, g) in games.iter().enumerate() {
+        let away_display = g.away_team_abbr.as_deref().unwrap_or(&g.away_team_name);
+        let home_display = g.home_team_abbr.as_deref().unwrap_or(&g.home_team_name);
+
         println!(
-            "  {}. {} - {} @ {}",
+            "  {}. {} {} - {} @ {}",
             i + 1,
+            g.status.icon(),
             g.game_date,
-            g.away_team_name,
-            g.home_team_name
+            away_display,
+            home_display
         );
-        println!("     Venue: {} | ID: {}", g.venue, g.game_id);
+        println!(
+            "     Status: {} | Venue: {} | ID: {}",
+            g.status, g.venue, g.game_id
+        );
         println!();
     }
 
@@ -67,7 +76,24 @@ pub fn play_ball(db: &mut Database) {
 
                     let home_display = g.home_team_abbr.as_deref().unwrap_or(&g.home_team_name);
 
-                    play_ball::loop_engine_playball(conn, &g.game_id, away_display, home_display);
+                    let mut ui: Box<dyn crate::ui::Ui> = match TuiUi::new() {
+                        Ok(tui) => Box::new(tui),
+                        Err(e) => {
+                            cli::show_error(&format!(
+                                "Failed to initialize TUI (falling back to CLI): {e}"
+                            ));
+                            Box::new(CliUi::new())
+                        }
+                    };
+
+                    engine::play_ball::run_play_ball_engine(
+                        conn,
+                        &mut *ui,
+                        g.id,
+                        &g.game_id,
+                        away_display,
+                        home_display,
+                    );
                 }
                 Ok(false) => {
                     cli::show_error("Game status was not updated (game not in Pre-Game status?)");
