@@ -4,8 +4,10 @@ use rusqlite::params;
 
 use crate::Database;
 use crate::cli::commands::game::{insert_team_lineup, save_lineup};
-use crate::core::play_ball;
+use crate::engine;
 use crate::models::types::GameStatus;
+use crate::ui::cli::CliUi;
+use crate::ui::tui::TuiUi;
 use crate::utils::cli;
 
 pub fn play_ball(db: &mut Database) {
@@ -67,7 +69,23 @@ pub fn play_ball(db: &mut Database) {
 
                     let home_display = g.home_team_abbr.as_deref().unwrap_or(&g.home_team_name);
 
-                    play_ball::loop_engine_playball(conn, &g.game_id, away_display, home_display);
+                    let mut ui: Box<dyn crate::ui::Ui> = match TuiUi::new() {
+                        Ok(tui) => Box::new(tui),
+                        Err(e) => {
+                            cli::show_error(&format!(
+                                "Failed to initialize TUI (falling back to CLI): {e}"
+                            ));
+                            Box::new(CliUi::new())
+                        }
+                    };
+
+                    engine::play_ball::run_play_ball_engine(
+                        conn,
+                        &mut *ui,
+                        &g.game_id,
+                        away_display,
+                        home_display,
+                    );
                 }
                 Ok(false) => {
                     cli::show_error("Game status was not updated (game not in Pre-Game status?)");
