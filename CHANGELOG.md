@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-02-24
+
+### ✨ Added
+
+- First real scoring engine command: `playball`
+    - Starts the game (if no previous events exist)
+    - Persists `GameStarted` event
+    - Persists `AtBatStarted` event
+    - Automatically logs: `At bat number 01 <First> <Last>`
+- Automatic transition from `Pregame` → `InProgress` when starting the game
+- Centralized UI factory (`create_ui()`) to remove duplicated TUI/CLI initialization logic
+- Updated SCORING_GUIDE.md to reflect actual supported commands
+
+### ♻️ Refactored
+
+- Removed experimental `out` command from engine and parser
+- Simplified Play Ball entry flow (removed explicit start confirmation)
+- Cleaned gate-check logic for lineup validation
+- Consolidated UI initialization into reusable helper
+
+### 🧠 Architecture
+
+- Reinforced event-sourced engine design
+- Engine now persists domain events before emitting UI output
+- Prepared foundation for next batter rotation logic (0.6.2)
+
+### 🎯 UX
+
+- Direct start into engine when lineups are valid
+- Cleaner flow without redundant confirmation step
+
+---
+
 ## [0.6.0] - 2026-02-24
 
 ### 🚀 Added

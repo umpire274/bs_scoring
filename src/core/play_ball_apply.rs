@@ -1,5 +1,5 @@
 use crate::commands::types::EngineCommand;
-use crate::models::events::{DomainEvent, OutRecordedData, SideChangeData, StatusChangedData};
+use crate::models::events::{DomainEvent, StatusChangedData};
 use crate::models::play_ball::{GameState, HalfInning};
 use crate::models::types::GameStatus;
 use crate::ui::events::UiEvent;
@@ -28,6 +28,17 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
             status_change: None,
         },
 
+        // NOTE: PLAYBALL is handled in the engine layer because it requires DB lookups
+        // (away lineup #1 batter + player names). We keep this branch for exhaustiveness.
+        EngineCommand::PlayBall => ApplyResult {
+            events: vec![UiEvent::Error(
+                "PLAYBALL must be handled by the engine (DB-backed).".to_string(),
+            )],
+            persisted: vec![],
+            exit: false,
+            status_change: None,
+        },
+
         EngineCommand::SetStatus(status) => ApplyResult {
             events: vec![UiEvent::Line(format!(
                 "{} Game set to {}.",
@@ -43,80 +54,6 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
             exit: true,
             status_change: Some(status),
         },
-
-        EngineCommand::Out => {
-            let before_outs = state.outs;
-            let before_inning = state.inning;
-            let before_half = state.half;
-
-            let mut persisted: Vec<PersistedEvent> = Vec::new();
-
-            if before_outs < 2 {
-                state.outs = before_outs + 1;
-
-                let msg = format!("Out recorded ({} OUTS).", state.outs);
-                persisted.push(PersistedEvent {
-                    inning: before_inning,
-                    half: before_half,
-                    event: DomainEvent::OutRecorded(OutRecordedData {
-                        outs_before: before_outs,
-                        outs_after: state.outs,
-                    }),
-                    description: msg.clone(),
-                });
-
-                ApplyResult {
-                    events: vec![UiEvent::Line(msg)],
-                    persisted,
-                    exit: false,
-                    status_change: None,
-                }
-            } else {
-                // Third out: record out (outs_after=3) and then side change.
-                let out_msg = "Out recorded (3 OUTS).".to_string();
-                persisted.push(PersistedEvent {
-                    inning: before_inning,
-                    half: before_half,
-                    event: DomainEvent::OutRecorded(OutRecordedData {
-                        outs_before: before_outs,
-                        outs_after: 3,
-                    }),
-                    description: out_msg.clone(),
-                });
-
-                // Advance half/inning in state
-                match state.half {
-                    HalfInning::Top => state.half = HalfInning::Bottom,
-                    HalfInning::Bottom => {
-                        state.half = HalfInning::Top;
-                        state.inning += 1;
-                    }
-                }
-                state.outs = 0;
-
-                let side_msg = format!(
-                    "Side retired. {} {} (0 OUTS).",
-                    state.half_symbol(),
-                    state.inning
-                );
-                persisted.push(PersistedEvent {
-                    inning: state.inning,
-                    half: state.half,
-                    event: DomainEvent::SideChange(SideChangeData {
-                        inning: state.inning,
-                        half: state.half,
-                    }),
-                    description: side_msg.clone(),
-                });
-
-                ApplyResult {
-                    events: vec![UiEvent::Line(out_msg), UiEvent::Line(side_msg)],
-                    persisted,
-                    exit: false,
-                    status_change: None,
-                }
-            }
-        }
 
         EngineCommand::Unknown(s) => ApplyResult {
             events: vec![UiEvent::Error(format!("Unknown command: {s}"))],
