@@ -1,4 +1,4 @@
-use crate::core::play_ball::{gate_check_lineups, list_pregame_games, set_game_status};
+use crate::core::play_ball::{gate_check_lineups, list_playable_games, set_game_status};
 use crate::models::play_ball::{LineupSide, PlayBallGameContext, PlayBallGate};
 use rusqlite::params;
 
@@ -15,7 +15,7 @@ pub fn play_ball(db: &mut Database) {
 
     let conn = db.get_connection_mut();
 
-    let games = match list_pregame_games(conn) {
+    let games = match list_playable_games(conn) {
         Ok(v) => v,
         Err(e) => {
             cli::show_error(&format!("Error querying games: {e}"));
@@ -29,16 +29,23 @@ pub fn play_ball(db: &mut Database) {
         return;
     }
 
-    println!("\n📋 Pre-Game Games:\n");
+    println!("\n📋 Available Games:\n");
     for (i, g) in games.iter().enumerate() {
+        let away_display = g.away_team_abbr.as_deref().unwrap_or(&g.away_team_name);
+        let home_display = g.home_team_abbr.as_deref().unwrap_or(&g.home_team_name);
+
         println!(
-            "  {}. {} - {} @ {}",
+            "  {}. {} {} - {} @ {}",
             i + 1,
+            g.status.icon(),
             g.game_date,
-            g.away_team_name,
-            g.home_team_name
+            away_display,
+            home_display
         );
-        println!("     Venue: {} | ID: {}", g.venue, g.game_id);
+        println!(
+            "     Status: {} | Venue: {} | ID: {}",
+            g.status, g.venue, g.game_id
+        );
         println!();
     }
 
@@ -82,6 +89,7 @@ pub fn play_ball(db: &mut Database) {
                     engine::play_ball::run_play_ball_engine(
                         conn,
                         &mut *ui,
+                        g.id,
                         &g.game_id,
                         away_display,
                         home_display,

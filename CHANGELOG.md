@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-02-24
+
+### 🚀 Added
+
+- Ratatui-based TUI interface with:
+    - Fixed command prompt at bottom
+    - Scrollable game log
+    - Keyboard navigation (Up/Down, PgUp/PgDn, Home/End)
+- Event-sourced Play Ball engine
+- Persistent `game_events` logging
+- Game state replay on resume
+- DomainEvent model with JSON payload support
+- Status display in Play Ball game selection list
+- New `list_playable_games` function (replaces pregame-only filtering)
+
+### ♻️ Refactored
+
+- Decoupled UI layer from engine logic
+- Introduced reducer pattern for GameState reconstruction
+- Split engine responsibilities: apply / persist / render
+- Reorganized Play Ball flow to support resume without snapshots
+
+### 🧠 Architecture
+
+- Play Ball now uses persistent event log instead of in-memory state
+- Games can be safely suspended and resumed
+- Foundation prepared for full scoring command expansion
+
+### 🎯 UX Improvements
+
+- Game status icon and label shown in Play Ball selection list
+- Improved filtering: excludes only Regulation, Cancelled, Forfeited games
+
+---
+
 ## [0.5.0] - 2026-02-23
 
 ### 🚀 Added

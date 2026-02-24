@@ -1,6 +1,9 @@
 use crate::commands::engine_parser::parse_engine_commands;
 use crate::core::play_ball::set_game_status;
 use crate::core::play_ball_apply::apply_engine_command;
+use crate::core::play_ball_reducer::apply_domain_event;
+use crate::db::game_events::{append_game_event, list_game_events};
+use crate::models::events::DomainEvent;
 use crate::models::play_ball::GameState;
 use crate::ui::Ui;
 use crate::ui::events::UiEvent;
@@ -30,11 +33,32 @@ fn format_prompt(state: &GameState, away: &str, home: &str) -> String {
 pub fn run_play_ball_engine(
     conn: &mut Connection,
     ui: &mut dyn Ui,
+    game_pk: i64,
     game_id: &str,
     away: &str,
     home: &str,
 ) -> EngineExit {
+    // Rebuild state from persisted events (resume-friendly).
     let mut state = GameState::new();
+
+    match list_game_events(conn, game_pk) {
+        Ok(rows) => {
+            for r in rows {
+                // Push stored description into UI log (if any)
+                if let Some(desc) = r.description {
+                    ui.emit(UiEvent::Line(desc));
+                }
+
+                // Rebuild prompt state from structured event data if available.
+                if let Some(data) = r.event_data.as_deref()
+                    && let Ok(ev) = serde_json::from_str::<DomainEvent>(data)
+                {
+                    apply_domain_event(&mut state, &ev);
+                }
+            }
+        }
+        Err(e) => ui.emit(UiEvent::Error(format!("Failed to load game events: {e}"))),
+    }
 
     loop {
         let prompt = format_prompt(&state, away, home);
@@ -53,6 +77,20 @@ pub fn run_play_ball_engine(
 
             for ev in result.events {
                 ui.emit(ev);
+            }
+
+            // Persist replayable events.
+            for pe in &result.persisted {
+                if let Err(e) = append_game_event(
+                    conn,
+                    game_pk,
+                    pe.inning,
+                    pe.half,
+                    &pe.event,
+                    &pe.description,
+                ) {
+                    ui.emit(UiEvent::Error(format!("Failed to append game event: {e}")));
+                }
             }
 
             if let Some(status) = result.status_change {
