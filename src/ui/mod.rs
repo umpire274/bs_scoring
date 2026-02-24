@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod events;
+pub mod factory;
 pub mod tui;
 
 use crate::ui::events::UiEvent;

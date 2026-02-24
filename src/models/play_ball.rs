@@ -50,6 +50,8 @@ pub struct GameState {
     pub half: HalfInning,
     pub outs: u8,
     pub score: Score,
+    pub started: bool,
+    pub at_bat_no: u32,
 }
 
 impl GameState {
@@ -59,6 +61,8 @@ impl GameState {
             half: HalfInning::Top,
             outs: 0,
             score: Score::new(),
+            started: false,
+            at_bat_no: 0,
         }
     }
 

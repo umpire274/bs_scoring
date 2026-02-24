@@ -4,7 +4,6 @@ use crate::models::types::GameStatus;
 pub enum EngineCommand {
     Exit,
     SetStatus(GameStatus),
-    /// Temporary/debug command used to validate inning/outs prompt dynamics.
-    Out,
+    PlayBall,
     Unknown(String),
 }
