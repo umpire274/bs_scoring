@@ -2,13 +2,12 @@ use crate::core::play_ball::{gate_check_lineups, list_playable_games, set_game_s
 use crate::models::play_ball::{LineupSide, PlayBallGameContext, PlayBallGate};
 use rusqlite::params;
 
-use crate::Database;
 use crate::cli::commands::game::{insert_team_lineup, save_lineup};
-use crate::engine;
+use crate::engine::play_ball::run_play_ball_engine;
 use crate::models::types::GameStatus;
-use crate::ui::cli::CliUi;
-use crate::ui::tui::TuiUi;
+use crate::ui::factory::create_ui;
 use crate::utils::cli;
+use crate::Database;
 
 pub fn play_ball(db: &mut Database) {
     cli::show_header("PLAY BALL");
@@ -35,9 +34,8 @@ pub fn play_ball(db: &mut Database) {
         let home_display = g.home_team_abbr.as_deref().unwrap_or(&g.home_team_name);
 
         println!(
-            "  {}. {} {} - {} @ {}",
+            "  {}. {} - {} @ {}",
             i + 1,
-            g.status.icon(),
             g.game_date,
             away_display,
             home_display
@@ -60,50 +58,63 @@ pub fn play_ball(db: &mut Database) {
 
     let g = &games[game_choice - 1];
 
+    // Se la partita NON è in Pregame, si entra direttamente nell'engine (resume),
+    // senza bloccare su lineup gate-check.
+    if g.status != GameStatus::Pregame {
+        let away_display = g.away_team_abbr.as_deref().unwrap_or(&g.away_team_name);
+        let home_display = g.home_team_abbr.as_deref().unwrap_or(&g.home_team_name);
+
+        let mut ui = create_ui();
+
+        run_play_ball_engine(
+            conn,
+            &mut *ui,
+            g.id,
+            &g.game_id,
+            g.away_team_id,
+            away_display,
+            home_display,
+        );
+
+        return;
+    }
+
+    // Qui sotto: solo Pregame -> gate check obbligatorio
     match gate_check_lineups(conn, &g.game_id, g.away_team_id, g.home_team_id) {
         Ok(PlayBallGate::Ready) => {
-            cli::show_success_no_wait_for_enter("Both lineups are valid. Ready to Play Ball!\n");
-
-            if !cli::confirm("Start game now? This will set status to LIVE.") {
-                println!("\n❌ Cancelled");
-                cli::wait_for_enter();
-                return;
-            }
-
-            match set_game_status(conn, &g.game_id, GameStatus::InProgress) {
-                Ok(true) => {
-                    let away_display = g.away_team_abbr.as_deref().unwrap_or(&g.away_team_name);
-
-                    let home_display = g.home_team_abbr.as_deref().unwrap_or(&g.home_team_name);
-
-                    let mut ui: Box<dyn crate::ui::Ui> = match TuiUi::new() {
-                        Ok(tui) => Box::new(tui),
-                        Err(e) => {
-                            cli::show_error(&format!(
-                                "Failed to initialize TUI (falling back to CLI): {e}"
-                            ));
-                            Box::new(CliUi::new())
-                        }
-                    };
-
-                    engine::play_ball::run_play_ball_engine(
-                        conn,
-                        &mut *ui,
-                        g.id,
-                        &g.game_id,
-                        away_display,
-                        home_display,
-                    );
-                }
-                Ok(false) => {
-                    cli::show_error("Game status was not updated (game not in Pre-Game status?)");
-                }
-                Err(e) => {
-                    cli::show_error(&format!("Failed to set game LIVE: {e}"));
+            // Se la gara è in Pregame, passiamo automaticamente a InProgress
+            if g.status == GameStatus::Pregame {
+                match set_game_status(conn, &g.game_id, GameStatus::InProgress) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        cli::show_error(
+                            "Game status was not updated (game not in Pre-Game status?)",
+                        );
+                        cli::wait_for_enter();
+                        return;
+                    }
+                    Err(e) => {
+                        cli::show_error(&format!("Failed to set game LIVE: {e}"));
+                        cli::wait_for_enter();
+                        return;
+                    }
                 }
             }
 
-            cli::wait_for_enter();
+            let away_display = g.away_team_abbr.as_deref().unwrap_or(&g.away_team_name);
+            let home_display = g.home_team_abbr.as_deref().unwrap_or(&g.home_team_name);
+
+            let mut ui = create_ui();
+
+            run_play_ball_engine(
+                conn,
+                &mut *ui,
+                g.id,
+                &g.game_id,
+                g.away_team_id,
+                away_display,
+                home_display,
+            );
         }
 
         Ok(PlayBallGate::InvalidLineup {
@@ -112,10 +123,12 @@ pub fn play_ball(db: &mut Database) {
             found,
         }) => {
             handle_invalid_lineup(db, g, side, required, found);
+            // handle_invalid_lineup immagino faccia già wait_for_enter; se no aggiungilo qui.
         }
 
         Err(e) => {
             cli::show_error(&format!("Error checking lineups: {e}"));
+            cli::wait_for_enter();
         }
     }
 }

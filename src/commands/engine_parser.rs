@@ -24,7 +24,7 @@ fn parse_one(cmd: &str) -> EngineCommand {
         "forf" => EngineCommand::SetStatus(GameStatus::Forfeited),
         "protest" => EngineCommand::SetStatus(GameStatus::Protested),
 
-        "out" => EngineCommand::Out,
+        "playball" => EngineCommand::PlayBall,
 
         _ => EngineCommand::Unknown(cmd.to_string()),
     }

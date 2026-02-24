@@ -77,3 +77,28 @@ pub fn append_game_event(
 
     Ok(())
 }
+
+pub fn get_lineup_batter_by_order(
+    conn: &Connection,
+    game_id_str: &str,
+    team_id: i64,
+    batting_order: i32,
+) -> rusqlite::Result<(i64, String, String)> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT p.id, p.first_name, p.last_name
+        FROM game_lineups gl
+        JOIN players p ON gl.player_id = p.id
+        WHERE gl.game_id = ?1
+          AND gl.team_id = ?2
+          AND gl.is_starting = 1
+          AND gl.batting_order = ?3
+        LIMIT 1
+        "#,
+    )?;
+
+    stmt.query_row(
+        rusqlite::params![game_id_str, team_id, batting_order],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )
+}
