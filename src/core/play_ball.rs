@@ -1,6 +1,6 @@
 use crate::models::play_ball::{LineupSide, PlayBallGameContext, PlayBallGate};
 use crate::models::types::GameStatus;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 pub fn list_playable_games(conn: &Connection) -> rusqlite::Result<Vec<PlayBallGameContext>> {
     use crate::models::types::GameStatus;
