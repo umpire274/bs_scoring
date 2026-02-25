@@ -16,7 +16,7 @@ pub enum DomainEvent {
     GameStarted,
 
     AtBatStarted {
-        at_bat_no: u32,
+        jersey_no: i32,
         batting_team_id: i64,
         batter_id: i64,
     },
