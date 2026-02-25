@@ -51,7 +51,7 @@ with:
 - Appends an `at_bat_started` event to `game_events`
 - Writes (and persists) a log line like:
 
-At bat, for <TEAM ABBRV>, #<JERSEY_NUMBER> FirstName LastName
+At bat: <TEAM ABBRV> #<JERSEY_NUMBER> FirstName LastName
 
 > Note: `playball` is only allowed when the game has **no previous events**.
 
