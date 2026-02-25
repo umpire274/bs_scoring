@@ -51,7 +51,9 @@ pub struct GameState {
     pub outs: u8,
     pub score: Score,
     pub started: bool,
-    pub at_bat_no: u32,
+
+    pub current_batter_id: Option<i64>,
+    pub current_batter_jersey_no: Option<i32>,
 }
 
 impl GameState {
@@ -62,7 +64,9 @@ impl GameState {
             outs: 0,
             score: Score::new(),
             started: false,
-            at_bat_no: 0,
+
+            current_batter_id: None,
+            current_batter_jersey_no: None,
         }
     }
 

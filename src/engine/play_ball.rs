@@ -1,3 +1,4 @@
+use crate::HalfInning;
 use crate::commands::engine_parser::parse_engine_commands;
 use crate::commands::types::EngineCommand;
 use crate::core::play_ball::set_game_status;
@@ -32,12 +33,13 @@ fn get_away_leadoff_batter(
     conn: &Connection,
     game_id: &str,
     away_team_id: i64,
-) -> rusqlite::Result<(i64, String, String)> {
+) -> rusqlite::Result<(i64, String, i32, String, String)> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT p.id, p.first_name, p.last_name
+        SELECT p.id, t.abbreviation, p.number, p.first_name, p.last_name
         FROM game_lineups gl
         JOIN players p ON gl.player_id = p.id
+        JOIN teams t ON gl.team_id = t.id
         WHERE gl.game_id = ?1
           AND gl.team_id = ?2
           AND gl.is_starting = 1
@@ -47,7 +49,13 @@ fn get_away_leadoff_batter(
     )?;
 
     stmt.query_row(params![game_id, away_team_id], |row| {
-        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        Ok((
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+            row.get(4)?,
+        ))
     })
 }
 
@@ -116,22 +124,22 @@ pub fn run_play_ball_engine(
                 let msg_start = "🏁 Play Ball!".to_string();
 
                 let ev_start = DomainEvent::GameStarted;
-                if let Err(e) = append_game_event(
+                if !persist_event(
                     conn,
+                    ui,
                     game_pk,
                     state.inning,
                     state.half,
                     &ev_start,
                     &msg_start,
                 ) {
-                    ui.emit(UiEvent::Error(format!("Failed to append game event: {e}")));
                     continue;
                 }
                 ui.emit(UiEvent::Line(msg_start.clone()));
                 apply_domain_event(&mut state, &ev_start);
 
                 // 2) Determine away leadoff batter (batting_order=1)
-                let (batter_id, first, last) =
+                let (batter_id, team_abbrv, jersey_no, first, last) =
                     match get_away_leadoff_batter(conn, game_id, away_team_id) {
                         Ok(v) => v,
                         Err(e) => {
@@ -142,19 +150,23 @@ pub fn run_play_ball_engine(
                         }
                     };
 
-                let at_bat_no: u32 = 1;
-                let msg_ab = format!("At bat number {:02} {} {}", at_bat_no, first, last);
+                let msg_ab = format!("At bat: {} #{} {} {}", team_abbrv, jersey_no, first, last);
 
                 let ev_ab = DomainEvent::AtBatStarted {
-                    at_bat_no,
+                    jersey_no,
                     batting_team_id: away_team_id,
                     batter_id,
                 };
 
-                if let Err(e) =
-                    append_game_event(conn, game_pk, state.inning, state.half, &ev_ab, &msg_ab)
-                {
-                    ui.emit(UiEvent::Error(format!("Failed to append game event: {e}")));
+                if !persist_event(
+                    conn,
+                    ui,
+                    game_pk,
+                    state.inning,
+                    state.half,
+                    &ev_start,
+                    &msg_start,
+                ) {
                     continue;
                 }
 
@@ -201,6 +213,24 @@ pub fn run_play_ball_engine(
             if result.exit {
                 return EngineExit::ExitToMenu;
             }
+        }
+    }
+}
+
+fn persist_event(
+    conn: &mut Connection,
+    ui: &mut dyn Ui,
+    game_pk: i64,
+    inning: u32,
+    half: HalfInning,
+    event: &DomainEvent,
+    description: &str,
+) -> bool {
+    match append_game_event(conn, game_pk, inning, half, event, description) {
+        Ok(_) => true,
+        Err(e) => {
+            ui.emit(UiEvent::Error(format!("Failed to append game event: {e}")));
+            false
         }
     }
 }

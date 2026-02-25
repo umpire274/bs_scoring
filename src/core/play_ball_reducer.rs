@@ -21,8 +21,13 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
             state.half = HalfInning::Top; // away bats first
             state.outs = 0;
         }
-        DomainEvent::AtBatStarted { at_bat_no, .. } => {
-            state.at_bat_no = *at_bat_no;
+        DomainEvent::AtBatStarted {
+            batter_id,
+            jersey_no,
+            ..
+        } => {
+            state.current_batter_id = Some(*batter_id);
+            state.current_batter_jersey_no = Some(*jersey_no);
         }
     }
 }
