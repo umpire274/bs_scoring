@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.6] - 2026-02-26
+
+### ✨ Added
+
+- Dynamic pitch count tracking per pitcher
+    - New `DomainEvent::PitchThrown`
+    - Pitch count stored per active pitcher
+    - Counter resets automatically when pitcher changes
+- New engine command: `p` / `pitch`
+    - Persists `PitchThrown` event
+    - Increments pitch count for current pitcher
+- Scoreboard now displays live pitch count `(P xxx)`
+
+### ♻️ Refactored
+
+- Removed obsolete `at_bat_no` from `DomainEvent::AtBatStarted`
+- Extended `AtBatStarted` to include:
+    - Batter full identity (id, jersey, first/last name)
+    - Pitcher full identity (id, jersey, first/last name)
+- Fixed engine default path:
+    - Persisted events are now properly reduced into `GameState`
+    - Added `ui.set_state(&state)` after reducer application
+- Ensured resume consistency:
+    - Pitch count correctly rebuilt from persisted events
+    - Batter and pitcher correctly restored after TUI restart
+
+### 🧠 Architecture
+
+- Strengthened event-sourced model:
+    - All in-game state derived exclusively from persisted `DomainEvent`s
+- Engine loop now consistently follows:
+    - parse → apply → persist → reduce → update UI
+- Eliminated state/UI desynchronization bug in default command path
+
+### 🐛 Fixed
+
+- `PitchThrown` was not being reduced into `GameState`
+- Duplicate `GameStarted` persistence in earlier patch sequence
+- Inconsistent scoreboard reconstruction after TUI restart
+
+### 🎯 UX
+
+- Live pitch counter displayed per active pitcher
+- Scoreboard fully synchronized with in-memory state
+- Resume behavior now deterministic and stable
+-
+
+---
+
 ## [0.6.5] - 2026-02-26
 
 ### ✨ Added

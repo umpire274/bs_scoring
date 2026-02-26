@@ -54,6 +54,14 @@ pub struct GameState {
 
     pub current_batter_id: Option<i64>,
     pub current_batter_jersey_no: Option<i32>,
+    pub current_batter_first_name: Option<String>,
+    pub current_batter_last_name: Option<String>,
+    pub current_pitch_count: u32,
+
+    pub current_pitcher_id: Option<i64>,
+    pub current_pitcher_jersey_no: Option<i32>,
+    pub current_pitcher_first_name: Option<String>,
+    pub current_pitcher_last_name: Option<String>,
 }
 
 impl GameState {
@@ -67,6 +75,14 @@ impl GameState {
 
             current_batter_id: None,
             current_batter_jersey_no: None,
+            current_batter_first_name: None,
+            current_batter_last_name: None,
+            current_pitch_count: 0,
+
+            current_pitcher_id: None,
+            current_pitcher_jersey_no: None,
+            current_pitcher_first_name: None,
+            current_pitcher_last_name: None,
         }
     }
 

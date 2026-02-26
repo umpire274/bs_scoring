@@ -5,5 +5,6 @@ pub enum EngineCommand {
     Exit,
     SetStatus(GameStatus),
     PlayBall,
+    Pitch,
     Unknown(String),
 }

@@ -52,7 +52,8 @@ pub fn run_play_ball_engine(
     ui: &mut dyn Ui,
     game_pk: i64,
     game_id: &str,
-    away_team_id: i64, // NEW: needed for playball batter lookup
+    away_team_id: i64,
+    home_team_id: i64,
 ) -> EngineExit {
     // Rebuild state from persisted events (resume-friendly).
     let mut state = GameState::new();
@@ -123,6 +124,7 @@ pub fn run_play_ball_engine(
                 }
                 ui.emit(UiEvent::Line(msg_start.clone()));
                 apply_domain_event(&mut state, &ev_start);
+                ui.set_state(&state);
 
                 // 2) Determine away leadoff batter (batting_order=1)
                 let (batter_id, team_abbrv, jersey_no, first, last) =
@@ -136,28 +138,43 @@ pub fn run_play_ball_engine(
                         }
                     };
 
+                let fielding_team_id = home_team_id;
+
+                let (pitcher_id, pitcher_no, p_first, p_last) =
+                    match get_starting_pitcher(conn, game_id, fielding_team_id) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            ui.emit(UiEvent::Error(format!(
+                            "Cannot start game: missing starting pitcher for fielding team ({e})"
+                        )));
+                            continue;
+                        }
+                    };
+
                 let msg_ab = format!("At bat: {} #{} {} {}", team_abbrv, jersey_no, first, last);
 
                 let ev_ab = DomainEvent::AtBatStarted {
-                    jersey_no,
+                    team_abbrv,
                     batting_team_id: away_team_id,
+
                     batter_id,
+                    batter_jersey_no: jersey_no,
+                    batter_first_name: first,
+                    batter_last_name: last,
+
+                    pitcher_id,
+                    pitcher_jersey_no: pitcher_no,
+                    pitcher_first_name: p_first,
+                    pitcher_last_name: p_last,
                 };
 
-                if !persist_event(
-                    conn,
-                    ui,
-                    game_pk,
-                    state.inning,
-                    state.half,
-                    &ev_start,
-                    &msg_start,
-                ) {
+                if !persist_event(conn, ui, game_pk, state.inning, state.half, &ev_ab, &msg_ab) {
                     continue;
                 }
 
                 ui.emit(UiEvent::Line(msg_ab.clone()));
                 apply_domain_event(&mut state, &ev_ab);
+                ui.set_state(&state);
 
                 has_events = true;
                 continue;
@@ -170,7 +187,7 @@ pub fn run_play_ball_engine(
                 ui.emit(ev);
             }
 
-            // Persist replayable events.
+            // Persist replayable events + apply to state (important for scoreboard)
             for pe in &result.persisted {
                 if let Err(e) = append_game_event(
                     conn,
@@ -181,10 +198,18 @@ pub fn run_play_ball_engine(
                     &pe.description,
                 ) {
                     ui.emit(UiEvent::Error(format!("Failed to append game event: {e}")));
+                    continue;
                 }
+
+                // ✅ Update in-memory state (reducer)
+                apply_domain_event(&mut state, &pe.event);
+
                 // keep has_events in sync
                 has_events = true;
             }
+
+            // ✅ Push updated state to UI (scoreboard refresh)
+            ui.set_state(&state);
 
             if let Some(status) = result.status_change {
                 match set_game_status(conn, game_id, status) {
@@ -219,4 +244,28 @@ fn persist_event(
             false
         }
     }
+}
+
+fn get_starting_pitcher(
+    conn: &Connection,
+    game_id: &str,
+    fielding_team_id: i64,
+) -> rusqlite::Result<(i64, i32, String, String)> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT p.id, p.number, p.first_name, p.last_name
+        FROM game_lineups gl
+        JOIN players p ON gl.player_id = p.id
+        WHERE gl.game_id = ?1
+          AND gl.team_id = ?2
+          AND gl.is_starting = 1
+          AND gl.defensive_position = '1'
+        ORDER BY gl.batting_order
+        LIMIT 1
+        "#,
+    )?;
+
+    stmt.query_row(params![game_id, fielding_team_id], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    })
 }

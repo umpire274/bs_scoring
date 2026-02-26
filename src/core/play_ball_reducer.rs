@@ -23,11 +23,49 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
         }
         DomainEvent::AtBatStarted {
             batter_id,
-            jersey_no,
+            batter_jersey_no,
+            batter_first_name,
+            batter_last_name,
+            pitcher_id,
+            pitcher_jersey_no,
+            pitcher_first_name,
+            pitcher_last_name,
             ..
         } => {
+            state.started = true;
+            state.current_pitch_count = 0;
+
             state.current_batter_id = Some(*batter_id);
-            state.current_batter_jersey_no = Some(*jersey_no);
+            state.current_batter_jersey_no = Some(*batter_jersey_no);
+            state.current_batter_first_name = Some(batter_first_name.clone());
+            state.current_batter_last_name = Some(batter_last_name.clone());
+
+            state.current_pitcher_id = Some(*pitcher_id);
+            state.current_pitcher_jersey_no = Some(*pitcher_jersey_no);
+            state.current_pitcher_first_name = Some(pitcher_first_name.clone());
+            state.current_pitcher_last_name = Some(pitcher_last_name.clone());
+        }
+
+        DomainEvent::PitchThrown { pitcher_id } => {
+            // incrementa solo se è il pitcher attuale
+            if state.current_pitcher_id == Some(*pitcher_id) {
+                state.current_pitch_count = state.current_pitch_count.saturating_add(1);
+            }
+        }
+
+        DomainEvent::PitcherChanged {
+            pitcher_id,
+            pitcher_jersey_no,
+            pitcher_first_name,
+            pitcher_last_name,
+        } => {
+            state.current_pitcher_id = Some(*pitcher_id);
+            state.current_pitcher_jersey_no = Some(*pitcher_jersey_no);
+            state.current_pitcher_first_name = Some(pitcher_first_name.clone());
+            state.current_pitcher_last_name = Some(pitcher_last_name.clone());
+
+            // reset count per nuovo pitcher
+            state.current_pitch_count = 0;
         }
     }
 }

@@ -270,9 +270,13 @@ impl TuiUi {
             p_first_name,
             p_last_name,
         ) = if let Some(s) = state {
-            let batter = match s.current_batter_jersey_no {
-                Some(j) => format!("#{}  {}", j, "Carlos Rodriguez"), // TODO: nome vero
-                None => "-".to_string(),
+            let batter = match (
+                s.current_batter_jersey_no,
+                s.current_batter_first_name.as_deref(),
+                s.current_batter_last_name.as_deref(),
+            ) {
+                (Some(j), Some(first), Some(last)) => format!("#{j}  {first} {last}"),
+                _ => "-".to_string(),
             };
 
             (
@@ -282,9 +286,9 @@ impl TuiUi {
                 s.score.away,
                 s.score.home,
                 batter,
-                64,
-                "Al",
-                "Maestri",
+                s.current_pitcher_jersey_no.unwrap_or(0),
+                s.current_pitcher_first_name.as_deref().unwrap_or("-"),
+                s.current_pitcher_last_name.as_deref().unwrap_or("-"),
             )
         } else {
             (1, "↑", 0, 0, 0, "-".to_string(), 0, "-", "-")
@@ -318,7 +322,10 @@ impl TuiUi {
 
         let batter_line = Self::pad_right_fit(batter.as_str(), w);
 
-        let right = format!("(P {:>3})", 7u32);
+        let right = format!(
+            "(P {:>3})",
+            state.map(|s| s.current_pitch_count).unwrap_or(0)
+        );
         let max_left = w.saturating_sub(Self::display_width(&right) + 1); // +1 gap
         let pitcher_left = Self::format_player_name_for_scoreboard(
             p_jersey_no,
