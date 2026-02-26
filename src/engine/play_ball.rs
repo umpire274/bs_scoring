@@ -15,19 +15,6 @@ pub enum EngineExit {
     ExitToMenu,
 }
 
-fn format_prompt(state: &GameState, away: &str, home: &str) -> String {
-    format!(
-        "{}{} ({} OUTS) {} {} - {} {} > ",
-        state.inning,
-        state.half_symbol(),
-        state.outs,
-        away,
-        state.score.away,
-        state.score.home,
-        home
-    )
-}
-
 /// Returns (player_id, first_name, last_name) for the away batter at batting_order=1.
 fn get_away_leadoff_batter(
     conn: &Connection,
@@ -66,8 +53,6 @@ pub fn run_play_ball_engine(
     game_pk: i64,
     game_id: &str,
     away_team_id: i64, // NEW: needed for playball batter lookup
-    away: &str,
-    home: &str,
 ) -> EngineExit {
     // Rebuild state from persisted events (resume-friendly).
     let mut state = GameState::new();
@@ -90,6 +75,7 @@ pub fn run_play_ball_engine(
                     && let Ok(ev) = serde_json::from_str::<DomainEvent>(data)
                 {
                     apply_domain_event(&mut state, &ev);
+                    ui.set_state(&state);
                 }
             }
         }
@@ -97,8 +83,8 @@ pub fn run_play_ball_engine(
     }
 
     loop {
-        let prompt = format_prompt(&state, away, home);
-        let Some(line) = ui.read_command_line(&prompt) else {
+        ui.set_state(&state);
+        let Some(line) = ui.read_command_line("> ") else {
             return EngineExit::ExitToMenu;
         };
 
