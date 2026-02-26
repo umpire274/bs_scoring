@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.5] - 2026-02-26
+
+### ✨ Added
+
+- New structured Scoreboard panel (36 columns layout)
+    - Fixed-width panel with intelligent layout
+    - Centered base diamond (2B on top, 1B/3B bottom aligned)
+    - Dedicated status row (inning, half symbol, count, outs)
+    - Batter display: `#<jersey> <First> <Last>`
+    - Pitcher display with dynamic alignment and pitch count `(P xxx)`
+- Introduced `PlayBallUiContext`
+    - Decouples UI rendering from engine logic
+    - Centralizes team abbreviations and scoreboard-related display data
+- Unicode-aware layout helpers using `unicode-width`
+    - `display_width`
+    - `pad_right`
+    - `pad_right_fit`
+    - `fit_two_columns`
+- Smart name formatting for scoreboard
+    - Automatic abbreviation for long names (e.g. `#64 C. Petro`)
+
+### ♻️ Refactored
+
+- Removed prompt-based game state rendering (state now lives in scoreboard)
+- Engine no longer passes team names directly to prompt
+- `render_scoreboard` refactored to avoid width overflow and ellipsize artifacts
+- Eliminated redundant padding of already width-safe diamond rows
+- Improved column alignment using display-width-safe calculations
+
+### 🧠 Architecture
+
+- UI layer now state-driven (`ui.set_state(&GameState)`)
+- Scoreboard rendering isolated from engine logic
+- Prepared foundation for:
+    - live base occupation tracking
+    - ball/strike counter
+    - dynamic runner display
+    - inning-by-inning scoring
+
+### 🎯 UX
+
+- Prompt simplified to `> `
+- Clean separation between:
+    - Log
+    - Scoreboard
+    - Command input
+- Removed ellipsis artifacts caused by over-padding
+- More broadcast-style scoreboard layout
+
+---
+
 ## [0.6.1] - 2026-02-24
 
 ### ✨ Added

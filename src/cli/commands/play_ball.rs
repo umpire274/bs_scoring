@@ -61,20 +61,19 @@ pub fn play_ball(db: &mut Database) {
     // Se la partita NON è in Pregame, si entra direttamente nell'engine (resume),
     // senza bloccare su lineup gate-check.
     if g.status != GameStatus::Pregame {
+        let mut ui = create_ui();
+
         let away_display = g.away_team_abbr.as_deref().unwrap_or(&g.away_team_name);
         let home_display = g.home_team_abbr.as_deref().unwrap_or(&g.home_team_name);
 
-        let mut ui = create_ui();
+        let ctx = crate::ui::PlayBallUiContext {
+            away_abbr: away_display.to_string(),
+            home_abbr: home_display.to_string(),
+        };
 
-        run_play_ball_engine(
-            conn,
-            &mut *ui,
-            g.id,
-            &g.game_id,
-            g.away_team_id,
-            away_display,
-            home_display,
-        );
+        ui.set_context(&ctx);
+
+        run_play_ball_engine(conn, &mut *ui, g.id, &g.game_id, g.away_team_id);
 
         return;
     }
@@ -101,20 +100,19 @@ pub fn play_ball(db: &mut Database) {
                 }
             }
 
+            let mut ui = create_ui();
+
             let away_display = g.away_team_abbr.as_deref().unwrap_or(&g.away_team_name);
             let home_display = g.home_team_abbr.as_deref().unwrap_or(&g.home_team_name);
 
-            let mut ui = create_ui();
+            let ctx = crate::ui::PlayBallUiContext {
+                away_abbr: away_display.to_string(),
+                home_abbr: home_display.to_string(),
+            };
 
-            run_play_ball_engine(
-                conn,
-                &mut *ui,
-                g.id,
-                &g.game_id,
-                g.away_team_id,
-                away_display,
-                home_display,
-            );
+            ui.set_context(&ctx);
+
+            run_play_ball_engine(conn, &mut *ui, g.id, &g.game_id, g.away_team_id);
         }
 
         Ok(PlayBallGate::InvalidLineup {
