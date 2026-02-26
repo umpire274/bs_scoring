@@ -26,6 +26,8 @@ fn parse_one(cmd: &str) -> EngineCommand {
 
         "playball" => EngineCommand::PlayBall,
 
+        "p" | "pitch" => EngineCommand::Pitch,
+
         _ => EngineCommand::Unknown(cmd.to_string()),
     }
 }

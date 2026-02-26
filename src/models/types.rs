@@ -333,7 +333,7 @@ pub struct PitchCount {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Pitch {
     Ball,           // B
-    CalledStrike,   // C
+    CalledStrike,   // K
     SwingingStrike, // S
     Foul,           // F
     FoulBunt,       // L
@@ -345,7 +345,7 @@ impl fmt::Display for Pitch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let symbol = match self {
             Pitch::Ball => "B",
-            Pitch::CalledStrike => "C",
+            Pitch::CalledStrike => "K",
             Pitch::SwingingStrike => "S",
             Pitch::Foul => "F",
             Pitch::FoulBunt => "L",

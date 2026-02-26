@@ -55,6 +55,31 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
             status_change: Some(status),
         },
 
+        EngineCommand::Pitch => {
+            if let Some(pitcher_id) = state.current_pitcher_id {
+                let ev = DomainEvent::PitchThrown { pitcher_id };
+
+                ApplyResult {
+                    events: vec![UiEvent::Line("Pitch".to_string())],
+                    persisted: vec![PersistedEvent {
+                        inning: state.inning,
+                        half: state.half,
+                        event: ev,
+                        description: "Pitch".to_string(),
+                    }],
+                    status_change: None,
+                    exit: false,
+                }
+            } else {
+                ApplyResult {
+                    events: vec![UiEvent::Error("No active pitcher".to_string())],
+                    persisted: vec![],
+                    status_change: None,
+                    exit: false,
+                }
+            }
+        }
+
         EngineCommand::Unknown(s) => ApplyResult {
             events: vec![UiEvent::Error(format!("Unknown command: {s}"))],
             persisted: vec![],

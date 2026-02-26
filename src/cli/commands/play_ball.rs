@@ -73,7 +73,14 @@ pub fn play_ball(db: &mut Database) {
 
         ui.set_context(&ctx);
 
-        run_play_ball_engine(conn, &mut *ui, g.id, &g.game_id, g.away_team_id);
+        run_play_ball_engine(
+            conn,
+            &mut *ui,
+            g.id,
+            &g.game_id,
+            g.away_team_id,
+            g.home_team_id,
+        );
 
         return;
     }
@@ -112,7 +119,14 @@ pub fn play_ball(db: &mut Database) {
 
             ui.set_context(&ctx);
 
-            run_play_ball_engine(conn, &mut *ui, g.id, &g.game_id, g.away_team_id);
+            run_play_ball_engine(
+                conn,
+                &mut *ui,
+                g.id,
+                &g.game_id,
+                g.away_team_id,
+                g.home_team_id,
+            );
         }
 
         Ok(PlayBallGate::InvalidLineup {

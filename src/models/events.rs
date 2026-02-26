@@ -16,9 +16,29 @@ pub enum DomainEvent {
     GameStarted,
 
     AtBatStarted {
-        jersey_no: i32,
+        team_abbrv: String,
         batting_team_id: i64,
+
         batter_id: i64,
+        batter_jersey_no: i32,
+        batter_first_name: String,
+        batter_last_name: String,
+
+        pitcher_id: i64,
+        pitcher_jersey_no: i32,
+        pitcher_first_name: String,
+        pitcher_last_name: String,
+    },
+
+    PitchThrown {
+        pitcher_id: i64,
+    },
+
+    PitcherChanged {
+        pitcher_id: i64,
+        pitcher_jersey_no: i32,
+        pitcher_first_name: String,
+        pitcher_last_name: String,
     },
 }
 
@@ -46,6 +66,8 @@ impl DomainEvent {
             DomainEvent::StatusChanged(_) => "status_changed",
             DomainEvent::GameStarted => "game_started",
             DomainEvent::AtBatStarted { .. } => "at_bat_started",
+            DomainEvent::PitchThrown { .. } => "pitch_thrown",
+            DomainEvent::PitcherChanged { .. } => "pitcher_changed",
         }
     }
 }
