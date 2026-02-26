@@ -9,16 +9,16 @@ use crossterm::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
     },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::layout::Rect;
 use ratatui::{
-    backend::CrosstermBackend, layout::{Constraint, Direction, Layout},
+    Frame, Terminal,
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
     style::Style,
     text::{Line, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame,
-    Terminal,
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
