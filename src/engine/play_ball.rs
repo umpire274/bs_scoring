@@ -61,6 +61,7 @@ pub fn run_play_ball_engine(
     // Track whether we already have any events (if yes, PLAYBALL is not allowed).
     let mut has_events = false;
 
+    // --------- Replay persisted events (resume) ----------
     match list_game_events(conn, game_pk) {
         Ok(rows) => {
             has_events = !rows.is_empty();
@@ -71,20 +72,25 @@ pub fn run_play_ball_engine(
                     ui.emit(UiEvent::Line(desc));
                 }
 
-                // Rebuild prompt state from structured event data if available.
+                // Rebuild state from structured event JSON
                 if let Some(data) = r.event_data.as_deref()
                     && let Ok(ev) = serde_json::from_str::<DomainEvent>(data)
                 {
                     apply_domain_event(&mut state, &ev);
-                    ui.set_state(&state);
                 }
             }
+
+            // ✅ ensure scoreboard has the rebuilt state
+            ui.set_state(&state);
         }
         Err(e) => ui.emit(UiEvent::Error(format!("Failed to load game events: {e}"))),
     }
 
+    // ---------------- Engine loop ----------------
     loop {
+        // Keep UI scoreboard in sync before prompting
         ui.set_state(&state);
+
         let Some(line) = ui.read_command_line("> ") else {
             return EngineExit::ExitToMenu;
         };
@@ -97,7 +103,7 @@ pub fn run_play_ball_engine(
         let commands = parse_engine_commands(line);
 
         for cmd in commands {
-            // Special: PLAYBALL must be handled here (DB-backed)
+            // ---------------- Special: PLAYBALL (DB-backed) ----------------
             if let EngineCommand::PlayBall = cmd {
                 if has_events {
                     ui.emit(UiEvent::Error(
@@ -109,8 +115,8 @@ pub fn run_play_ball_engine(
 
                 // 1) Persist GameStarted
                 let msg_start = "🏁 Play Ball!".to_string();
-
                 let ev_start = DomainEvent::GameStarted;
+
                 if !persist_event(
                     conn,
                     ui,
@@ -122,6 +128,8 @@ pub fn run_play_ball_engine(
                 ) {
                     continue;
                 }
+
+                // Emit log line + update state/UI
                 ui.emit(UiEvent::Line(msg_start.clone()));
                 apply_domain_event(&mut state, &ev_start);
                 ui.set_state(&state);
@@ -138,8 +146,8 @@ pub fn run_play_ball_engine(
                         }
                     };
 
+                // 3) Determine starting pitcher from fielding team (HOME when away bats)
                 let fielding_team_id = home_team_id;
-
                 let (pitcher_id, pitcher_no, p_first, p_last) =
                     match get_starting_pitcher(conn, game_id, fielding_team_id) {
                         Ok(v) => v,
@@ -172,6 +180,7 @@ pub fn run_play_ball_engine(
                     continue;
                 }
 
+                // Emit log line + update state/UI
                 ui.emit(UiEvent::Line(msg_ab.clone()));
                 apply_domain_event(&mut state, &ev_ab);
                 ui.set_state(&state);
@@ -180,14 +189,14 @@ pub fn run_play_ball_engine(
                 continue;
             }
 
-            // Default path (apply -> emit -> persist -> status update -> exit)
+            // ---------------- Default path (apply -> emit -> persist -> reduce -> status -> exit) ----------------
             let result = apply_engine_command(&mut state, cmd);
 
             for ev in result.events {
                 ui.emit(ev);
             }
 
-            // Persist replayable events + apply to state (important for scoreboard)
+            // Persist replayable events + apply to in-memory state (for scoreboard)
             for pe in &result.persisted {
                 if let Err(e) = append_game_event(
                     conn,
@@ -201,16 +210,16 @@ pub fn run_play_ball_engine(
                     continue;
                 }
 
-                // ✅ Update in-memory state (reducer)
+                // ✅ Update in-memory state
                 apply_domain_event(&mut state, &pe.event);
 
-                // keep has_events in sync
                 has_events = true;
             }
 
             // ✅ Push updated state to UI (scoreboard refresh)
             ui.set_state(&state);
 
+            // Status change (DB)
             if let Some(status) = result.status_change {
                 match set_game_status(conn, game_id, status) {
                     Ok(true) => {}

@@ -1,3 +1,4 @@
+use crate::Pitch;
 use crate::models::types::{GameStatus, HalfInning};
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +41,39 @@ pub enum DomainEvent {
         pitcher_first_name: String,
         pitcher_last_name: String,
     },
+
+    PitchRecorded {
+        pitcher_id: i64,
+        batter_id: i64,
+        pitch: Pitch,
+    },
+
+    CountReset,
+
+    WalkIssued {
+        batter_id: i64,
+    },
+
+    Strikeout {
+        batter_id: i64,
+        kind: StrikeoutKind,
+    },
+
+    OutRecorded(OutRecordedData),
+
+    RunnerToFirst {
+        runner_id: i64,
+        runner_jersey_no: i32,
+        runner_first_name: String,
+        runner_last_name: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum StrikeoutKind {
+    Called,   // K
+    Swinging, // S
+    FoulBunt, // FL (quando fa il terzo strike)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +102,7 @@ impl DomainEvent {
             DomainEvent::AtBatStarted { .. } => "at_bat_started",
             DomainEvent::PitchThrown { .. } => "pitch_thrown",
             DomainEvent::PitcherChanged { .. } => "pitcher_changed",
+            _ => "",
         }
     }
 }
