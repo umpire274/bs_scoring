@@ -1,34 +1,36 @@
-# ⚾ BS Scoring – Command Guide
+# ⚾ BS Scoring – Scoring Command Guide
 
 This document describes all commands available in the **Play Ball** engine.
+
+---
 
 ## Prompt format
 
 The engine prompt format is:
 
-↑ 1 (0 OUTS) AWY 0 - 0 HOM >
+> ↑ 1 (0 OUTS) AWY 0 - 0 HOM >
 
 Where:
 
-- ↑ / ↓ = Top / Bottom of the inning
+- `↑` / `↓` = Top / Bottom of the inning
 - Number = current inning
-- OUTS = number of outs in the half-inning
-- AWY / HOM = team abbreviations
-- Score displayed as AWY - HOM
+- `OUTS` = outs in the current half-inning
+- `AWY` / `HOM` = team abbreviations
+- Score displayed as `AWY - HOM`
 
 Multiple commands can be entered separated by commas:
 
-playball
-regular
-cancel
+> playball  
+> b,b,f,k  
+> susp
 
-(As new scoring commands are added, you will be able to chain them the same way.)
+Commands are case-insensitive.
 
 ---
 
-## 1. Engine Control Commands
+## 1) Engine control commands
 
-These commands control the scoring engine itself.
+These commands control the engine itself.
 
 | Command          | Description                         |
 |------------------|-------------------------------------|
@@ -36,10 +38,9 @@ These commands control the scoring engine itself.
 
 ---
 
-## 2. Game Start Command
+## 2) Game start command
 
-When you enter the Play Ball engine and **there are no previous events** for the selected game, you must start the game
-with:
+When you enter the Play Ball engine and **there are no previous events** for the selected game, start the game with:
 
 | Command    | Description                                                                |
 |------------|----------------------------------------------------------------------------|
@@ -51,17 +52,58 @@ with:
 - Appends an `at_bat_started` event to `game_events`
 - Writes (and persists) a log line like:
 
-At bat: <TEAM ABBRV> #<JERSEY_NUMBER> FirstName LastName
+> At bat: `<TEAM ABBRV>` `#<JERSEY_NUMBER>` `<FirstName> <LastName>`
 
 > Note: `playball` is only allowed when the game has **no previous events**.
 
 ---
 
-## 3. Game Status Commands
+## 3) Pitching commands (current batter)
+
+Pitching commands are recorded for the **current plate appearance** (current batter vs current pitcher).
+
+### 3.1 Ball
+
+| Command | Meaning |
+|---------|---------|
+| `b`     | Ball    |
+
+Rules:
+
+- Each `b` increments the **ball count**.
+- When **balls reach 4** (and strikes are less than 3), the batter is awarded **first base** (BB).
+- After a walk:
+    - the count resets to `0-0`
+    - the engine will advance to the next batter (when the “next batter” logic is enabled)
+
+### 3.2 Strikes
+
+| Command | Meaning                 |
+|---------|-------------------------|
+| `k`     | Called strike (looking) |
+| `s`     | Swinging strike         |
+| `f`     | Foul                    |
+| `fl`    | Foul bunt               |
+
+Rules:
+
+- `k` and `s` always increment **strike count**.
+- `f` increments strikes **only if strikes < 2** (foul does not make strike 3).
+- `fl` increments strikes **even if strikes = 2** (foul bunt CAN be strike 3).
+- When **strikes reach 3** before 4 balls:
+    - the batter is out (strikeout)
+    - outs increment by 1
+    - the count resets to `0-0`
+    - the engine will advance to the next batter (when enabled)
+
+> Commands `x` (in play) and `h` are reserved for future versions.
+
+---
+
+## 4) Game status commands
 
 These commands can be entered at any time during the game.
-
-They update the game status in the database and exit the engine.
+They update the game status in the database and **exit the engine**.
 
 | Command   | New Status      | Description                    |
 |-----------|-----------------|--------------------------------|
@@ -74,26 +116,24 @@ They update the game status in the database and exit the engine.
 
 ---
 
-## 4. Command Format Rules
+## 5) Command format rules
 
 - Commands are case-insensitive
-- Commands are separated by commas
+- Commands are comma-separated
 - Spaces are ignored
 - Unknown commands generate an error but do not stop execution
 
-Examples:
+Valid examples:
 
-PLAYBALL
-playball
-PlayBall
-
-All valid.
+- `PLAYBALL`
+- `playball`
+- `PlayBall`
+- `b,b,f,k`
+- `FL`
 
 ---
 
-## 5. Status Transition Rules
-
-Game status transitions:
+## 6) Status transition rules
 
 - Pregame → In Progress (when Play Ball starts)
 - In Progress → Regulation
@@ -107,12 +147,18 @@ Status commands automatically exit the engine.
 
 ---
 
-## 6. Current Scope (v0.6.1)
+## 7) Current scope (v0.6.7)
 
-At the moment, the engine supports:
+Supported commands:
 
-- Engine control: `exit`, `quit`
-- Game start: `playball`
-- Status commands: `regular`, `post`, `cancel`, `susp`, `forf`, `protest`
+- Engine: `exit`, `quit`
+- Start: `playball`
+- Status: `regular`, `post`, `cancel`, `susp`, `forf`, `protest`
+- Pitching (count): `b`, `k`, `s`, `f`, `fl`
 
-Scoring commands (pitching/batting/running/defense) will be documented here as they are implemented.
+Next steps will add:
+
+- automatic next batter selection
+- full runner/base state changes (forced advances, etc.)
+- in-play commands (`x`) and hit-by-pitch (`h`)
+- official scoring outcomes (hits/outs/PA results)

@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.7] - 2026-02-27
+
+### ✨ Added
+
+- Pitch count engine commands for the current plate appearance:
+    - `b` (ball) with walk rule at 4 balls
+    - `k` (called strike), `s` (swinging strike)
+    - `f` (foul: counts as strike only if strikes < 2)
+    - `fl` (foul bunt: can be strike 3)
+- Persisted domain events for pitch tracking and count resets (event-sourced)
+
+### 🧠 Engine
+
+- Enforced baseball rules for balls/strikes thresholds:
+    - 4 balls ⇒ batter awarded 1B (walk) and count reset
+    - 3 strikes ⇒ batter out, outs increment, and count reset
+
+### 📝 Docs
+
+- Rewrote and extended `SCORING_GUIDE.md` with the new pitch commands and rules
+-
+
+---
+
 ## [0.6.6] - 2026-02-26
 
 ### ✨ Added

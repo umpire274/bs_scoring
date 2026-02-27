@@ -1,3 +1,4 @@
+use crate::Pitch;
 use crate::commands::types::EngineCommand;
 use crate::models::types::GameStatus;
 
@@ -26,7 +27,12 @@ fn parse_one(cmd: &str) -> EngineCommand {
 
         "playball" => EngineCommand::PlayBall,
 
-        "p" | "pitch" => EngineCommand::Pitch,
+        // ---- Pitch commands (0.6.7) ----
+        "b" => EngineCommand::Pitch(Pitch::Ball),
+        "k" => EngineCommand::Pitch(Pitch::CalledStrike),
+        "s" => EngineCommand::Pitch(Pitch::SwingingStrike),
+        "f" => EngineCommand::Pitch(Pitch::Foul),
+        "fl" => EngineCommand::Pitch(Pitch::FoulBunt),
 
         _ => EngineCommand::Unknown(cmd.to_string()),
     }

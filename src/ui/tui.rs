@@ -204,7 +204,7 @@ impl TuiUi {
 
         // NO leading spaces here
         let top_raw = format!("{b2}");
-        let bottom_raw = format!("{b1}   {b3}");
+        let bottom_raw = format!("{b3}   {b1}");
 
         let top = Self::pad_right(&Self::center_text(&top_raw, width), width);
         let bottom = Self::pad_right(&Self::center_text(&bottom_raw, width), width);
@@ -258,7 +258,7 @@ impl TuiUi {
         // 34 colonne utili con bordo su pannello da 36
         let w = inner.width as usize;
 
-        // ----- placeholders / extraction -----
+        // ----- extraction -----
         let (
             inning,
             half_sym,
@@ -269,6 +269,11 @@ impl TuiUi {
             p_jersey_no,
             p_first_name,
             p_last_name,
+            count,
+            on_1b,
+            on_2b,
+            on_3b,
+            current_pitch_count,
         ) = if let Some(s) = state {
             let batter = match (
                 s.current_batter_jersey_no,
@@ -278,6 +283,8 @@ impl TuiUi {
                 (Some(j), Some(first), Some(last)) => format!("#{j}  {first} {last}"),
                 _ => "-".to_string(),
             };
+
+            let count = format!("{}-{}", s.pitch_count.balls, s.pitch_count.strikes);
 
             (
                 s.inning,
@@ -289,18 +296,32 @@ impl TuiUi {
                 s.current_pitcher_jersey_no.unwrap_or(0),
                 s.current_pitcher_first_name.as_deref().unwrap_or("-"),
                 s.current_pitcher_last_name.as_deref().unwrap_or("-"),
+                count,
+                s.on_1b,
+                s.on_2b,
+                s.on_3b,
+                s.current_pitch_count,
             )
         } else {
-            (1, "↑", 0, 0, 0, "-".to_string(), 0, "-", "-")
+            (
+                1,
+                "↑",
+                0,
+                0,
+                0,
+                "-".to_string(),
+                0,
+                "-",
+                "-",
+                "0-0".to_string(),
+                false,
+                false,
+                false,
+                0,
+            )
         };
 
-        // Count placeholder (quando avrai balls/strikes)
-        let count = "0-0";
-
-        // Bases placeholder (quando avrai runners)
-        let (on_1b, on_2b, on_3b) = (false, false, false);
-
-        // ✅ NEW: centered diamond based on display width
+        // ✅ centered diamond based on display width
         let (d_top, d_bot) = Self::render_base_diamond(w, on_1b, on_2b, on_3b);
 
         // Outs dots
@@ -322,10 +343,7 @@ impl TuiUi {
 
         let batter_line = Self::pad_right_fit(batter.as_str(), w);
 
-        let right = format!(
-            "(P {:>3})",
-            state.map(|s| s.current_pitch_count).unwrap_or(0)
-        );
+        let right = format!("(P {:>3})", current_pitch_count);
         let max_left = w.saturating_sub(Self::display_width(&right) + 1); // +1 gap
         let pitcher_left = Self::format_player_name_for_scoreboard(
             p_jersey_no,
@@ -352,7 +370,6 @@ impl TuiUi {
         let p = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
         f.render_widget(p, inner);
     }
-
     fn render(&mut self, prompt: &str) -> io::Result<()> {
         let log_len = self.log.len() as u16;
 

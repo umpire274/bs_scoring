@@ -336,7 +336,7 @@ pub enum Pitch {
     CalledStrike,   // K
     SwingingStrike, // S
     Foul,           // F
-    FoulBunt,       // L
+    FoulBunt,       // FL
     InPlay,         // X
     HittedBy,       // H
 }
@@ -348,7 +348,7 @@ impl fmt::Display for Pitch {
             Pitch::CalledStrike => "K",
             Pitch::SwingingStrike => "S",
             Pitch::Foul => "F",
-            Pitch::FoulBunt => "L",
+            Pitch::FoulBunt => "FL",
             Pitch::InPlay => "X",
             Pitch::HittedBy => "H",
         };
