@@ -385,15 +385,10 @@ fn migration_v5(conn: &Connection) -> Result<()> {
 /// Run pending migrations
 pub fn run_migrations(conn: &Connection, current_version: i64) -> Result<i64> {
     let migrations = get_migrations();
-    let mut applied_count = 0;
+    let mut applied_count: i64 = 0;
 
     for migration in migrations {
         if migration.version > current_version {
-            println!(
-                "🔄 Applying migration v{}: {}",
-                migration.version, migration.description
-            );
-
             // Run migration
             (migration.up)(conn)?;
 
@@ -406,15 +401,10 @@ pub fn run_migrations(conn: &Connection, current_version: i64) -> Result<i64> {
             )?;
 
             applied_count += 1;
-            println!("✅ Migration v{} applied successfully", migration.version);
         }
     }
 
-    if applied_count > 0 {
-        println!("\n✅ {} migration(s) applied", applied_count);
-    }
-
-    Ok(CURRENT_SCHEMA_VERSION)
+    Ok(applied_count)
 }
 
 /// Initialize meta table

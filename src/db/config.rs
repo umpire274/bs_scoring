@@ -1,6 +1,7 @@
-use crate::Database;
+use crate::{Database, utils};
+use anyhow::{Context, Result, anyhow};
+use std::fs;
 use std::path::PathBuf;
-use std::{fs, process};
 
 /// Initialize database with proper error handling and user feedback
 ///
@@ -11,55 +12,32 @@ use std::{fs, process};
 /// - Provides clear feedback to the user
 ///
 /// Returns the initialized Database or exits the program on error
-pub fn setup_db() -> Database {
-    // Get platform-specific database path
-    let db_path = match get_db_path() {
-        Ok(path) => path,
-        Err(e) => {
-            eprintln!("❌ Error determining database path: {}", e);
-            process::exit(1);
-        }
-    };
-
-    println!("\n📁 Database location: {}", db_path.display());
-
+pub fn setup_db() -> Result<(Database, String, utils::boot::DbBootStatus)> {
+    // 1) DB path
+    let db_path: PathBuf = get_db_path().context("determining database path")?;
     let db_exists = db_path.exists();
 
-    // Open or create database
-    let db = match Database::new(&db_path.to_string_lossy()) {
-        Ok(db) => {
-            if db_exists {
-                println!("✅ Existing database opened");
-            } else {
-                println!("🆕 New database created");
-            }
-            db
-        }
-        Err(e) => {
-            eprintln!("❌ Error with database file: {}", e);
-            eprintln!("   Path: {}", db_path.display());
-            if !db_exists {
-                eprintln!("   (Database file does not exist and could not be created)");
-            } else {
-                eprintln!("   (Database file exists but could not be opened)");
-            }
-            process::exit(1);
-        }
+    // 2) Open database (boot step)
+    utils::boot::boot_step(1, 3, "Opening database", || Ok(()))?;
+
+    let db = Database::new(&db_path.to_string_lossy())
+        .with_context(|| format!("opening database at {}", db_path.display()))?;
+
+    // 3) Init schema + migrations (boot step)
+    utils::boot::boot_step(2, 3, "Checking schema", || Ok(()))?;
+
+    db.init_schema().context("initializing database schema")?;
+
+    // 4) Ready (boot step)
+    let status = if db_exists {
+        utils::boot::DbBootStatus::ReadyExisting
+    } else {
+        utils::boot::DbBootStatus::ReadyNew
     };
 
-    // Initialize schema (IF NOT EXISTS = doesn't delete existing data)
-    if let Err(e) = db.init_schema() {
-        eprintln!("❌ Error initializing database schema: {}", e);
-        process::exit(1);
-    }
+    utils::boot::boot_step(3, 3, "Database ready", || Ok(()))?;
 
-    if db_exists {
-        println!("✅ Database schema verified");
-    } else {
-        println!("✅ Database schema initialized");
-    }
-
-    db
+    Ok((db, db_path.to_string_lossy().to_string(), status))
 }
 /// Get the application data directory based on the operating system
 pub fn get_app_data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -84,8 +62,8 @@ pub fn get_app_data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
 }
 
 /// Get the full path to the database file
-pub fn get_db_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let app_dir = get_app_data_dir()?;
+pub fn get_db_path() -> Result<PathBuf> {
+    let app_dir = get_app_data_dir().map_err(|e| anyhow!("{e}"))?;
     Ok(app_dir.join("baseball_scorer.db"))
 }
 

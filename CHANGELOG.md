@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.8] - 2026-03-04
+
+### Added
+
+- Automatic **next batter rotation** after Walk or Strikeout.
+- Automatic **half-inning change after 3 outs**.
+- `start_next_at_bat()` engine helper for lineup progression.
+- `handle_three_outs_and_change_side()` to persist side changes and reset bases.
+- Boot screen with **Unicode spinner animation** and structured startup messages.
+- Database initialization status reporting (existing / new / migrations applied).
+
+### Improved
+
+- Pitch handling logic in `apply_pitch()`:
+    - Walk issued automatically at **4 balls**.
+    - Strikeout issued automatically at **3 strikes**.
+- Pitcher pitch count tracking now persists **across innings**.
+- Pitch count resets only when **pitcher changes**, not on inning change.
+- Clearer separation between:
+    - **Pitch count (balls/strikes per PA)**
+    - **Pitcher total pitches thrown**
+- Engine flow improved with `needs_next_at_bat` flag.
+- Boot sequence now uses `anyhow::Result` for cleaner error propagation.
+
+### Fixed
+
+- Pitcher pitch count incorrectly resetting when inning changed.
+- Incorrect scoreboard pitcher state after half-inning switch.
+- Walk and Strikeout events not properly updating next batter.
+- Dead-code warnings in engine helpers.
+- Error propagation issues in database bootstrap.
+
+### Internal
+
+- Simplified database path handling (`get_db_path()`).
+- Removed obsolete `PitchThrown` domain event.
+- Improved reducer consistency in `apply_domain_event`.
+
+---
+
 ## [0.6.7] - 2026-02-27
 
 ### ✨ Added

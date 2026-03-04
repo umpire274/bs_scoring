@@ -1,6 +1,7 @@
 pub(crate) use crate::HalfInning;
 use crate::PitchCount;
 use crate::models::types::{GameStatus, Score};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct PlayBallGameContext {
@@ -66,6 +67,9 @@ pub struct GameState {
     pub current_pitch_count: u32, // già ce l’hai per pitcher pitches
     pub pitch_count: PitchCount,  // NEW: balls/strikes + sequence (per PA)
 
+    // NEW: pitch count per pitcher (persistente durante la partita)
+    pub pitcher_pitch_counts: HashMap<i64, u32>,
+
     // NEW: cursore per prossimo battitore (resume-safe)
     pub away_next_batting_order: u8, // 1..=9
     pub home_next_batting_order: u8, // 1..=9
@@ -95,6 +99,7 @@ impl GameState {
             current_pitcher_first_name: None,
             current_pitcher_last_name: None,
 
+            pitcher_pitch_counts: HashMap::new(),
             current_pitch_count: 0,
             pitch_count: PitchCount {
                 balls: 0,

@@ -13,7 +13,7 @@ impl Database {
     }
 
     /// Initialize database schema
-    pub fn init_schema(&self) -> Result<()> {
+    pub fn init_schema(&self) -> Result<i64> {
         // Initialize meta table first
         migrations::init_meta_table(&self.conn)?;
 
@@ -209,9 +209,10 @@ impl Database {
 
         // Run any pending migrations
         let current_version = migrations::get_schema_version(&self.conn)?;
+        let mut applied = 0;
+
         if current_version < migrations::CURRENT_SCHEMA_VERSION {
-            println!("\n🔄 Database migrations needed...");
-            migrations::run_migrations(&self.conn, current_version)?;
+            applied = migrations::run_migrations(&self.conn, current_version)?;
         } else if is_new_db {
             // For new DB, set initial version
             migrations::set_meta_value(
@@ -221,7 +222,7 @@ impl Database {
             )?;
         }
 
-        Ok(())
+        Ok(applied)
     }
 
     pub fn get_connection(&self) -> &Connection {

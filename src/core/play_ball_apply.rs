@@ -1,5 +1,5 @@
 use crate::commands::types::EngineCommand;
-use crate::models::events::{DomainEvent, StatusChangedData};
+use crate::models::events::{DomainEvent, OutRecordedData, StatusChangedData, StrikeoutKind};
 use crate::models::play_ball::{GameState, HalfInning};
 use crate::models::types::{GameStatus, Pitch};
 use crate::ui::events::UiEvent;
@@ -73,17 +73,16 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
 }
 
 fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
-    // Must have an active PA
     let Some(batter_id) = state.current_batter_id else {
         return ApplyResult {
             events: vec![UiEvent::Error(
-                "No active batter. Use PLAYBALL (or start/resume the game) first.".to_string(),
+                "No active batter. Use PLAYBALL (or resume the game) first.".to_string(),
             )],
             ..empty_result()
         };
     };
 
-    let Some(_pitcher_id) = state.current_pitcher_id else {
+    let Some(pitcher_id) = state.current_pitcher_id else {
         return ApplyResult {
             events: vec![UiEvent::Error(
                 "No active pitcher in state (cannot record pitch).".to_string(),
@@ -92,85 +91,89 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
         };
     };
 
-    // We compute the "post-pitch" balls/strikes here (do NOT rely on reducer timing).
-    let mut balls = state.pitch_count.balls;
-    let strikes = state.pitch_count.strikes;
+    // Count BEFORE applying this pitch
+    let balls_before = state.pitch_count.balls;
+    let strikes_before = state.pitch_count.strikes;
 
-    if matches!(pitch, Pitch::Ball) {
-        balls = balls.saturating_add(1);
+    // Compute count AFTER applying this pitch (domain rules)
+    let mut balls_after = balls_before;
+    let mut strikes_after = strikes_before;
+
+    match pitch {
+        Pitch::Ball => {
+            balls_after = balls_after.saturating_add(1);
+        }
+        Pitch::CalledStrike | Pitch::SwingingStrike => {
+            strikes_after = strikes_after.saturating_add(1);
+        }
+        Pitch::Foul => {
+            // counts as strike only if strikes < 2
+            if strikes_after < 2 {
+                strikes_after = strikes_after.saturating_add(1);
+            }
+        }
+        Pitch::FoulBunt => {
+            // ALWAYS counts as strike (can be K on strike 3)
+            strikes_after = strikes_after.saturating_add(1);
+        }
+        Pitch::InPlay | Pitch::HittedBy => {
+            // reserved for v0.6.9+ (no count changes here)
+        }
     }
 
-    let mut ui_events = Vec::new();
-    let mut persisted: Vec<PersistedEvent> = Vec::new();
+    let mut events_ui = vec![UiEvent::Line(format!("Pitch: {}", pitch))];
+    let mut persisted: Vec<PersistedEvent> = vec![];
 
-    // 1) Always record the pitch
-    let msg_pitch = format!("Pitch: {}", pitch);
-    ui_events.push(UiEvent::Line(msg_pitch.clone()));
-
+    // 1) Always persist PitchRecorded (the reducer will update pitch_count from this)
     persisted.push(PersistedEvent {
         inning: state.inning,
         half: state.half,
         event: DomainEvent::PitchRecorded {
-            pitcher_id: state.current_pitcher_id.unwrap(), // safe: checked above
+            pitcher_id,
             batter_id,
             pitch: pitch.clone(),
         },
-        description: msg_pitch,
+        description: format!("Pitch: {}", pitch),
     });
 
-    // 2) Walk logic (4 balls before 3 strikes)
-    if balls >= 4 && strikes < 3 {
-        // Need batter identity for RunnerToFirst (your variant requires these fields)
-        let Some(runner_jersey_no) = state.current_batter_jersey_no else {
-            return ApplyResult {
-                events: vec![UiEvent::Error(
-                    "Walk detected but batter jersey number is missing in state.".to_string(),
-                )],
-                ..empty_result()
-            };
-        };
-        let Some(runner_first_name) = state.current_batter_first_name.clone() else {
-            return ApplyResult {
-                events: vec![UiEvent::Error(
-                    "Walk detected but batter first name is missing in state.".to_string(),
-                )],
-                ..empty_result()
-            };
-        };
-        let Some(runner_last_name) = state.current_batter_last_name.clone() else {
-            return ApplyResult {
-                events: vec![UiEvent::Error(
-                    "Walk detected but batter last name is missing in state.".to_string(),
-                )],
-                ..empty_result()
-            };
-        };
+    // 2) Terminal outcomes
+    let mut needs_next_at_bat = false;
 
-        let msg_bb = "Walk (BB) — batter awarded 1B".to_string();
-        ui_events.push(UiEvent::Line(msg_bb.clone()));
-
-        // WalkIssued: adjust to your actual fields (NO pitcher_id)
+    // Walk: 4 balls and strikes < 3
+    if balls_after >= 4 && strikes_after < 3 {
         persisted.push(PersistedEvent {
             inning: state.inning,
             half: state.half,
             event: DomainEvent::WalkIssued { batter_id },
-            description: msg_bb,
+            description: "Walk".to_string(),
         });
 
-        // RunnerToFirst requires runner details in your enum
+        let runner_jersey_no = state.current_batter_jersey_no.unwrap_or(0);
+        let runner_first_name = state
+            .current_batter_first_name
+            .as_deref()
+            .unwrap_or("-")
+            .to_string();
+        let runner_last_name = state
+            .current_batter_last_name
+            .as_deref()
+            .unwrap_or("-")
+            .to_string();
+
         persisted.push(PersistedEvent {
             inning: state.inning,
             half: state.half,
             event: DomainEvent::RunnerToFirst {
                 runner_id: batter_id,
                 runner_jersey_no,
-                runner_first_name,
-                runner_last_name,
+                runner_first_name: runner_first_name.clone(),
+                runner_last_name: runner_last_name.clone(),
             },
-            description: "Runner to 1B".to_string(),
+            description: format!(
+                "BB: #{runner_jersey_no} {runner_first_name} {runner_last_name} to 1B"
+            ),
         });
 
-        // Reset count for next batter
         persisted.push(PersistedEvent {
             inning: state.inning,
             half: state.half,
@@ -178,20 +181,64 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
             description: "Count reset".to_string(),
         });
 
-        return ApplyResult {
-            events: ui_events,
-            persisted,
-            exit: false,
-            status_change: None,
-            needs_next_at_bat: true,
+        events_ui.push(UiEvent::Line("BB: batter to 1B".to_string()));
+        needs_next_at_bat = true;
+    }
+    // Strikeout: 3 strikes before 4 balls
+    else if strikes_after >= 3 && balls_after < 4 {
+        let kind = match pitch {
+            Pitch::CalledStrike => StrikeoutKind::Called,
+            Pitch::SwingingStrike => StrikeoutKind::Swinging,
+            Pitch::FoulBunt => StrikeoutKind::FoulBunt,
+            // non dovrebbe mai succedere qui, ma fallback safety:
+            _ => StrikeoutKind::Called,
         };
+
+        persisted.push(PersistedEvent {
+            inning: state.inning,
+            half: state.half,
+            event: DomainEvent::Strikeout {
+                batter_id,
+                kind: kind.clone(),
+            },
+            description: match kind {
+                StrikeoutKind::Called => "Strikeout (called)".to_string(),
+                StrikeoutKind::Swinging => "Strikeout (swinging)".to_string(),
+                StrikeoutKind::FoulBunt => "Strikeout (foul bunt)".to_string(),
+            },
+        });
+
+        persisted.push(PersistedEvent {
+            inning: state.inning,
+            half: state.half,
+            event: DomainEvent::OutRecorded(OutRecordedData {
+                outs_before: state.outs,
+                outs_after: state.outs.saturating_add(1),
+            }),
+            description: "Out recorded".to_string(),
+        });
+
+        persisted.push(PersistedEvent {
+            inning: state.inning,
+            half: state.half,
+            event: DomainEvent::CountReset,
+            description: "Count reset".to_string(),
+        });
+
+        events_ui.push(UiEvent::Line("K: batter out".to_string()));
+        needs_next_at_bat = true;
+    } else {
+        // Optional: if pitch is reserved, make it explicit in the log
+        if matches!(pitch, Pitch::InPlay | Pitch::HittedBy) {
+            events_ui.push(UiEvent::Line("Note: X/H not implemented yet".to_string()));
+        }
     }
 
     ApplyResult {
-        events: ui_events,
+        events: events_ui,
         persisted,
         exit: false,
         status_change: None,
-        needs_next_at_bat: false,
+        needs_next_at_bat,
     }
 }
