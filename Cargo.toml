@@ -1,6 +1,6 @@
 [package]
 name = "bs_scoring"
-version = "0.6.7"
+version = "0.6.8"
 edition = "2024"
 authors = ["Alessandro Maestri <umpire274@gmail.com>"]
 description = "A comprehensive baseball and softball scoring application with SQLite persistence"
@@ -34,6 +34,8 @@ chrono = { version = "0.4.44", features = ["serde"] }
 rusqlite = { version = "0.38.0", features = ["bundled"] }
 csv = "1.4.0"
 unicode-width = "0.2.2"
+figlet-rs = "0.1.5"
+anyhow = "1.0.102"
 
 [build-dependencies]
 winres = "0.1.12"

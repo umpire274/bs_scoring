@@ -31,10 +31,6 @@ pub enum DomainEvent {
         pitcher_last_name: String,
     },
 
-    PitchThrown {
-        pitcher_id: i64,
-    },
-
     PitcherChanged {
         pitcher_id: i64,
         pitcher_jersey_no: i32,
@@ -100,9 +96,13 @@ impl DomainEvent {
             DomainEvent::StatusChanged(_) => "status_changed",
             DomainEvent::GameStarted => "game_started",
             DomainEvent::AtBatStarted { .. } => "at_bat_started",
-            DomainEvent::PitchThrown { .. } => "pitch_thrown",
             DomainEvent::PitcherChanged { .. } => "pitcher_changed",
-            _ => "",
+            DomainEvent::PitchRecorded { .. } => "pitch_recorded",
+            DomainEvent::CountReset => "count_reset",
+            DomainEvent::WalkIssued { .. } => "walk_issued",
+            DomainEvent::Strikeout { .. } => "strikeout",
+            DomainEvent::OutRecorded(_) => "out_recorded",
+            DomainEvent::RunnerToFirst { .. } => "runner_to_first",
         }
     }
 }

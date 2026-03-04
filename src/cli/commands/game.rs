@@ -655,12 +655,13 @@ fn display_lineup(
         if let Ok(player) = Player::get_by_id(conn, *player_id) {
             let position_display = if def_pos == "DH" {
                 "DH".to_string()
-            } else if *batting_order == 10 {
-                "P (does not bat)".to_string()
             } else {
                 format!("Pos {}", def_pos)
             };
 
+            if *batting_order == 10 {
+                println!("{}", "═".repeat(53));
+            }
             println!(
                 "  {:2}. #{:<3} {:<20} {:<20} {}",
                 batting_order, player.number, player.first_name, player.last_name, position_display
@@ -852,11 +853,13 @@ fn print_lineup(team_name: &str, team_type: &str, lineup: &[LineupRow]) {
     for (_player_id, batting_order, def_pos, number, first_name, last_name) in lineup {
         let position_display = if def_pos == "DH" {
             "DH".to_string()
-        } else if *batting_order == 10 {
-            "P (does not bat)".to_string()
         } else {
             format!("Pos {}", def_pos)
         };
+
+        if *batting_order == 10 {
+            println!("{}", "═".repeat(53));
+        }
 
         println!(
             "  {:2}. #{:<3} {:<25} {}",
