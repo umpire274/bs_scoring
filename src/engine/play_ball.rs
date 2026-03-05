@@ -4,19 +4,18 @@ use crate::core::play_ball::set_game_status;
 use crate::core::play_ball_apply::apply_engine_command;
 use crate::core::play_ball_reducer::{apply_domain_event, apply_plate_appearance_row};
 use crate::db::at_bat_draft::{
-    clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft, AtBatDraftRow,
+    AtBatDraftRow, clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft,
 };
-use crate::db::batting_cursors::{load_batting_cursors, upsert_batting_cursors};
-use crate::db::game_events::{append_game_event, list_game_events, GameEventRow};
+use crate::db::game_events::{GameEventRow, append_game_event, list_game_events};
 use crate::db::plate_appearances_compact::{
-    append_plate_appearance, list_plate_appearances, PlateAppearanceRow,
+    PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
 };
 use crate::models::events::{DomainEvent, SideChangeData};
 use crate::models::play_ball::{GameState, OutcomeSymbol};
-use crate::ui::events::UiEvent;
 use crate::ui::Ui;
+use crate::ui::events::UiEvent;
 use crate::{HalfInning, Pitch};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 pub enum EngineExit {
     ExitToMenu,
@@ -58,23 +57,26 @@ pub fn run_play_ball_engine(
                 ))),
             }
 
-            // 2) restore cursors (persisted)
-            restore_batting_cursors(conn, game_pk, &mut state);
-
             // 3) restore in-progress at-bat (draft)
             let draft_opt = load_and_apply_draft(conn, ui, game_pk, &mut state);
 
             // 4) if draft exists, ensure cursor is not behind (avoid repeating batter)
-            if let Some(draft) = &draft_opt {
-                align_cursor_with_draft(
-                    conn,
-                    game_pk,
-                    game_id,
-                    &mut state,
-                    away_team_id,
-                    home_team_id,
-                    draft,
-                );
+            if let Some(draft) = &draft_opt
+                && let Some(batter_id) = draft.batter_id
+            {
+                let batting_team_id = match state.half {
+                    HalfInning::Top => away_team_id,
+                    HalfInning::Bottom => home_team_id,
+                };
+
+                if let Some(order) =
+                    find_order_for_batter(conn, game_id, batting_team_id, batter_id)
+                {
+                    match state.half {
+                        HalfInning::Top => state.away_next_batting_order = bump_order(order),
+                        HalfInning::Bottom => state.home_next_batting_order = bump_order(order),
+                    }
+                }
             }
 
             // 5) hydrate display fields
@@ -197,14 +199,6 @@ pub fn run_play_ball_engine(
                 );
 
                 state.away_next_batting_order = bump_order(1);
-
-                // Persist batting order cursors for resume
-                let _ = upsert_batting_cursors(
-                    conn,
-                    game_pk,
-                    state.away_next_batting_order,
-                    state.home_next_batting_order,
-                );
 
                 has_events = true;
                 continue;
@@ -545,14 +539,6 @@ fn start_next_at_bat(
         HalfInning::Bottom => state.home_next_batting_order = bump_order(next_order),
     }
 
-    // Persist cursors so resume continues with the correct batter
-    let _ = upsert_batting_cursors(
-        conn,
-        game_pk,
-        state.away_next_batting_order,
-        state.home_next_batting_order,
-    );
-
     true
 }
 
@@ -653,6 +639,12 @@ fn replay_plate_appearances_and_log(
         // 1) Source of truth: ricostruisci state
         apply_plate_appearance_row(state, pa);
 
+        match pa.half_inning.as_str() {
+            "Top" => state.away_next_batting_order = bump_order(state.away_next_batting_order),
+            "Bottom" => state.home_next_batting_order = bump_order(state.home_next_batting_order),
+            _ => {}
+        }
+
         // 2) Log scorer-friendly: [B, K, ...] -> K
         let seq: Vec<Pitch> = serde_json::from_str(&pa.pitches_sequence).unwrap_or_default();
         let seq_text = format_pitch_sequence(&seq);
@@ -667,17 +659,6 @@ fn replay_plate_appearances_and_log(
             seq_text,
             outcome_sym
         )));
-    }
-}
-
-fn restore_batting_cursors(conn: &mut Connection, game_pk: i64, state: &mut GameState) {
-    if let Ok(Some(cur)) = load_batting_cursors(conn, game_pk) {
-        if (1..=9).contains(&(cur.away_next_batting_order as u8)) {
-            state.away_next_batting_order = cur.away_next_batting_order as u8;
-        }
-        if (1..=9).contains(&(cur.home_next_batting_order as u8)) {
-            state.home_next_batting_order = cur.home_next_batting_order as u8;
-        }
     }
 }
 
@@ -736,47 +717,4 @@ fn load_and_apply_draft(
     ));
 
     draft_opt
-}
-
-fn align_cursor_with_draft(
-    conn: &mut Connection,
-    game_pk: i64,
-    game_id: &str,
-    state: &mut GameState,
-    away_team_id: i64,
-    home_team_id: i64,
-    draft: &AtBatDraftRow,
-) {
-    let Some(batter_id) = draft.batter_id else {
-        return;
-    };
-
-    let batting_team_id = match state.half {
-        HalfInning::Top => away_team_id,
-        HalfInning::Bottom => home_team_id,
-    };
-
-    let Some(order) = find_order_for_batter(conn, game_id, batting_team_id, batter_id) else {
-        return;
-    };
-
-    match state.half {
-        HalfInning::Top => {
-            if state.away_next_batting_order == order {
-                state.away_next_batting_order = bump_order(order);
-            }
-        }
-        HalfInning::Bottom => {
-            if state.home_next_batting_order == order {
-                state.home_next_batting_order = bump_order(order);
-            }
-        }
-    }
-
-    let _ = upsert_batting_cursors(
-        conn,
-        game_pk,
-        state.away_next_batting_order,
-        state.home_next_batting_order,
-    );
 }

@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 10;
+pub const CURRENT_SCHEMA_VERSION: i64 = 11;
 
 /// Migration structure
 pub struct Migration {
@@ -64,6 +64,11 @@ pub fn get_migrations() -> Vec<Migration> {
             version: 10,
             description: "Reorganized table plate_appearances_compact for better query patterns",
             up: migration_v10,
+        },
+        Migration {
+            version: 11,
+            description: "Drop batting_cursors table (no longer needed with new plate_appearances_compact structure)",
+            up: migration_v11,
         },
     ]
 }
@@ -650,6 +655,20 @@ fn migration_v10(conn: &Connection) -> Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_pa_compact_game_seq
             ON plate_appearances_compact(game_id, seq);
+
+        COMMIT;
+        ",
+    )?;
+
+    Ok(())
+}
+
+fn migration_v11(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "
+        BEGIN IMMEDIATE;
+
+        DROP TABLE IF EXISTS batting_cursors;
 
         COMMIT;
         ",
