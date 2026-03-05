@@ -1,14 +1,17 @@
-use crate::HalfInning;
 use crate::commands::engine_parser::parse_engine_commands;
 use crate::commands::types::EngineCommand;
 use crate::core::play_ball::set_game_status;
 use crate::core::play_ball_apply::apply_engine_command;
-use crate::core::play_ball_reducer::apply_domain_event;
+use crate::core::play_ball_reducer::{apply_domain_event, apply_plate_appearance_row};
+use crate::db::at_bat_draft::{clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft};
+use crate::db::batting_cursors::{load_batting_cursors, upsert_batting_cursors};
 use crate::db::game_events::{append_game_event, list_game_events};
+use crate::db::plate_appearances_compact::{append_plate_appearance, list_plate_appearances};
 use crate::models::events::{DomainEvent, SideChangeData};
-use crate::models::play_ball::GameState;
+use crate::models::play_ball::{GameState, OutcomeSymbol};
 use crate::ui::Ui;
 use crate::ui::events::UiEvent;
+use crate::{HalfInning, Pitch};
 use rusqlite::{Connection, params};
 
 pub enum EngineExit {
@@ -46,11 +49,124 @@ pub fn run_play_ball_engine(
                 if let Some(data) = r.event_data.as_deref()
                     && let Ok(ev) = serde_json::from_str::<DomainEvent>(data)
                 {
-                    apply_domain_event(&mut state, &ev);
+                    // Replay only low-frequency events. High-frequency gameplay is reconstructed
+                    // from compact plate appearances + draft.
+                    match ev {
+                        DomainEvent::GameStarted
+                        | DomainEvent::StatusChanged(_)
+                        | DomainEvent::PitcherChanged { .. } => {
+                            apply_domain_event(&mut state, &ev);
+                        }
+                        _ => {}
+                    }
                 }
             }
 
             // ✅ ensure scoreboard has the rebuilt state
+            ui.set_state(&state);
+
+            // --------- Replay compact plate appearances (resume) ----------
+            match list_plate_appearances(conn, game_pk) {
+                Ok(pas) => {
+                    if !pas.is_empty() {
+                        has_events = true;
+                    }
+                    for pa in pas {
+                        // 1) Parse JSON -> Vec<Pitch>
+                        // Se pa.pitches_sequence è già Vec<Pitch>, salta il from_str e usa direttamente.
+                        let seq: Vec<Pitch> =
+                            serde_json::from_str(&pa.pitches_sequence).unwrap_or_default();
+
+                        let seq_text = format_pitch_sequence(&seq);
+
+                        // 2) OutcomeSymbol (adatta se outcome_type non è String)
+                        let outcome_sym = outcome_symbol_from_outcome_type(&pa.outcome_type);
+
+                        // 3) Output finale richiesto: "[..., ...] -> K"
+                        ui.emit(UiEvent::Line(format!(
+                            "PA#{}, {}{}, outs {}, {} → {}",
+                            pa.seq,
+                            pa.inning,
+                            half_symbol(&pa.half_inning),
+                            pa.outs,
+                            seq_text,
+                            outcome_sym
+                        )));
+
+                        apply_plate_appearance_row(&mut state, &pa);
+                    }
+
+                    ui.set_state(&state);
+                }
+                Err(e) => ui.emit(UiEvent::Error(format!(
+                    "Failed to load plate appearances: {e}"
+                ))),
+            }
+
+            // --------- Resume: load batting cursors (next batter order) ----------
+            if let Ok(Some(cur)) = load_batting_cursors(conn, game_pk) {
+                if (1..=9).contains(&(cur.away_next_batting_order as u8)) {
+                    state.away_next_batting_order = cur.away_next_batting_order as u8;
+                }
+                if (1..=9).contains(&(cur.home_next_batting_order as u8)) {
+                    state.home_next_batting_order = cur.home_next_batting_order as u8;
+                }
+            }
+
+            // --------- Resume: load at-bat draft (mid-PA) ----------
+            if let Ok(Some(draft)) = load_at_bat_draft(conn, game_pk)
+                && let Ok(pc) = serde_json::from_str::<crate::PitchCount>(&draft.pitch_count_json)
+            {
+                let prev_inning = state.inning;
+                let prev_half = state.half;
+
+                let draft_inning = draft.inning as u32;
+                let draft_half = if draft.half_inning == "Bottom" {
+                    HalfInning::Bottom
+                } else {
+                    HalfInning::Top
+                };
+
+                state.inning = draft_inning;
+                state.half = draft_half;
+
+                // If we resume into a different half/inning than what we rebuilt from PAs,
+                // ensure side-change semantics (outs/bases reset).
+                if prev_inning != draft_inning || prev_half != draft_half {
+                    state.outs = 0;
+                    state.on_1b = false;
+                    state.on_2b = false;
+                    state.on_3b = false;
+                }
+                state.current_batter_id = draft.batter_id;
+                state.current_pitcher_id = draft.pitcher_id;
+                state.pitch_count = pc;
+
+                // Also restore in-progress pitcher pitch count contribution.
+                // Completed at-bats are reconstructed via AtBatPitchesCount summary events.
+                if let Some(pid) = state.current_pitcher_id {
+                    let n = state.pitch_count.sequence.len() as u32;
+                    if n > 0 {
+                        let entry = state.pitcher_pitch_counts.entry(pid).or_insert(0);
+                        *entry = entry.saturating_add(n);
+                        state.current_pitch_count = *entry;
+                    }
+                }
+
+                ui.emit(UiEvent::Line(
+                    "(Resume) Restored in-progress at-bat draft.".to_string(),
+                ));
+                ui.set_state(&state);
+            }
+
+            // --------- Resume: hydrate batter/pitcher display fields ----------
+            // With compact persistence we rebuild inning/outs/score, but display fields
+            // (names/jersey) must be hydrated from the roster.
+            if let Err(e) =
+                hydrate_current_matchup(conn, game_id, &mut state, away_team_id, home_team_id)
+            {
+                ui.emit(UiEvent::Error(format!("Failed to hydrate matchup: {e}")));
+            }
             ui.set_state(&state);
         }
         Err(e) => ui.emit(UiEvent::Error(format!("Failed to load game events: {e}"))),
@@ -146,16 +262,31 @@ pub fn run_play_ball_engine(
                     pitcher_last_name: p_last,
                 };
 
-                if !persist_event(conn, ui, game_pk, state.inning, state.half, &ev_ab, &msg_ab) {
-                    continue;
-                }
-
-                // Emit log line + update state/UI
+                // Emit log line + update state/UI (AtBatStarted is NOT persisted anymore)
                 ui.emit(UiEvent::Line(msg_ab.clone()));
                 apply_domain_event(&mut state, &ev_ab);
                 ui.set_state(&state);
 
+                // Create draft row so resume keeps batter/pitcher even before first pitch
+                let _ = upsert_at_bat_draft(
+                    conn,
+                    game_pk,
+                    state.inning,
+                    state.half,
+                    state.current_batter_id,
+                    state.current_pitcher_id,
+                    &state.pitch_count,
+                );
+
                 state.away_next_batting_order = bump_order(1);
+
+                // Persist batting order cursors for resume
+                let _ = upsert_batting_cursors(
+                    conn,
+                    game_pk,
+                    state.away_next_batting_order,
+                    state.home_next_batting_order,
+                );
 
                 has_events = true;
                 continue;
@@ -168,7 +299,7 @@ pub fn run_play_ball_engine(
                 ui.emit(ev);
             }
 
-            // Persist replayable events + apply to in-memory state (for scoreboard)
+            // Persist low-frequency events (admin) + apply to in-memory state
             for pe in &result.persisted {
                 if let Err(e) = append_game_event(
                     conn,
@@ -182,10 +313,41 @@ pub fn run_play_ball_engine(
                     continue;
                 }
 
-                // ✅ Update in-memory state
                 apply_domain_event(&mut state, &pe.event);
-
                 has_events = true;
+            }
+
+            // Apply high-frequency events (NOT persisted)
+            for ev in &result.applied {
+                apply_domain_event(&mut state, ev);
+
+                // Maintain a single-row draft for resume (no pitch-by-pitch persistence).
+                if matches!(
+                    ev,
+                    DomainEvent::PitchRecorded { .. } | DomainEvent::AtBatStarted { .. }
+                ) {
+                    let _ = upsert_at_bat_draft(
+                        conn,
+                        game_pk,
+                        state.inning,
+                        state.half,
+                        state.current_batter_id,
+                        state.current_pitcher_id,
+                        &state.pitch_count,
+                    );
+                }
+            }
+
+            // If a PA was completed, persist a single compact record
+            if let Some(pa) = &result.plate_appearance {
+                if let Err(e) = append_plate_appearance(conn, game_pk, pa) {
+                    ui.emit(UiEvent::Error(format!(
+                        "Failed to append plate appearance: {e}"
+                    )));
+                } else {
+                    // PA is over, clear the draft now.
+                    let _ = clear_at_bat_draft(conn, game_pk);
+                }
             }
 
             if result.needs_next_at_bat {
@@ -240,6 +402,70 @@ fn persist_event(
             false
         }
     }
+}
+
+fn get_player_basic(conn: &Connection, player_id: i64) -> rusqlite::Result<(i32, String, String)> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT number, first_name, last_name
+        FROM players
+        WHERE id = ?1
+        LIMIT 1
+        "#,
+    )?;
+    stmt.query_row(params![player_id], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    })
+}
+
+/// After resume/replay, ensure `GameState` contains the batter/pitcher display fields
+/// used by the TUI scoreboard (jersey + names).
+fn hydrate_current_matchup(
+    conn: &Connection,
+    game_id: &str,
+    state: &mut GameState,
+    away_team_id: i64,
+    home_team_id: i64,
+) -> rusqlite::Result<()> {
+    // Determine batting/fielding teams based on current half.
+    let (batting_team_id, fielding_team_id, next_order) = match state.half {
+        HalfInning::Top => (away_team_id, home_team_id, state.away_next_batting_order),
+        HalfInning::Bottom => (home_team_id, away_team_id, state.home_next_batting_order),
+    };
+
+    // Batter: hydrate by id if present (draft), otherwise from batting order cursor.
+    if let Some(bid) = state.current_batter_id {
+        if let Ok((num, first, last)) = get_player_basic(conn, bid) {
+            state.current_batter_jersey_no = Some(num);
+            state.current_batter_first_name = Some(first);
+            state.current_batter_last_name = Some(last);
+        }
+    } else if (1..=9).contains(&next_order)
+        && let Ok((batter_id, _abbr, jersey_no, first, last)) =
+            get_batter_by_order(conn, game_id, batting_team_id, next_order)
+    {
+        state.current_batter_id = Some(batter_id);
+        state.current_batter_jersey_no = Some(jersey_no);
+        state.current_batter_first_name = Some(first);
+        state.current_batter_last_name = Some(last);
+    }
+
+    // Pitcher: hydrate by id if present (replay/draft), otherwise from starting pitcher.
+    if let Some(pid) = state.current_pitcher_id {
+        if let Ok((num, first, last)) = get_player_basic(conn, pid) {
+            state.current_pitcher_jersey_no = Some(num);
+            state.current_pitcher_first_name = Some(first);
+            state.current_pitcher_last_name = Some(last);
+        }
+    } else if let Ok((pid, num, first, last)) = get_current_pitcher(conn, game_id, fielding_team_id)
+    {
+        state.current_pitcher_id = Some(pid);
+        state.current_pitcher_jersey_no = Some(num);
+        state.current_pitcher_first_name = Some(first);
+        state.current_pitcher_last_name = Some(last);
+    }
+
+    Ok(())
 }
 
 fn get_current_pitcher(
@@ -345,7 +571,7 @@ fn start_next_at_bat(
             }
         };
 
-    // 5) Persist AtBatStarted
+    // 5) Start next at-bat (NOT persisted anymore)
     let msg_ab = format!("At bat: {team_abbrv} #{jersey_no} {first} {last}");
 
     let ev_ab = DomainEvent::AtBatStarted {
@@ -363,12 +589,19 @@ fn start_next_at_bat(
         pitcher_last_name: p_last,
     };
 
-    if !persist_event(conn, ui, game_pk, state.inning, state.half, &ev_ab, &msg_ab) {
-        return false;
-    }
-
     ui.emit(UiEvent::Line(msg_ab));
     apply_domain_event(state, &ev_ab);
+
+    // Create/refresh draft row for resume (even before any pitch is recorded)
+    let _ = upsert_at_bat_draft(
+        conn,
+        game_pk,
+        state.inning,
+        state.half,
+        state.current_batter_id,
+        state.current_pitcher_id,
+        &state.pitch_count,
+    );
 
     // 6) Advance batting order cursor (resume-safe)
     match state.half {
@@ -376,13 +609,21 @@ fn start_next_at_bat(
         HalfInning::Bottom => state.home_next_batting_order = bump_order(next_order),
     }
 
+    // Persist cursors so resume continues with the correct batter
+    let _ = upsert_batting_cursors(
+        conn,
+        game_pk,
+        state.away_next_batting_order,
+        state.home_next_batting_order,
+    );
+
     true
 }
 
 fn handle_three_outs_and_change_side(
-    conn: &mut Connection,
+    _conn: &mut Connection,
     ui: &mut dyn Ui,
-    game_pk: i64,
+    _game_pk: i64,
     state: &mut GameState,
 ) -> bool {
     // Compute next half + inning
@@ -391,7 +632,8 @@ fn handle_three_outs_and_change_side(
         HalfInning::Bottom => (state.inning.saturating_add(1), HalfInning::Top),
     };
 
-    // ✅ SideChange must be persisted (resume-friendly)
+    // ✅ SideChange is NOT persisted anymore.
+    // Resume will be reconstructed from compact PA rows + the at-bat draft.
     let ev_side = DomainEvent::SideChange(SideChangeData {
         inning: next_inning,
         half: next_half,
@@ -406,29 +648,14 @@ fn handle_three_outs_and_change_side(
         next_inning
     );
 
-    if !persist_event(conn, ui, game_pk, state.inning, state.half, &ev_side, &desc) {
-        return false;
-    }
-
     ui.emit(UiEvent::Line(desc));
     apply_domain_event(state, &ev_side);
 
     // ✅ In un half inning nuovo, count deve essere 0-0.
     // Se tu già persist CountReset in BB/K, qui comunque è corretto farlo sempre
     // per sicurezza (e per evitare carry-over se l'ultimo evento non lo ha emesso).
-    let ev_reset = DomainEvent::CountReset;
-    if !persist_event(
-        conn,
-        ui,
-        game_pk,
-        state.inning,
-        state.half,
-        &ev_reset,
-        "Count reset",
-    ) {
-        return false;
-    }
-    apply_domain_event(state, &ev_reset);
+    // Ensure count is 0-0 on new half inning.
+    apply_domain_event(state, &DomainEvent::CountReset);
 
     // ⚠️ IMPORTANT: bases should clear on side change.
     // Se NON hai un DomainEvent dedicato, almeno azzera lo stato runtime:
@@ -438,4 +665,37 @@ fn handle_three_outs_and_change_side(
     state.on_3b = false;
 
     true
+}
+
+fn half_symbol(half: &str) -> char {
+    match half {
+        "Top" | "top" => '↑',
+        "Bottom" | "bottom" => '↓',
+        _ => '?',
+    }
+}
+
+/// Formatta la sequenza come: [B, K, S, F]
+fn format_pitch_sequence(seq: &[Pitch]) -> String {
+    let inner = seq
+        .iter()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{}]", inner)
+}
+
+fn outcome_symbol_from_outcome_type(outcome_type: &str) -> OutcomeSymbol {
+    match outcome_type {
+        // Adatta queste stringhe ai valori REALI che salvi nel DB
+        "walk" | "bb" => OutcomeSymbol::Walk,
+        "strikeout" | "k" => OutcomeSymbol::Strikeout,
+        "in_play" | "inplay" => OutcomeSymbol::InPlay,
+        "out" => OutcomeSymbol::Out,
+        "single" | "1b" => OutcomeSymbol::Single,
+        "double" | "2b" => OutcomeSymbol::Double,
+        "triple" | "3b" => OutcomeSymbol::Triple,
+        "home_run" | "hr" => OutcomeSymbol::HomeRun,
+        _ => OutcomeSymbol::Out,
+    }
 }

@@ -1,3 +1,4 @@
+use crate::db::plate_appearances_compact::PlateAppearanceRow;
 use crate::models::events::DomainEvent;
 use crate::models::play_ball::GameState;
 use crate::{HalfInning, Pitch};
@@ -132,6 +133,18 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
             }
         }
 
+        DomainEvent::AtBatPitchesCount {
+            pitcher_id,
+            pitches,
+        } => {
+            let entry = state.pitcher_pitch_counts.entry(*pitcher_id).or_insert(0);
+            *entry = entry.saturating_add(*pitches);
+
+            if state.current_pitcher_id == Some(*pitcher_id) {
+                state.current_pitch_count = *entry;
+            }
+        }
+
         DomainEvent::CountReset => {
             state.pitch_count.balls = 0;
             state.pitch_count.strikes = 0;
@@ -149,4 +162,57 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
             state.on_1b = true;
         }
     }
+}
+
+/// Apply a compact, persisted Plate Appearance row to the in-memory GameState.
+///
+/// This is used on resume to rebuild the game without replaying pitch-by-pitch.
+pub fn apply_plate_appearance_row(state: &mut GameState, row: &PlateAppearanceRow) {
+    // Keep inning/half aligned (SideChange events should already do this, but be defensive).
+    let row_half = if row.half_inning == "Bottom" {
+        HalfInning::Bottom
+    } else {
+        HalfInning::Top
+    };
+    if state.inning != row.inning as u32 || state.half != row_half {
+        state.inning = row.inning as u32;
+        state.half = row_half;
+        // Switching context (new half/inning): reset bases and PA context.
+        state.outs = row.outs as u8;
+        state.on_1b = false;
+        state.on_2b = false;
+        state.on_3b = false;
+        state.current_batter_id = None;
+        state.current_batter_jersey_no = None;
+        state.current_batter_first_name = None;
+        state.current_batter_last_name = None;
+    }
+
+    // Pitcher pitch totals
+    let entry = state
+        .pitcher_pitch_counts
+        .entry(row.pitcher_id)
+        .or_insert(0);
+    *entry = entry.saturating_add(row.pitches as u32);
+    state.current_pitcher_id = Some(row.pitcher_id);
+    state.current_pitch_count = *entry;
+
+    // Outcome effects (minimal v0.6.8 ruleset)
+    match row.outcome_type.as_str() {
+        "walk" => {
+            state.on_1b = true;
+            // outs unchanged
+        }
+        "strikeout" | "out" => {
+            state.outs = row.outs as u8;
+        }
+        _ => {
+            // Unknown outcome type: do not mutate more than necessary
+        }
+    }
+
+    // End of PA => reset count UI
+    state.pitch_count.balls = 0;
+    state.pitch_count.strikes = 0;
+    state.pitch_count.sequence.clear();
 }

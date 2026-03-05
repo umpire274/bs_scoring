@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 5;
+pub const CURRENT_SCHEMA_VERSION: i64 = 10;
 
 /// Migration structure
 pub struct Migration {
@@ -39,6 +39,31 @@ pub fn get_migrations() -> Vec<Migration> {
             version: 5,
             description: "Restructure players table: remove batting_order and name, add first_name and last_name",
             up: migration_v5,
+        },
+        Migration {
+            version: 6,
+            description: "Add at_bat_draft table for resume without persisting every pitch",
+            up: migration_v6,
+        },
+        Migration {
+            version: 7,
+            description: "Add batting_cursors table for resume-safe batting order progression",
+            up: migration_v7,
+        },
+        Migration {
+            version: 8,
+            description: "Add plate_appearances_compact table (1 row per completed PA)",
+            up: migration_v8,
+        },
+        Migration {
+            version: 9,
+            description: "Add pitches_sequence JSON column to plate_appearances_compact",
+            up: migration_v9,
+        },
+        Migration {
+            version: 10,
+            description: "Reorganized table plate_appearances_compact for better query patterns",
+            up: migration_v10,
         },
     ]
 }
@@ -480,4 +505,155 @@ pub struct MigrationInfo {
     pub pending_count: i64,
     pub last_migration: Option<String>,
     pub created_at: Option<String>,
+}
+
+fn migration_v6(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS at_bat_draft (
+            game_id INTEGER PRIMARY KEY,
+            inning INTEGER NOT NULL,
+            half_inning TEXT NOT NULL CHECK(half_inning IN ('Top', 'Bottom')),
+            batter_id INTEGER,
+            pitcher_id INTEGER,
+            pitch_count_json TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (batter_id) REFERENCES players(id),
+            FOREIGN KEY (pitcher_id) REFERENCES players(id)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_at_bat_draft_game ON at_bat_draft(game_id)",
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn migration_v7(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS batting_cursors (
+            game_id INTEGER PRIMARY KEY,
+            away_next_batting_order INTEGER NOT NULL,
+            home_next_batting_order INTEGER NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_batting_cursors_game ON batting_cursors(game_id)",
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn migration_v8(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plate_appearances_compact (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            seq INTEGER NOT NULL,
+            inning INTEGER NOT NULL,
+            half_inning TEXT NOT NULL CHECK(half_inning IN ('Top', 'Bottom')),
+            batter_id INTEGER NOT NULL,
+            pitcher_id INTEGER NOT NULL,
+            pitches INTEGER NOT NULL DEFAULT 0,
+            outcome_type TEXT NOT NULL,
+            outcome_data TEXT,
+            outs_before INTEGER NOT NULL,
+            outs_after INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pa_compact_game_seq ON plate_appearances_compact(game_id, seq)",
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn migration_v9(conn: &Connection) -> Result<()> {
+    // SQLite does not support ADD COLUMN IF NOT EXISTS, so we check first.
+    let mut stmt = conn.prepare("PRAGMA table_info(plate_appearances_compact)")?;
+    let mut rows = stmt.query([])?;
+    let mut has_col = false;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?; // column name
+        if name == "pitches_sequence" {
+            has_col = true;
+            break;
+        }
+    }
+
+    if !has_col {
+        conn.execute(
+            "ALTER TABLE plate_appearances_compact ADD COLUMN pitches_sequence TEXT NOT NULL DEFAULT '[]'",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn migration_v10(conn: &Connection) -> Result<()> {
+    let res = conn.execute_batch(
+        "
+        BEGIN IMMEDIATE;
+
+        CREATE TABLE plate_appearances_compact_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            seq INTEGER NOT NULL,
+            inning INTEGER NOT NULL,
+            half_inning TEXT NOT NULL CHECK(half_inning IN ('Top', 'Bottom')),
+            batter_id INTEGER NOT NULL,
+            pitcher_id INTEGER NOT NULL,
+            pitches INTEGER NOT NULL DEFAULT 0,
+            pitches_sequence TEXT NOT NULL DEFAULT '[]',
+            outcome_type TEXT NOT NULL,
+            outcome_data TEXT,
+            outs INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id)
+        );
+
+        INSERT INTO plate_appearances_compact_new
+        SELECT
+            id,
+            game_id,
+            seq,
+            inning,
+            half_inning,
+            batter_id,
+            pitcher_id,
+            pitches,
+            pitches_sequence,
+            outcome_type,
+            outcome_data,
+            outs_after,
+            created_at
+        FROM plate_appearances_compact;
+
+        DROP TABLE plate_appearances_compact;
+
+        ALTER TABLE plate_appearances_compact_new
+        RENAME TO plate_appearances_compact;
+
+        CREATE INDEX IF NOT EXISTS idx_pa_compact_game_seq
+            ON plate_appearances_compact(game_id, seq);
+
+        COMMIT;
+        ",
+    )?;
+
+    Ok(())
 }

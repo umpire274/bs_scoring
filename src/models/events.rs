@@ -44,6 +44,13 @@ pub enum DomainEvent {
         pitch: Pitch,
     },
 
+    /// Summary: how many pitches were thrown in the last completed at-bat.
+    /// Persisted to reconstruct pitcher pitch counts without logging every pitch.
+    AtBatPitchesCount {
+        pitcher_id: i64,
+        pitches: u32,
+    },
+
     CountReset,
 
     WalkIssued {
@@ -98,6 +105,7 @@ impl DomainEvent {
             DomainEvent::AtBatStarted { .. } => "at_bat_started",
             DomainEvent::PitcherChanged { .. } => "pitcher_changed",
             DomainEvent::PitchRecorded { .. } => "pitch_recorded",
+            DomainEvent::AtBatPitchesCount { .. } => "at_bat_pitches_count",
             DomainEvent::CountReset => "count_reset",
             DomainEvent::WalkIssued { .. } => "walk_issued",
             DomainEvent::Strikeout { .. } => "strikeout",
