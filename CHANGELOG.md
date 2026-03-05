@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Batting order progression is derived deterministically from plate appearances.
 - Pitch counts for pitchers are reconstructed using `pitches_sequence`.
 - Resume logic now correctly restores in-progress at-bats using `at_bat_draft`.
+- Batting cursors are aligned on resume to avoid repeating the same batter after restart.
 
 ### Database
 
@@ -35,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Introduced deterministic reducer logic for plate appearance replay.
 - Improved resume handling to avoid repeating the same batter when resuming mid-at-bat.
 - Simplified `play_ball` resume flow and removed redundant state restoration.
+- Refactored `run_play_ball_engine()` resume flow into smaller helper functions.
+- Removed duplicated draft and cursor restoration logic.
+- Improved readability and maintainability of the resume pipeline.
 
 ---
 

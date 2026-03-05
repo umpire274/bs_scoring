@@ -4,17 +4,19 @@ use crate::core::play_ball::set_game_status;
 use crate::core::play_ball_apply::apply_engine_command;
 use crate::core::play_ball_reducer::{apply_domain_event, apply_plate_appearance_row};
 use crate::db::at_bat_draft::{
-    clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft, AtBatDraftRow,
+    AtBatDraftRow, clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft,
 };
 use crate::db::batting_cursors::{load_batting_cursors, upsert_batting_cursors};
-use crate::db::game_events::{append_game_event, list_game_events};
-use crate::db::plate_appearances_compact::{append_plate_appearance, list_plate_appearances};
+use crate::db::game_events::{GameEventRow, append_game_event, list_game_events};
+use crate::db::plate_appearances_compact::{
+    PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
+};
 use crate::models::events::{DomainEvent, SideChangeData};
 use crate::models::play_ball::{GameState, OutcomeSymbol};
-use crate::ui::events::UiEvent;
 use crate::ui::Ui;
+use crate::ui::events::UiEvent;
 use crate::{HalfInning, Pitch};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 pub enum EngineExit {
     ExitToMenu,
@@ -37,144 +39,45 @@ pub fn run_play_ball_engine(
     let mut has_events = false;
 
     // --------- Replay persisted events + deterministic rebuild (resume) ----------
+    // --------- Resume ----------
     match list_game_events(conn, game_pk) {
         Ok(rows) => {
             has_events = !rows.is_empty();
+            replay_admin_logs(ui, &rows);
 
-            // game_events: only optional log lines (admin/metadata)
-            for r in rows {
-                if let Some(desc) = r.description {
-                    ui.emit(UiEvent::Line(desc));
-                }
-            }
-
-            // --------- Replay compact plate appearances (resume) ----------
+            // 1) deterministic rebuild from plate appearances
             match list_plate_appearances(conn, game_pk) {
                 Ok(pas) => {
                     if !pas.is_empty() {
                         has_events = true;
                     }
-
-                    for pa in pas {
-                        // Apply first (state reconstruction is the source of truth)
-                        apply_plate_appearance_row(&mut state, &pa);
-
-                        // Log compact scorer-friendly line
-                        let seq: Vec<Pitch> =
-                            serde_json::from_str(&pa.pitches_sequence).unwrap_or_default();
-                        let seq_text = format_pitch_sequence(&seq);
-                        let outcome_sym = outcome_symbol_from_outcome_type(&pa.outcome_type);
-
-                        ui.emit(UiEvent::Line(format!(
-                            "PA#{}, {}{}, outs {}, {} → {}",
-                            pa.seq,
-                            pa.inning,
-                            half_symbol(&pa.half_inning),
-                            pa.outs,
-                            seq_text,
-                            outcome_sym
-                        )));
-                    }
-
-                    ui.set_state(&state);
+                    replay_plate_appearances_and_log(ui, &mut state, &pas);
                 }
                 Err(e) => ui.emit(UiEvent::Error(format!(
                     "Failed to load plate appearances: {e}"
                 ))),
             }
 
-            // --------- Resume: restore batting cursors (next batter order) ----------
-            if let Ok(Some(cur)) = load_batting_cursors(conn, game_pk) {
-                if (1..=9).contains(&(cur.away_next_batting_order as u8)) {
-                    state.away_next_batting_order = cur.away_next_batting_order as u8;
-                }
-                if (1..=9).contains(&(cur.home_next_batting_order as u8)) {
-                    state.home_next_batting_order = cur.home_next_batting_order as u8;
-                }
-            }
+            // 2) restore cursors (persisted)
+            restore_batting_cursors(conn, game_pk, &mut state);
 
-            // --------- Resume: load at-bat draft once (mid-PA) ----------
-            let draft_opt: Option<AtBatDraftRow> = load_at_bat_draft(conn, game_pk).ok().flatten();
+            // 3) restore in-progress at-bat (draft)
+            let draft_opt = load_and_apply_draft(conn, ui, game_pk, &mut state);
 
+            // 4) if draft exists, ensure cursor is not behind (avoid repeating batter)
             if let Some(draft) = &draft_opt {
-                if let Ok(pc) = serde_json::from_str::<crate::PitchCount>(&draft.pitch_count_json) {
-                    let prev_inning = state.inning;
-                    let prev_half = state.half;
-
-                    let draft_inning = draft.inning as u32;
-                    let draft_half = if draft.half_inning == "Bottom" {
-                        HalfInning::Bottom
-                    } else {
-                        HalfInning::Top
-                    };
-
-                    state.inning = draft_inning;
-                    state.half = draft_half;
-
-                    // If draft half/inning differs, ensure side-change semantics
-                    if prev_inning != draft_inning || prev_half != draft_half {
-                        state.outs = 0;
-                        state.on_1b = false;
-                        state.on_2b = false;
-                        state.on_3b = false;
-                    }
-
-                    state.current_batter_id = draft.batter_id;
-                    state.current_pitcher_id = draft.pitcher_id;
-                    state.pitch_count = pc;
-
-                    // Include in-progress pitch sequence into pitcher pitch counts
-                    if let Some(pid) = state.current_pitcher_id {
-                        let n = state.pitch_count.sequence.len() as u32;
-                        if n > 0 {
-                            let entry = state.pitcher_pitch_counts.entry(pid).or_insert(0);
-                            *entry = entry.saturating_add(n);
-                            state.current_pitch_count = *entry;
-                        }
-                    }
-
-                    ui.emit(UiEvent::Line(
-                        "(Resume) Restored in-progress at-bat draft.".to_string(),
-                    ));
-                }
+                align_cursor_with_draft(
+                    conn,
+                    game_pk,
+                    game_id,
+                    &mut state,
+                    away_team_id,
+                    home_team_id,
+                    draft,
+                );
             }
 
-            // --------- Resume: if draft exists, ensure cursor is not behind ----------
-            // Avoid repeating the same batter when resuming mid-AB.
-            if let Some(draft) = &draft_opt {
-                if let Some(batter_id) = draft.batter_id {
-                    let batting_team_id = match state.half {
-                        HalfInning::Top => away_team_id,
-                        HalfInning::Bottom => home_team_id,
-                    };
-
-                    if let Some(order) =
-                        find_order_for_batter(conn, game_id, batting_team_id, batter_id)
-                    {
-                        match state.half {
-                            HalfInning::Top => {
-                                if state.away_next_batting_order == order {
-                                    state.away_next_batting_order = bump_order(order);
-                                }
-                            }
-                            HalfInning::Bottom => {
-                                if state.home_next_batting_order == order {
-                                    state.home_next_batting_order = bump_order(order);
-                                }
-                            }
-                        }
-
-                        let _ = upsert_batting_cursors(
-                            conn,
-                            game_pk,
-                            state.away_next_batting_order,
-                            state.home_next_batting_order,
-                        );
-                    }
-                }
-            }
-
-            // --------- Resume: hydrate batter/pitcher display fields ----------
+            // 5) hydrate display fields
             if let Err(e) =
                 hydrate_current_matchup(conn, game_id, &mut state, away_team_id, home_team_id)
             {
@@ -731,4 +634,150 @@ fn outcome_symbol_from_outcome_type(outcome_type: &str) -> OutcomeSymbol {
         "home_run" | "hr" => OutcomeSymbol::HomeRun,
         _ => OutcomeSymbol::Out,
     }
+}
+
+fn replay_admin_logs(ui: &mut dyn Ui, rows: &[GameEventRow]) {
+    for r in rows {
+        if let Some(desc) = &r.description {
+            ui.emit(UiEvent::Line(desc.clone()));
+        }
+    }
+}
+
+fn replay_plate_appearances_and_log(
+    ui: &mut dyn Ui,
+    state: &mut GameState,
+    pas: &[PlateAppearanceRow],
+) {
+    for pa in pas {
+        // 1) Source of truth: ricostruisci state
+        apply_plate_appearance_row(state, pa);
+
+        // 2) Log scorer-friendly: [B, K, ...] -> K
+        let seq: Vec<Pitch> = serde_json::from_str(&pa.pitches_sequence).unwrap_or_default();
+        let seq_text = format_pitch_sequence(&seq);
+        let outcome_sym = outcome_symbol_from_outcome_type(&pa.outcome_type);
+
+        ui.emit(UiEvent::Line(format!(
+            "PA#{}, {}{}, outs {}, {} → {}",
+            pa.seq,
+            pa.inning,
+            half_symbol(&pa.half_inning),
+            pa.outs,
+            seq_text,
+            outcome_sym
+        )));
+    }
+}
+
+fn restore_batting_cursors(conn: &mut Connection, game_pk: i64, state: &mut GameState) {
+    if let Ok(Some(cur)) = load_batting_cursors(conn, game_pk) {
+        if (1..=9).contains(&(cur.away_next_batting_order as u8)) {
+            state.away_next_batting_order = cur.away_next_batting_order as u8;
+        }
+        if (1..=9).contains(&(cur.home_next_batting_order as u8)) {
+            state.home_next_batting_order = cur.home_next_batting_order as u8;
+        }
+    }
+}
+
+fn load_and_apply_draft(
+    conn: &mut Connection,
+    ui: &mut dyn Ui,
+    game_pk: i64,
+    state: &mut GameState,
+) -> Option<AtBatDraftRow> {
+    let draft_opt: Option<AtBatDraftRow> = load_at_bat_draft(conn, game_pk).ok().flatten();
+
+    let Some(draft) = &draft_opt else {
+        return None;
+    };
+
+    let Ok(pc) = serde_json::from_str::<crate::PitchCount>(&draft.pitch_count_json) else {
+        return draft_opt;
+    };
+
+    let prev_inning = state.inning;
+    let prev_half = state.half;
+
+    let draft_inning = draft.inning as u32;
+    let draft_half = if draft.half_inning == "Bottom" {
+        HalfInning::Bottom
+    } else {
+        HalfInning::Top
+    };
+
+    state.inning = draft_inning;
+    state.half = draft_half;
+
+    // side-change semantics
+    if prev_inning != draft_inning || prev_half != draft_half {
+        state.outs = 0;
+        state.on_1b = false;
+        state.on_2b = false;
+        state.on_3b = false;
+    }
+
+    state.current_batter_id = draft.batter_id;
+    state.current_pitcher_id = draft.pitcher_id;
+    state.pitch_count = pc;
+
+    // include in-progress pitches into pitcher pitch counts
+    if let Some(pid) = state.current_pitcher_id {
+        let n = state.pitch_count.sequence.len() as u32;
+        if n > 0 {
+            let entry = state.pitcher_pitch_counts.entry(pid).or_insert(0);
+            *entry = entry.saturating_add(n);
+            state.current_pitch_count = *entry;
+        }
+    }
+
+    ui.emit(UiEvent::Line(
+        "(Resume) Restored in-progress at-bat draft.".to_string(),
+    ));
+
+    draft_opt
+}
+
+fn align_cursor_with_draft(
+    conn: &mut Connection,
+    game_pk: i64,
+    game_id: &str,
+    state: &mut GameState,
+    away_team_id: i64,
+    home_team_id: i64,
+    draft: &AtBatDraftRow,
+) {
+    let Some(batter_id) = draft.batter_id else {
+        return;
+    };
+
+    let batting_team_id = match state.half {
+        HalfInning::Top => away_team_id,
+        HalfInning::Bottom => home_team_id,
+    };
+
+    let Some(order) = find_order_for_batter(conn, game_id, batting_team_id, batter_id) else {
+        return;
+    };
+
+    match state.half {
+        HalfInning::Top => {
+            if state.away_next_batting_order == order {
+                state.away_next_batting_order = bump_order(order);
+            }
+        }
+        HalfInning::Bottom => {
+            if state.home_next_batting_order == order {
+                state.home_next_batting_order = bump_order(order);
+            }
+        }
+    }
+
+    let _ = upsert_batting_cursors(
+        conn,
+        game_pk,
+        state.away_next_batting_order,
+        state.home_next_batting_order,
+    );
 }
