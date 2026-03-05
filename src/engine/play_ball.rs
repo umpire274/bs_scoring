@@ -639,12 +639,6 @@ fn replay_plate_appearances_and_log(
         // 1) Source of truth: ricostruisci state
         apply_plate_appearance_row(state, pa);
 
-        match pa.half_inning.as_str() {
-            "Top" => state.away_next_batting_order = bump_order(state.away_next_batting_order),
-            "Bottom" => state.home_next_batting_order = bump_order(state.home_next_batting_order),
-            _ => {}
-        }
-
         // 2) Log scorer-friendly: [B, K, ...] -> K
         let seq: Vec<Pitch> = serde_json::from_str(&pa.pitches_sequence).unwrap_or_default();
         let seq_text = format_pitch_sequence(&seq);
