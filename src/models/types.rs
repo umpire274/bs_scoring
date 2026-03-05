@@ -298,7 +298,7 @@ pub struct PlateAppearance {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum HalfInning {
     Top,    // Visiting team batting
     Bottom, // Home team batting

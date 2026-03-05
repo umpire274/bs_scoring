@@ -2,6 +2,7 @@ pub(crate) use crate::HalfInning;
 use crate::PitchCount;
 use crate::models::types::{GameStatus, Score};
 use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct PlayBallGameContext {
@@ -125,5 +126,32 @@ impl GameState {
 impl Default for GameState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub enum OutcomeSymbol {
+    Walk,
+    Strikeout,
+    InPlay,
+    Out,
+    Single,
+    Double,
+    Triple,
+    HomeRun,
+}
+
+impl fmt::Display for OutcomeSymbol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let symbol = match self {
+            OutcomeSymbol::Walk => "BB",
+            OutcomeSymbol::Strikeout => "K",
+            OutcomeSymbol::InPlay => "In Play",
+            OutcomeSymbol::Out => "Out",
+            OutcomeSymbol::Single => "1B",
+            OutcomeSymbol::Double => "2B",
+            OutcomeSymbol::Triple => "3B",
+            OutcomeSymbol::HomeRun => "HR",
+        };
+        write!(f, "{}", symbol)
     }
 }
