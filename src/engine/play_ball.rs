@@ -4,19 +4,19 @@ use crate::core::play_ball::set_game_status;
 use crate::core::play_ball_apply::apply_engine_command;
 use crate::core::play_ball_reducer::{apply_domain_event, apply_plate_appearance_row};
 use crate::db::at_bat_draft::{
-    AtBatDraftRow, clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft,
+    clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft, AtBatDraftRow,
 };
 use crate::db::batting_cursors::{load_batting_cursors, upsert_batting_cursors};
-use crate::db::game_events::{GameEventRow, append_game_event, list_game_events};
+use crate::db::game_events::{append_game_event, list_game_events, GameEventRow};
 use crate::db::plate_appearances_compact::{
-    PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
+    append_plate_appearance, list_plate_appearances, PlateAppearanceRow,
 };
 use crate::models::events::{DomainEvent, SideChangeData};
 use crate::models::play_ball::{GameState, OutcomeSymbol};
-use crate::ui::Ui;
 use crate::ui::events::UiEvent;
+use crate::ui::Ui;
 use crate::{HalfInning, Pitch};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 
 pub enum EngineExit {
     ExitToMenu,
@@ -689,12 +689,13 @@ fn load_and_apply_draft(
 ) -> Option<AtBatDraftRow> {
     let draft_opt: Option<AtBatDraftRow> = load_at_bat_draft(conn, game_pk).ok().flatten();
 
-    let Some(draft) = &draft_opt else {
-        return None;
-    };
+    let Some(draft) = &draft_opt else { return None };
 
     let Ok(pc) = serde_json::from_str::<crate::PitchCount>(&draft.pitch_count_json) else {
-        return draft_opt;
+        ui.emit(UiEvent::Error(
+            "Invalid pitch_count_json in at_bat_draft. Ignoring draft.".to_string(),
+        ));
+        return None;
     };
 
     let prev_inning = state.inning;
@@ -710,7 +711,6 @@ fn load_and_apply_draft(
     state.inning = draft_inning;
     state.half = draft_half;
 
-    // side-change semantics
     if prev_inning != draft_inning || prev_half != draft_half {
         state.outs = 0;
         state.on_1b = false;
@@ -722,7 +722,6 @@ fn load_and_apply_draft(
     state.current_pitcher_id = draft.pitcher_id;
     state.pitch_count = pc;
 
-    // include in-progress pitches into pitcher pitch counts
     if let Some(pid) = state.current_pitcher_id {
         let n = state.pitch_count.sequence.len() as u32;
         if n > 0 {
