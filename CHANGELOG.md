@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-03-05
+
+### Added
+
+- Deterministic reconstruction of game state from `plate_appearances_compact`.
+- New replay mechanism that rebuilds `GameState` by applying plate appearances sequentially.
+- Resume log now prints pitch sequence and outcome in scorer-friendly format:
+    ```txt
+  PA#5 1↑ [B, K, S, F, F, K] -> K
+  PA#6 1↑ [B, B, B, B] -> BB
+  PA#7 1↓ [K, S, B, X] -> In Play
+    ```
+
+### Changed
+
+- Resume process no longer depends on `game_events` for rebuilding game state.
+- Batting order progression is now derived deterministically from plate appearances.
+- Pitch counts for pitchers are reconstructed using `pitches_sequence`.
+
+### Database
+
+- `plate_appearances_compact` is now the authoritative source for gameplay reconstruction.
+
+### Internal
+
+- Introduced deterministic reducer logic for plate appearance replay.
+- Simplified resume logic in `play_ball`.
+
+---
+
 ## [0.6.9] - 2026-03-05
 
 ### Added

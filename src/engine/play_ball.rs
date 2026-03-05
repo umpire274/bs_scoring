@@ -4,7 +4,7 @@ use crate::core::play_ball::set_game_status;
 use crate::core::play_ball_apply::apply_engine_command;
 use crate::core::play_ball_reducer::{apply_domain_event, apply_plate_appearance_row};
 use crate::db::at_bat_draft::{clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft};
-use crate::db::batting_cursors::{load_batting_cursors, upsert_batting_cursors};
+use crate::db::batting_cursors::upsert_batting_cursors;
 use crate::db::game_events::{append_game_event, list_game_events};
 use crate::db::plate_appearances_compact::{append_plate_appearance, list_plate_appearances};
 use crate::models::events::{DomainEvent, SideChangeData};
@@ -45,21 +45,9 @@ pub fn run_play_ball_engine(
                     ui.emit(UiEvent::Line(desc));
                 }
 
-                // Rebuild state from structured event JSON
-                if let Some(data) = r.event_data.as_deref()
-                    && let Ok(ev) = serde_json::from_str::<DomainEvent>(data)
-                {
-                    // Replay only low-frequency events. High-frequency gameplay is reconstructed
-                    // from compact plate appearances + draft.
-                    match ev {
-                        DomainEvent::GameStarted
-                        | DomainEvent::StatusChanged(_)
-                        | DomainEvent::PitcherChanged { .. } => {
-                            apply_domain_event(&mut state, &ev);
-                        }
-                        _ => {}
-                    }
-                }
+                // Note: starting from v0.7.0 the game state is rebuilt deterministically from
+                // `plate_appearances_compact`. `game_events` is used only for optional UI log lines
+                // (admin/metadata), and is NOT applied to the state during resume.
             }
 
             // ✅ ensure scoreboard has the rebuilt state
@@ -103,15 +91,7 @@ pub fn run_play_ball_engine(
                 ))),
             }
 
-            // --------- Resume: load batting cursors (next batter order) ----------
-            if let Ok(Some(cur)) = load_batting_cursors(conn, game_pk) {
-                if (1..=9).contains(&(cur.away_next_batting_order as u8)) {
-                    state.away_next_batting_order = cur.away_next_batting_order as u8;
-                }
-                if (1..=9).contains(&(cur.home_next_batting_order as u8)) {
-                    state.home_next_batting_order = cur.home_next_batting_order as u8;
-                }
-            }
+            // --------- Resume: batting order is reconstructed deterministically from plate appearances ----------
 
             // --------- Resume: load at-bat draft (mid-PA) ----------
             if let Ok(Some(draft)) = load_at_bat_draft(conn, game_pk)
@@ -167,6 +147,7 @@ pub fn run_play_ball_engine(
             {
                 ui.emit(UiEvent::Error(format!("Failed to hydrate matchup: {e}")));
             }
+            state.started = has_events;
             ui.set_state(&state);
         }
         Err(e) => ui.emit(UiEvent::Error(format!("Failed to load game events: {e}"))),
