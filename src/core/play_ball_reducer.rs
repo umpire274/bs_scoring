@@ -211,6 +211,25 @@ pub fn apply_plate_appearance_row(state: &mut GameState, row: &PlateAppearanceRo
         }
     }
 
+    // Deterministic batting order cursor: each completed PA advances the batting team's order.
+    // Top = away bats, Bottom = home bats.
+    match row_half {
+        HalfInning::Top => {
+            state.away_next_batting_order = if state.away_next_batting_order >= 9 {
+                1
+            } else {
+                state.away_next_batting_order + 1
+            };
+        }
+        HalfInning::Bottom => {
+            state.home_next_batting_order = if state.home_next_batting_order >= 9 {
+                1
+            } else {
+                state.home_next_batting_order + 1
+            };
+        }
+    }
+
     // End of PA => reset count UI
     state.pitch_count.balls = 0;
     state.pitch_count.strikes = 0;
