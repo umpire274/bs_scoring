@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-03-06
+
+### Changed
+
+- Batting order is now fully deterministic on resume:
+    - `*_next_batting_order` is reconstructed from `plate_appearances_compact`.
+    - If an in-progress at-bat exists, the cursor is aligned using `at_bat_draft` (prevents repeating the same batter
+      after restart).
+- Removed all runtime and resume dependencies on persisted batting cursors.
+
+### Database
+
+- Migration v11: dropped obsolete `batting_cursors` table.
+
+### Internal
+
+- Removed cursor persistence (`load/upsert batting_cursors`) and related dead code.
+- Simplified resume pipeline by keeping cursor reconstruction purely derived from persisted plate appearances + draft.
+
+---
+
 ## [0.7.0] - 2026-03-05
 
 ### Added
