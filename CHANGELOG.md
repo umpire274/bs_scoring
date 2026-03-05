@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.9] - 2026-03-05
+
+### Added
+
+- Persisted pitch-by-pitch sequence for every plate appearance.
+- New column `pitches_sequence` (JSON) in `plate_appearances_compact` storing `Vec<Pitch>`.
+
+### Changed
+
+- Resume log output now displays pitch sequence and final outcome in a compact scorer-friendly format.
+
+  Example:
+    ```txt
+    PA#5 1↑ [B, K, S, F, F, K] -> K
+    PA#6 1↑ [B, B, B, B] -> BB
+    PA#7 1↓ [K, S, B, X] -> In Play
+    ```
+
+- Simplified plate appearance model:
+- Removed redundant field `outs_before`.
+- Field `outs_after` renamed to `outs`.
+
+### Database
+
+- Migration v10:
+- Recreated `plate_appearances_compact` table without `outs_before`.
+- Introduced `outs` column.
+- Added `pitches_sequence` column for pitch history.
+- Rebuilt index `idx_pa_compact_game_seq`.
+
+### Internal
+
+- Improved resume replay logging.
+- Minor cleanup of plate appearance handling.
+
+---
+
 ## [0.6.8] - 2026-03-04
 
 ### Added

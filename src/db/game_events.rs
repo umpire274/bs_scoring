@@ -55,6 +55,14 @@ pub fn append_game_event(
     event: &DomainEvent,
     description: &str,
 ) -> rusqlite::Result<()> {
+    // Skip persisting noisy pitch-by-pitch events to keep DB compact.
+    // These are still applied to in-memory state; resume uses `at_bat_draft` + summary events.
+    match event {
+        DomainEvent::PitchRecorded { .. } => return Ok(()),
+        DomainEvent::CountReset => return Ok(()),
+        _ => {}
+    }
+
     let half_str = match half {
         HalfInning::Top => "Top",
         HalfInning::Bottom => "Bottom",

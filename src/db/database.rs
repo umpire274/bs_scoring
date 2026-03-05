@@ -186,6 +186,28 @@ impl Database {
             [],
         )?;
 
+        // Compact, 1-row-per-batter plate appearance log
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS plate_appearances_compact (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id INTEGER NOT NULL,
+                seq INTEGER NOT NULL,
+                inning INTEGER NOT NULL,
+                half_inning TEXT NOT NULL CHECK(half_inning IN ('Top', 'Bottom')),
+                batter_id INTEGER NOT NULL,
+                pitcher_id INTEGER NOT NULL,
+                pitches INTEGER NOT NULL DEFAULT 0,
+                pitches_sequence TEXT NOT NULL DEFAULT '[]',
+                outcome_type TEXT NOT NULL,
+                outcome_data TEXT,
+                outs_before INTEGER NOT NULL,
+                outs_after INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (game_id) REFERENCES games(id)
+            )",
+            [],
+        )?;
+
         // Create indexes
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_at_bats_game ON at_bats(game_id)",
@@ -207,6 +229,11 @@ impl Database {
             [],
         )?;
 
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pa_compact_game_seq ON plate_appearances_compact(game_id, seq)",
+            [],
+        )?;
+
         // Run any pending migrations
         let current_version = migrations::get_schema_version(&self.conn)?;
         let mut applied = 0;
@@ -221,6 +248,35 @@ impl Database {
                 &migrations::CURRENT_SCHEMA_VERSION.to_string(),
             )?;
         }
+
+        // At-bat draft table (single row per game) for resume without persisting every pitch
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS at_bat_draft (
+                game_id INTEGER PRIMARY KEY,
+                inning INTEGER NOT NULL,
+                half_inning TEXT NOT NULL CHECK(half_inning IN ('Top', 'Bottom')),
+                batter_id INTEGER,
+                pitcher_id INTEGER,
+                pitch_count_json TEXT NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (game_id) REFERENCES games(id),
+                FOREIGN KEY (batter_id) REFERENCES players(id),
+                FOREIGN KEY (pitcher_id) REFERENCES players(id)
+            )",
+            [],
+        )?;
+
+        // Batting order cursors (single row per game) for resume-safe next batter selection
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS batting_cursors (
+                game_id INTEGER PRIMARY KEY,
+                away_next_batting_order INTEGER NOT NULL,
+                home_next_batting_order INTEGER NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (game_id) REFERENCES games(id)
+            )",
+            [],
+        )?;
 
         Ok(applied)
     }
