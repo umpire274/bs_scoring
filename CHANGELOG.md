@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deterministic reconstruction of game state from `plate_appearances_compact`.
 - New replay mechanism that rebuilds `GameState` by applying plate appearances sequentially.
 - Resume log now prints pitch sequence and outcome in scorer-friendly format:
+
     ```txt
   PA#5 1↑ [B, K, S, F, F, K] -> K
   PA#6 1↑ [B, B, B, B] -> BB
@@ -21,8 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Resume process no longer depends on `game_events` for rebuilding game state.
-- Batting order progression is now derived deterministically from plate appearances.
+- Batting order progression is derived deterministically from plate appearances.
 - Pitch counts for pitchers are reconstructed using `pitches_sequence`.
+- Resume logic now correctly restores in-progress at-bats using `at_bat_draft`.
+- Batting cursors are aligned on resume to avoid repeating the same batter after restart.
 
 ### Database
 
@@ -31,7 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Internal
 
 - Introduced deterministic reducer logic for plate appearance replay.
-- Simplified resume logic in `play_ball`.
+- Improved resume handling to avoid repeating the same batter when resuming mid-at-bat.
+- Simplified `play_ball` resume flow and removed redundant state restoration.
+- Refactored `run_play_ball_engine()` resume flow into smaller helper functions.
+- Removed duplicated draft and cursor restoration logic.
+- Improved readability and maintainability of the resume pipeline.
 
 ---
 
