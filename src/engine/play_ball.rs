@@ -3,16 +3,18 @@ use crate::commands::types::EngineCommand;
 use crate::core::play_ball::set_game_status;
 use crate::core::play_ball_apply::apply_engine_command;
 use crate::core::play_ball_reducer::{apply_domain_event, apply_plate_appearance_row};
-use crate::db::at_bat_draft::{clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft};
-use crate::db::batting_cursors::upsert_batting_cursors;
+use crate::db::at_bat_draft::{
+    clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft, AtBatDraftRow,
+};
+use crate::db::batting_cursors::{load_batting_cursors, upsert_batting_cursors};
 use crate::db::game_events::{append_game_event, list_game_events};
 use crate::db::plate_appearances_compact::{append_plate_appearance, list_plate_appearances};
 use crate::models::events::{DomainEvent, SideChangeData};
 use crate::models::play_ball::{GameState, OutcomeSymbol};
-use crate::ui::Ui;
 use crate::ui::events::UiEvent;
+use crate::ui::Ui;
 use crate::{HalfInning, Pitch};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 
 pub enum EngineExit {
     ExitToMenu,
@@ -34,24 +36,17 @@ pub fn run_play_ball_engine(
     // Track whether we already have any events (if yes, PLAYBALL is not allowed).
     let mut has_events = false;
 
-    // --------- Replay persisted events (resume) ----------
+    // --------- Replay persisted events + deterministic rebuild (resume) ----------
     match list_game_events(conn, game_pk) {
         Ok(rows) => {
             has_events = !rows.is_empty();
 
+            // game_events: only optional log lines (admin/metadata)
             for r in rows {
-                // Push stored description into UI log (if any)
                 if let Some(desc) = r.description {
                     ui.emit(UiEvent::Line(desc));
                 }
-
-                // Note: starting from v0.7.0 the game state is rebuilt deterministically from
-                // `plate_appearances_compact`. `game_events` is used only for optional UI log lines
-                // (admin/metadata), and is NOT applied to the state during resume.
             }
-
-            // ✅ ensure scoreboard has the rebuilt state
-            ui.set_state(&state);
 
             // --------- Replay compact plate appearances (resume) ----------
             match list_plate_appearances(conn, game_pk) {
@@ -59,18 +54,17 @@ pub fn run_play_ball_engine(
                     if !pas.is_empty() {
                         has_events = true;
                     }
+
                     for pa in pas {
-                        // 1) Parse JSON -> Vec<Pitch>
-                        // Se pa.pitches_sequence è già Vec<Pitch>, salta il from_str e usa direttamente.
+                        // Apply first (state reconstruction is the source of truth)
+                        apply_plate_appearance_row(&mut state, &pa);
+
+                        // Log compact scorer-friendly line
                         let seq: Vec<Pitch> =
                             serde_json::from_str(&pa.pitches_sequence).unwrap_or_default();
-
                         let seq_text = format_pitch_sequence(&seq);
-
-                        // 2) OutcomeSymbol (adatta se outcome_type non è String)
                         let outcome_sym = outcome_symbol_from_outcome_type(&pa.outcome_type);
 
-                        // 3) Output finale richiesto: "[..., ...] -> K"
                         ui.emit(UiEvent::Line(format!(
                             "PA#{}, {}{}, outs {}, {} → {}",
                             pa.seq,
@@ -80,8 +74,6 @@ pub fn run_play_ball_engine(
                             seq_text,
                             outcome_sym
                         )));
-
-                        apply_plate_appearance_row(&mut state, &pa);
                     }
 
                     ui.set_state(&state);
@@ -91,62 +83,104 @@ pub fn run_play_ball_engine(
                 ))),
             }
 
-            // --------- Resume: batting order is reconstructed deterministically from plate appearances ----------
-
-            // --------- Resume: load at-bat draft (mid-PA) ----------
-            if let Ok(Some(draft)) = load_at_bat_draft(conn, game_pk)
-                && let Ok(pc) = serde_json::from_str::<crate::PitchCount>(&draft.pitch_count_json)
-            {
-                let prev_inning = state.inning;
-                let prev_half = state.half;
-
-                let draft_inning = draft.inning as u32;
-                let draft_half = if draft.half_inning == "Bottom" {
-                    HalfInning::Bottom
-                } else {
-                    HalfInning::Top
-                };
-
-                state.inning = draft_inning;
-                state.half = draft_half;
-
-                // If we resume into a different half/inning than what we rebuilt from PAs,
-                // ensure side-change semantics (outs/bases reset).
-                if prev_inning != draft_inning || prev_half != draft_half {
-                    state.outs = 0;
-                    state.on_1b = false;
-                    state.on_2b = false;
-                    state.on_3b = false;
+            // --------- Resume: restore batting cursors (next batter order) ----------
+            if let Ok(Some(cur)) = load_batting_cursors(conn, game_pk) {
+                if (1..=9).contains(&(cur.away_next_batting_order as u8)) {
+                    state.away_next_batting_order = cur.away_next_batting_order as u8;
                 }
-                state.current_batter_id = draft.batter_id;
-                state.current_pitcher_id = draft.pitcher_id;
-                state.pitch_count = pc;
+                if (1..=9).contains(&(cur.home_next_batting_order as u8)) {
+                    state.home_next_batting_order = cur.home_next_batting_order as u8;
+                }
+            }
 
-                // Also restore in-progress pitcher pitch count contribution.
-                // Completed at-bats are reconstructed via AtBatPitchesCount summary events.
-                if let Some(pid) = state.current_pitcher_id {
-                    let n = state.pitch_count.sequence.len() as u32;
-                    if n > 0 {
-                        let entry = state.pitcher_pitch_counts.entry(pid).or_insert(0);
-                        *entry = entry.saturating_add(n);
-                        state.current_pitch_count = *entry;
+            // --------- Resume: load at-bat draft once (mid-PA) ----------
+            let draft_opt: Option<AtBatDraftRow> = load_at_bat_draft(conn, game_pk).ok().flatten();
+
+            if let Some(draft) = &draft_opt {
+                if let Ok(pc) = serde_json::from_str::<crate::PitchCount>(&draft.pitch_count_json) {
+                    let prev_inning = state.inning;
+                    let prev_half = state.half;
+
+                    let draft_inning = draft.inning as u32;
+                    let draft_half = if draft.half_inning == "Bottom" {
+                        HalfInning::Bottom
+                    } else {
+                        HalfInning::Top
+                    };
+
+                    state.inning = draft_inning;
+                    state.half = draft_half;
+
+                    // If draft half/inning differs, ensure side-change semantics
+                    if prev_inning != draft_inning || prev_half != draft_half {
+                        state.outs = 0;
+                        state.on_1b = false;
+                        state.on_2b = false;
+                        state.on_3b = false;
+                    }
+
+                    state.current_batter_id = draft.batter_id;
+                    state.current_pitcher_id = draft.pitcher_id;
+                    state.pitch_count = pc;
+
+                    // Include in-progress pitch sequence into pitcher pitch counts
+                    if let Some(pid) = state.current_pitcher_id {
+                        let n = state.pitch_count.sequence.len() as u32;
+                        if n > 0 {
+                            let entry = state.pitcher_pitch_counts.entry(pid).or_insert(0);
+                            *entry = entry.saturating_add(n);
+                            state.current_pitch_count = *entry;
+                        }
+                    }
+
+                    ui.emit(UiEvent::Line(
+                        "(Resume) Restored in-progress at-bat draft.".to_string(),
+                    ));
+                }
+            }
+
+            // --------- Resume: if draft exists, ensure cursor is not behind ----------
+            // Avoid repeating the same batter when resuming mid-AB.
+            if let Some(draft) = &draft_opt {
+                if let Some(batter_id) = draft.batter_id {
+                    let batting_team_id = match state.half {
+                        HalfInning::Top => away_team_id,
+                        HalfInning::Bottom => home_team_id,
+                    };
+
+                    if let Some(order) =
+                        find_order_for_batter(conn, game_id, batting_team_id, batter_id)
+                    {
+                        match state.half {
+                            HalfInning::Top => {
+                                if state.away_next_batting_order == order {
+                                    state.away_next_batting_order = bump_order(order);
+                                }
+                            }
+                            HalfInning::Bottom => {
+                                if state.home_next_batting_order == order {
+                                    state.home_next_batting_order = bump_order(order);
+                                }
+                            }
+                        }
+
+                        let _ = upsert_batting_cursors(
+                            conn,
+                            game_pk,
+                            state.away_next_batting_order,
+                            state.home_next_batting_order,
+                        );
                     }
                 }
-
-                ui.emit(UiEvent::Line(
-                    "(Resume) Restored in-progress at-bat draft.".to_string(),
-                ));
-                ui.set_state(&state);
             }
 
             // --------- Resume: hydrate batter/pitcher display fields ----------
-            // With compact persistence we rebuild inning/outs/score, but display fields
-            // (names/jersey) must be hydrated from the roster.
             if let Err(e) =
                 hydrate_current_matchup(conn, game_id, &mut state, away_team_id, home_team_id)
             {
                 ui.emit(UiEvent::Error(format!("Failed to hydrate matchup: {e}")));
             }
+
             state.started = has_events;
             ui.set_state(&state);
         }
@@ -502,6 +536,24 @@ fn get_batter_by_order(
             row.get(4)?,
         ))
     })
+}
+
+fn find_order_for_batter(
+    conn: &mut Connection,
+    game_id: &str,
+    batting_team_id: i64,
+    batter_id: i64,
+) -> Option<u8> {
+    for order in 1..=9 {
+        match get_batter_by_order(conn, game_id, batting_team_id, order) {
+            Ok((bid, _, _, _, _)) if bid == batter_id => {
+                return Some(order);
+            }
+            _ => continue,
+        }
+    }
+
+    None
 }
 
 fn bump_order(x: u8) -> u8 {
