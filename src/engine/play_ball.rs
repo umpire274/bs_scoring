@@ -253,6 +253,12 @@ pub fn run_play_ball_engine(
                 }
             }
 
+            // Track whether we have already applied a compact PA to live state.
+            // If yes, the batting-order cursor has already been advanced by
+            // apply_live_plate_appearance(), so we must NOT call start_next_at_bat(),
+            // otherwise we would skip one hitter.
+            let mut pa_applied_live = false;
+
             // If a PA was completed, persist a single compact record
             if let Some(pa) = &result.plate_appearance {
                 if let Err(e) = append_plate_appearance(conn, game_pk, pa) {
@@ -260,18 +266,131 @@ pub fn run_play_ball_engine(
                         "Failed to append plate appearance: {e}"
                     )));
                 } else {
-                    // Apply the compact PA immediately to live state
+                    // Apply the compact PA immediately to live state.
+                    // IMPORTANT: this already advances the batting-order cursor.
                     apply_live_plate_appearance(&mut state, pa);
 
-                    // PA is over, clear the draft now
+                    // PA is over, clear the draft now.
                     let _ = clear_at_bat_draft(conn, game_pk);
 
                     has_events = true;
+                    pa_applied_live = true;
                 }
             }
 
-            if result.needs_next_at_bat {
-                if !start_next_at_bat(
+            let should_start_next_at_bat = result.needs_next_at_bat || pa_applied_live;
+
+            if should_start_next_at_bat {
+                if pa_applied_live {
+                    let pa = match &result.plate_appearance {
+                        Some(pa) => pa,
+                        None => {
+                            ui.emit(UiEvent::Error(
+                                "Internal error: live PA was applied but no plate appearance is available."
+                                    .to_string(),
+                            ));
+                            ui.set_state(&state);
+                            continue;
+                        }
+                    };
+
+                    let batting_team_id = match state.half {
+                        HalfInning::Top => away_team_id,
+                        HalfInning::Bottom => home_team_id,
+                    };
+
+                    let fielding_team_id = match state.half {
+                        HalfInning::Top => home_team_id,
+                        HalfInning::Bottom => away_team_id,
+                    };
+
+                    let completed_batter_id = pa.batter_id;
+
+                    let completed_order = match find_order_for_batter(
+                        conn,
+                        game_id,
+                        batting_team_id,
+                        completed_batter_id,
+                    ) {
+                        Some(order) => order,
+                        None => {
+                            ui.emit(UiEvent::Error(format!(
+                                    "Failed to start next at-bat: cannot resolve batting order for batter_id={completed_batter_id}."
+                                )));
+                            ui.set_state(&state);
+                            continue;
+                        }
+                    };
+
+                    let next_order = bump_order(completed_order);
+
+                    let (batter_id, team_abbrv, jersey_no, first, last) = match get_batter_by_order(
+                        conn,
+                        game_id,
+                        batting_team_id,
+                        next_order,
+                    ) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            ui.emit(UiEvent::Error(format!(
+                                    "Failed to start next at-bat: missing lineup batter #{next_order} ({e})"
+                                )));
+                            ui.set_state(&state);
+                            continue;
+                        }
+                    };
+
+                    let (pitcher_id, pitcher_no, p_first, p_last) = match get_current_pitcher(
+                        conn,
+                        game_id,
+                        fielding_team_id,
+                    ) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            ui.emit(UiEvent::Error(format!(
+                                    "Failed to start next at-bat: missing current pitcher for fielding team ({e})"
+                                )));
+                            ui.set_state(&state);
+                            continue;
+                        }
+                    };
+
+                    let msg_ab =
+                        format!("At bat: {} #{} {} {}", team_abbrv, jersey_no, first, last);
+
+                    let ev_ab = DomainEvent::AtBatStarted {
+                        team_abbrv,
+                        batting_team_id,
+
+                        batter_id,
+                        batter_jersey_no: jersey_no,
+                        batter_first_name: first,
+                        batter_last_name: last,
+
+                        pitcher_id,
+                        pitcher_jersey_no: pitcher_no,
+                        pitcher_first_name: p_first,
+                        pitcher_last_name: p_last,
+                    };
+
+                    ui.emit(UiEvent::Line(msg_ab));
+                    apply_domain_event(&mut state, &ev_ab);
+
+                    let _ = upsert_at_bat_draft(
+                        conn,
+                        game_pk,
+                        state.inning,
+                        state.half,
+                        state.current_batter_id,
+                        state.current_pitcher_id,
+                        &state.pitch_count,
+                    );
+                } else if result.plate_appearance.is_some() {
+                    ui.emit(UiEvent::Error(
+                        "Next at-bat was not started because the completed plate appearance could not be persisted."
+                            .to_string(),
+                    ));
+                } else if !start_next_at_bat(
                     conn,
                     ui,
                     game_pk,
@@ -282,6 +401,7 @@ pub fn run_play_ball_engine(
                 ) {
                     ui.emit(UiEvent::Error("Failed to start next at-bat.".to_string()));
                 }
+
                 ui.set_state(&state);
             }
 
