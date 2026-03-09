@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] - 2026-03-09
+
+### Added
+
+- Added a new **Help** panel in the right-side TUI layout, positioned below **Scoreboard**
+- Added initial help content for:
+    - **pitch commands**
+    - **hit commands**
+- Added **log navigation help** in the Help box:
+    - `↑ / ↓`
+    - `PgUp / PgDn`
+    - `Home / End`
+
+### Changed
+
+- Refactored the right-side TUI layout to split the area into:
+    - **Scoreboard**
+    - **Help**
+- Improved TUI usability by making the **Log** panel scrollable via keyboard
+- Added viewport-aware scroll clamping for the log panel to prevent overscrolling
+
+### Technical
+
+- Reused and completed the existing log scroll infrastructure in `TuiUi`
+- Added viewport-based scroll normalization during render
+- Kept automatic scroll-to-bottom behavior when new log lines are appended
+
+---
+
 ## [0.7.2] - 2026-03-09
 
 ### Added
