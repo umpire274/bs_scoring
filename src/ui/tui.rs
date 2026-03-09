@@ -84,6 +84,7 @@ impl TuiUi {
         execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
         Ok(())
     }
+
     pub fn new() -> io::Result<Self> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
@@ -121,6 +122,41 @@ impl TuiUi {
         self.scroll = self.scroll.saturating_add(n);
     }
 
+    fn log_line_count(&self) -> u16 {
+        let mut total = 0u16;
+
+        for entry in &self.log {
+            let lines = entry.lines().count().max(1) as u16;
+            total = total.saturating_add(lines);
+        }
+
+        total
+    }
+
+    fn clamp_scroll_to_viewport(&mut self) {
+        let size = match self.terminal.size() {
+            Ok(size) => size,
+            Err(_) => return,
+        };
+
+        let outer = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(3)].as_ref())
+            .split(Rect::from(size));
+
+        let top = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(20), Constraint::Length(50)].as_ref())
+            .split(outer[0]);
+
+        let log_area = top[0];
+        let viewport_h = log_area.height.saturating_sub(2); // account for borders
+        let log_len = self.log_line_count();
+        let max_scroll = log_len.saturating_sub(viewport_h);
+
+        self.scroll = self.scroll.min(max_scroll);
+    }
+
     pub fn set_state(&mut self, state: GameState) {
         self.state = Some(state);
     }
@@ -132,7 +168,6 @@ impl TuiUi {
 
         let right_w = Self::display_width(right);
         if right_w >= width {
-            // caso estremo: tronco right a width
             return Self::ellipsize(right, width);
         }
 
@@ -163,7 +198,7 @@ impl TuiUi {
             return "…".to_string();
         }
 
-        let target = max_width - 1; // spazio per '…'
+        let target = max_width - 1;
         let mut out = String::with_capacity(s.len().min(max_width * 4));
         let mut w = 0usize;
 
@@ -229,10 +264,6 @@ impl TuiUi {
     fn visible_inning_range(total_innings: usize, width: usize) -> (usize, usize) {
         let total = total_innings.max(9);
 
-        // Spazio fisso:
-        //  - 6 chars iniziali circa per team label + padding
-        //  - ogni inning occupa 3 chars (" 1 ")
-        //  - "R H E" finali occupano circa 11 chars
         let reserved = 17usize;
         let per_inning = 3usize;
 
@@ -261,6 +292,7 @@ impl TuiUi {
 
         Self::fit_two_columns(&left, &right, width)
     }
+
     fn render_linescore_row(
         team_abbr: &str,
         innings: &[u16],
@@ -269,7 +301,6 @@ impl TuiUi {
         totals: RheTotals,
         width: usize,
     ) -> String {
-        // Costruiamo le celle inning
         let inning_cells = (start_inning..=end_inning)
             .map(|inning_no| format!("{:>2}", Self::inning_value(innings, inning_no)))
             .collect::<Vec<_>>()
@@ -285,7 +316,6 @@ impl TuiUi {
         Self::fit_two_columns(&left, &rhe, width)
     }
 
-    /// Returns (top_line, bottom_line), both padded/centered to `width`.
     fn render_base_diamond(
         width: usize,
         on_1b: bool,
@@ -296,7 +326,6 @@ impl TuiUi {
         let b2 = if on_2b { '◆' } else { '◇' };
         let b3 = if on_3b { '◆' } else { '◇' };
 
-        // NO leading spaces here
         let top_raw = format!("{b2}");
         let bottom_raw = format!("{b3}   {b1}");
 
@@ -335,7 +364,6 @@ impl TuiUi {
             return last_only;
         }
 
-        // ultima spiaggia: tronca con ellissi
         Self::ellipsize(&last_only, max_len)
     }
 
@@ -474,19 +502,11 @@ impl TuiUi {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        // larghezza utile interna
         let w = inner.width as usize;
-
-        // Dati già normalizzati per il rendering
         let data = Self::scoreboard_view_data(state);
-
-        // Linescore header + righe squadre
         let (header, line_away, line_home) = Self::build_linescore_lines(ctx, &data, w);
-
-        // Diamond
         let (d_top, d_bot) = Self::render_base_diamond(w, data.on_1b, data.on_2b, data.on_3b);
 
-        // Status line
         let outs_str = Self::outs_dots(data.outs);
         let status = format!(
             "{}{}  {}  {}",
@@ -494,12 +514,10 @@ impl TuiUi {
         );
         let status_line = Self::pad_right_fit(Self::center_text(&status, w).as_str(), w);
 
-        // Batter line
         let batter_line = Self::pad_right_fit(data.batter.as_str(), w);
 
-        // Pitcher line with pitch count aligned right
         let right = format!("(P {:>3})", data.current_pitch_count);
-        let max_left = w.saturating_sub(Self::display_width(&right) + 1); // +1 gap
+        let max_left = w.saturating_sub(Self::display_width(&right) + 1);
 
         let pitcher_left = Self::format_player_name_for_scoreboard(
             data.pitcher_jersey_no,
@@ -528,13 +546,44 @@ impl TuiUi {
         f.render_widget(p, inner);
     }
 
-    fn render(&mut self, prompt: &str) -> io::Result<()> {
-        let log_len = self.log.len() as u16;
+    fn render_help(f: &mut Frame, area: Rect) {
+        let block = Block::default().borders(Borders::ALL).title("Help");
+        let inner = block.inner(area);
+        f.render_widget(block, area);
 
-        // Copia i pezzi che servono dentro la closure per evitare di catturare `&self`.
+        let lines = vec![
+            Line::from("Pitch commands"),
+            Line::from("  b   Ball"),
+            Line::from("  k   Called strike"),
+            Line::from("  s   Swinging strike"),
+            Line::from("  f   Foul"),
+            Line::from("  fl  Foul bunt"),
+            Line::from(""),
+            Line::from("Hit commands"),
+            Line::from("  1b  Single"),
+            Line::from("  2b  Double"),
+            Line::from("  3b  Triple"),
+            Line::from("  hr  Home run"),
+            Line::from(""),
+            Line::from("Log navigation"),
+            Line::from("  ↑/↓        Scroll"),
+            Line::from("  PgUp/PgDn  Page scroll"),
+            Line::from("  Home/End   Top / Bottom"),
+            Line::from(""),
+            Line::from("Tip"),
+            Line::from("  Commands are case-insensitive."),
+        ];
+
+        let p = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
+        f.render_widget(p, inner);
+    }
+
+    fn render(&mut self, prompt: &str) -> io::Result<()> {
+        self.clamp_scroll_to_viewport();
+
         let log = self.log.clone();
         let input = self.input.clone();
-        let scroll_in = self.scroll;
+        let scroll = self.scroll;
         let state = self.state.clone();
         let ctx = self.ctx.clone();
         let prompt = prompt.to_string();
@@ -553,21 +602,21 @@ impl TuiUi {
                 .split(outer[0]);
 
             let log_area = top[0];
-            let scoreboard_area = top[1];
+            let right_pane = top[1];
             let command_area = outer[1];
 
-            // Build log text
+            let right = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(13), Constraint::Min(5)].as_ref())
+                .split(right_pane);
+
+            let scoreboard_area = right[0];
+            let help_area = right[1];
+
             let mut text = Text::default();
             for line in &log {
                 text.lines.push(Line::from(line.as_str()));
             }
-
-            // Compute max scroll based on viewport height
-            let viewport_h = log_area.height.saturating_sub(2); // account for borders
-            let max_scroll = log_len.saturating_sub(viewport_h);
-
-            let mut scroll = scroll_in;
-            scroll = scroll.min(max_scroll);
 
             let log_widget = Paragraph::new(text)
                 .block(Block::default().borders(Borders::ALL).title("Log"))
@@ -576,8 +625,8 @@ impl TuiUi {
 
             f.render_widget(log_widget, log_area);
             Self::render_scoreboard(ctx.as_ref(), state.as_ref(), f, scoreboard_area);
+            Self::render_help(f, help_area);
 
-            // Input (prompt + current input)
             let input_line = format!("{prompt}{input}");
 
             let input_widget = Paragraph::new(input_line)
@@ -586,7 +635,6 @@ impl TuiUi {
 
             f.render_widget(input_widget, command_area);
 
-            // Place cursor at end of input
             let x =
                 command_area.x + 1 + prompt.chars().count() as u16 + input.chars().count() as u16;
             let y = command_area.y + 1;
@@ -602,7 +650,6 @@ impl TuiUi {
 
 impl Drop for TuiUi {
     fn drop(&mut self) {
-        // Best-effort cleanup (cannot return errors in Drop)
         let _ = disable_raw_mode();
         let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         let _ = self.terminal.show_cursor();
@@ -638,12 +685,10 @@ impl Ui for TuiUi {
                     kind,
                     ..
                 }) => {
-                    // IMPORTANT: avoid duplicate input on Repeat/Release
                     if kind != KeyEventKind::Press {
                         continue;
                     }
 
-                    // Global exits
                     if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
                         return None;
                     }
@@ -657,7 +702,6 @@ impl Ui for TuiUi {
                             self.input.pop();
                         }
                         KeyCode::Char(c) => {
-                            // Ignore control characters; allow typical printable chars
                             if !modifiers.contains(KeyModifiers::CONTROL)
                                 && !modifiers.contains(KeyModifiers::ALT)
                             {
@@ -676,9 +720,7 @@ impl Ui for TuiUi {
                         _ => {}
                     }
                 }
-                Event::Resize(_, _) => {
-                    // re-render next tick
-                }
+                Event::Resize(_, _) => {}
                 _ => {}
             }
         }

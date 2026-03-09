@@ -1,3 +1,4 @@
+pub mod app;
 pub mod cli;
 pub mod context;
 pub mod events;
@@ -6,6 +7,7 @@ pub mod tui;
 
 use crate::models::play_ball::GameState;
 use crate::ui::events::UiEvent;
+pub use app::App;
 pub use context::PlayBallUiContext;
 
 /// UI abstraction layer.
