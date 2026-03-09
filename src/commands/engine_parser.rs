@@ -34,6 +34,12 @@ fn parse_one(cmd: &str) -> EngineCommand {
         "f" => EngineCommand::Pitch(Pitch::Foul),
         "fl" => EngineCommand::Pitch(Pitch::FoulBunt),
 
+        // ---- Hit commands (0.7.2) ----
+        "1b" => EngineCommand::Single,
+        "2b" => EngineCommand::Double,
+        "3b" => EngineCommand::Triple,
+        "hr" => EngineCommand::HomeRun,
+
         _ => EngineCommand::Unknown(cmd.to_string()),
     }
 }

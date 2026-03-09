@@ -1,5 +1,6 @@
 use crate::models::types::{HalfInning, Pitch};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// A compact, persisted representation of a completed Plate Appearance (PA).
 ///
@@ -13,9 +14,30 @@ pub struct PlateAppearance {
     /// Total pitches thrown in this PA.
     pub pitches: u32,
     /// Full pitch sequence faced by the batter in this PA (JSON persisted).
-    pub pitches_sequence: Vec<Pitch>,
+    pub pitches_sequence: Vec<PlateAppearanceStep>,
     pub outcome: PlateAppearanceOutcome,
     pub outs: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PlateAppearanceStep {
+    Pitch(Pitch),
+    Single,
+    Double,
+    Triple,
+    HomeRun,
+}
+
+impl fmt::Display for PlateAppearanceStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PlateAppearanceStep::Pitch(p) => write!(f, "{p}"),
+            PlateAppearanceStep::Single => write!(f, "1B"),
+            PlateAppearanceStep::Double => write!(f, "2B"),
+            PlateAppearanceStep::Triple => write!(f, "3B"),
+            PlateAppearanceStep::HomeRun => write!(f, "HR"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,14 +46,8 @@ pub enum PlateAppearanceOutcome {
     Walk,
     Strikeout(crate::models::events::StrikeoutKind),
     Out,
-}
-
-pub fn format_pitch_sequence(seq: &[Pitch]) -> String {
-    let inner = seq
-        .iter()
-        .map(|p| p.to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    format!("[{}]", inner)
+    Single,
+    Double,
+    Triple,
+    HomeRun,
 }

@@ -7,5 +7,11 @@ pub enum EngineCommand {
     SetStatus(GameStatus),
     PlayBall,
     Pitch(Pitch),
+
+    Single,
+    Double,
+    Triple,
+    HomeRun,
+
     Unknown(String),
 }
