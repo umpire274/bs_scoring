@@ -30,6 +30,21 @@ pub fn append_plate_appearance(
             "strikeout".to_string(),
             Some(serde_json::to_string(kind).unwrap_or_else(|_| "null".to_string())),
         ),
+        crate::models::plate_appearance::PlateAppearanceOutcome::Single => {
+            ("single".to_string(), None)
+        }
+
+        crate::models::plate_appearance::PlateAppearanceOutcome::Double => {
+            ("double".to_string(), None)
+        }
+
+        crate::models::plate_appearance::PlateAppearanceOutcome::Triple => {
+            ("triple".to_string(), None)
+        }
+
+        crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun => {
+            ("home_run".to_string(), None)
+        }
     };
 
     // per-game sequence

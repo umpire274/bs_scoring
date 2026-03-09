@@ -9,16 +9,16 @@ use crossterm::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
     },
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::layout::Rect;
 use ratatui::{
-    Frame, Terminal,
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    backend::CrosstermBackend, layout::{Constraint, Direction, Layout},
     style::Style,
     text::{Line, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
+    Frame,
+    Terminal,
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -35,6 +35,34 @@ pub struct TuiUi {
     scroll: u16, // number of lines scrolled from the top
     state: Option<GameState>,
     ctx: Option<PlayBallUiContext>,
+}
+
+#[derive(Debug, Clone)]
+struct ScoreboardViewData {
+    inning: u32,
+    half_sym: &'static str,
+    outs: u8,
+
+    away_score: u16,
+    home_score: u16,
+    away_hits: u16,
+    home_hits: u16,
+    away_errors: u16,
+    home_errors: u16,
+    away_innings: Vec<u16>,
+    home_innings: Vec<u16>,
+
+    batter: String,
+
+    pitcher_jersey_no: i32,
+    pitcher_first_name: String,
+    pitcher_last_name: String,
+
+    count: String,
+    on_1b: bool,
+    on_2b: bool,
+    on_3b: bool,
+    current_pitch_count: u32,
 }
 
 impl TuiUi {
@@ -191,6 +219,64 @@ impl TuiUi {
         out
     }
 
+    fn visible_inning_range(total_innings: usize, width: usize) -> (usize, usize) {
+        let total = total_innings.max(9);
+
+        // Spazio fisso:
+        //  - 6 chars iniziali circa per team label + padding
+        //  - ogni inning occupa 3 chars (" 1 ")
+        //  - "R H E" finali occupano circa 11 chars
+        let reserved = 17usize;
+        let per_inning = 3usize;
+
+        let available = width.saturating_sub(reserved);
+        let max_visible = (available / per_inning).max(1);
+
+        if total <= max_visible {
+            (1, total)
+        } else {
+            (total - max_visible + 1, total)
+        }
+    }
+
+    fn inning_value(innings: &[u16], inning_no: usize) -> u16 {
+        innings.get(inning_no - 1).copied().unwrap_or(0)
+    }
+
+    fn render_linescore_header(start_inning: usize, end_inning: usize, width: usize) -> String {
+        let innings = (start_inning..=end_inning)
+            .map(|n| format!("{:>2}", n))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let left = format!("      {}", innings);
+        let right = format!("| {:>3} {:>3} {:>3} ", "R", "H", "E");
+
+        Self::fit_two_columns(&left, &right, width)
+    }
+    fn render_linescore_row(
+        team_abbr: &str,
+        innings: &[u16],
+        start_inning: usize,
+        end_inning: usize,
+        total_runs: u16,
+        total_hits: u16,
+        total_errors: u16,
+        width: usize,
+    ) -> String {
+        // Costruiamo le celle inning
+        let inning_cells = (start_inning..=end_inning)
+            .map(|inning_no| format!("{:>2}", Self::inning_value(innings, inning_no)))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let left = format!(" {:<3}  {}", team_abbr, inning_cells);
+
+        let rhe = format!("| {:>3} {:>3} {:>3} ", total_runs, total_hits, total_errors);
+
+        Self::fit_two_columns(&left, &rhe, width)
+    }
+
     /// Returns (top_line, bottom_line), both padded/centered to `width`.
     fn render_base_diamond(
         width: usize,
@@ -245,36 +331,8 @@ impl TuiUi {
         Self::ellipsize(&last_only, max_len)
     }
 
-    fn render_scoreboard(
-        ctx: Option<&PlayBallUiContext>,
-        state: Option<&GameState>,
-        f: &mut Frame,
-        area: Rect,
-    ) {
-        let block = Block::default().borders(Borders::ALL).title("Scoreboard");
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        // 34 colonne utili con bordo su pannello da 36
-        let w = inner.width as usize;
-
-        // ----- extraction -----
-        let (
-            inning,
-            half_sym,
-            outs,
-            away_score,
-            home_score,
-            batter,
-            p_jersey_no,
-            p_first_name,
-            p_last_name,
-            count,
-            on_1b,
-            on_2b,
-            on_3b,
-            current_pitch_count,
-        ) = if let Some(s) = state {
+    fn scoreboard_view_data(state: Option<&GameState>) -> ScoreboardViewData {
+        if let Some(s) = state {
             let batter = match (
                 s.current_batter_jersey_no,
                 s.current_batter_first_name.as_deref(),
@@ -286,77 +344,164 @@ impl TuiUi {
 
             let count = format!("{}-{}", s.pitch_count.balls, s.pitch_count.strikes);
 
-            (
-                s.inning,
-                s.half_symbol(), // ↑ / ↓
-                s.outs,
-                s.score.away,
-                s.score.home,
+            ScoreboardViewData {
+                inning: s.inning,
+                half_sym: s.half_symbol(),
+                outs: s.outs,
+
+                away_score: s.score.away,
+                home_score: s.score.home,
+                away_hits: s.score.away_hits,
+                home_hits: s.score.home_hits,
+                away_errors: 0,
+                home_errors: 0,
+                away_innings: s.score.away_innings.clone(),
+                home_innings: s.score.home_innings.clone(),
+
                 batter,
-                s.current_pitcher_jersey_no.unwrap_or(0),
-                s.current_pitcher_first_name.as_deref().unwrap_or("-"),
-                s.current_pitcher_last_name.as_deref().unwrap_or("-"),
+
+                pitcher_jersey_no: s.current_pitcher_jersey_no.unwrap_or(0),
+                pitcher_first_name: s
+                    .current_pitcher_first_name
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string()),
+                pitcher_last_name: s
+                    .current_pitcher_last_name
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string()),
+
                 count,
-                s.on_1b,
-                s.on_2b,
-                s.on_3b,
-                s.current_pitch_count,
-            )
+                on_1b: s.on_1b,
+                on_2b: s.on_2b,
+                on_3b: s.on_3b,
+                current_pitch_count: s.current_pitch_count,
+            }
         } else {
-            (
-                1,
-                "↑",
-                0,
-                0,
-                0,
-                "-".to_string(),
-                0,
-                "-",
-                "-",
-                "0-0".to_string(),
-                false,
-                false,
-                false,
-                0,
-            )
-        };
+            ScoreboardViewData {
+                inning: 1,
+                half_sym: "↑",
+                outs: 0,
 
-        // ✅ centered diamond based on display width
-        let (d_top, d_bot) = Self::render_base_diamond(w, on_1b, on_2b, on_3b);
+                away_score: 0,
+                home_score: 0,
+                away_hits: 0,
+                home_hits: 0,
+                away_errors: 0,
+                home_errors: 0,
+                away_innings: Vec::new(),
+                home_innings: Vec::new(),
 
-        // Outs dots
-        let outs_str = Self::outs_dots(outs);
+                batter: "-".to_string(),
 
-        let status = format!("{}{}  {}  {}", half_sym, inning, count, outs_str);
-        let status_line = Self::pad_right_fit(Self::center_text(&status, w).as_str(), w);
+                pitcher_jersey_no: 0,
+                pitcher_first_name: "-".to_string(),
+                pitcher_last_name: "-".to_string(),
 
-        // Teams abbreviations
+                count: "0-0".to_string(),
+                on_1b: false,
+                on_2b: false,
+                on_3b: false,
+                current_pitch_count: 0,
+            }
+        }
+    }
+
+    fn build_linescore_lines(
+        ctx: Option<&PlayBallUiContext>,
+        data: &ScoreboardViewData,
+        width: usize,
+    ) -> (String, String, String) {
         let (away, home) = match ctx {
             Some(c) => (c.away_abbr.as_str(), c.home_abbr.as_str()),
             None => ("AWY", "HOM"),
         };
 
-        // ----- lines -----
-        let header = "      1 2 3 4 5 6 7 8 9 10  R H E";
-        let line_mod = format!(" {away}  0 0 0 0 0 0 0 0 0 0   {away_score} 0 0");
-        let line_bol = format!(" {home}  0 0 0 0 0 0 0 0 0 0   {home_score} 0 0");
+        let total_innings = data
+            .away_innings
+            .len()
+            .max(data.home_innings.len())
+            .max(data.inning as usize)
+            .max(9);
 
-        let batter_line = Self::pad_right_fit(batter.as_str(), w);
+        let (start_inning, end_inning) = Self::visible_inning_range(total_innings, width);
 
-        let right = format!("(P {:>3})", current_pitch_count);
+        let header = Self::render_linescore_header(start_inning, end_inning, width);
+
+        let away_line = Self::render_linescore_row(
+            away,
+            &data.away_innings,
+            start_inning,
+            end_inning,
+            data.away_score,
+            data.away_hits,
+            data.away_errors, // per ora non mostriamo errori, quindi non li contiamo nel width
+            width,
+        );
+
+        let home_line = Self::render_linescore_row(
+            home,
+            &data.home_innings,
+            start_inning,
+            end_inning,
+            data.home_score,
+            data.home_hits,
+            data.home_errors, // per ora non mostriamo errori, quindi non li contiamo nel
+            width,
+        );
+
+        (header, away_line, home_line)
+    }
+
+    fn render_scoreboard(
+        ctx: Option<&PlayBallUiContext>,
+        state: Option<&GameState>,
+        f: &mut Frame,
+        area: Rect,
+    ) {
+        let block = Block::default().borders(Borders::ALL).title("Scoreboard");
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        // larghezza utile interna
+        let w = inner.width as usize;
+
+        // Dati già normalizzati per il rendering
+        let data = Self::scoreboard_view_data(state);
+
+        // Linescore header + righe squadre
+        let (header, line_away, line_home) = Self::build_linescore_lines(ctx, &data, w);
+
+        // Diamond
+        let (d_top, d_bot) = Self::render_base_diamond(w, data.on_1b, data.on_2b, data.on_3b);
+
+        // Status line
+        let outs_str = Self::outs_dots(data.outs);
+        let status = format!(
+            "{}{}  {}  {}",
+            data.half_sym, data.inning, data.count, outs_str
+        );
+        let status_line = Self::pad_right_fit(Self::center_text(&status, w).as_str(), w);
+
+        // Batter line
+        let batter_line = Self::pad_right_fit(data.batter.as_str(), w);
+
+        // Pitcher line with pitch count aligned right
+        let right = format!("(P {:>3})", data.current_pitch_count);
         let max_left = w.saturating_sub(Self::display_width(&right) + 1); // +1 gap
+
         let pitcher_left = Self::format_player_name_for_scoreboard(
-            p_jersey_no,
-            p_first_name,
-            p_last_name,
+            data.pitcher_jersey_no,
+            data.pitcher_first_name.as_str(),
+            data.pitcher_last_name.as_str(),
             max_left,
         );
+
         let pitcher_line = Self::fit_two_columns(&pitcher_left, &right, w);
 
         let lines = vec![
-            Line::from(Self::pad_right_fit(header, w)),
-            Line::from(Self::pad_right_fit(line_mod.as_str(), w)),
-            Line::from(Self::pad_right_fit(line_bol.as_str(), w)),
+            Line::from(Self::pad_right_fit(header.as_str(), w)),
+            Line::from(Self::pad_right_fit(line_away.as_str(), w)),
+            Line::from(Self::pad_right_fit(line_home.as_str(), w)),
             Line::from(Self::pad_right_fit("", w)),
             Line::from(d_top),
             Line::from(d_bot),
@@ -370,6 +515,7 @@ impl TuiUi {
         let p = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
         f.render_widget(p, inner);
     }
+
     fn render(&mut self, prompt: &str) -> io::Result<()> {
         let log_len = self.log.len() as u16;
 
@@ -391,7 +537,7 @@ impl TuiUi {
 
             let top = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(20), Constraint::Max(36)].as_ref())
+                .constraints([Constraint::Min(20), Constraint::Length(50)].as_ref())
                 .split(outer[0]);
 
             let log_area = top[0];

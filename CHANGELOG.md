@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-03-09
+
+### Added
+
+- New hit commands for plate appearance outcomes:
+    - `1B` – Single
+    - `2B` – Double
+    - `3B` – Triple
+    - `HR` – Home Run
+- Simplified runner advancement model:
+    - runners advance automatically according to hit type
+- Automatic scoring for hits and home runs
+- Pitch sequence persistence now supports hit steps (`1B`, `2B`, `3B`, `HR`)
+- New `PlateAppearanceStep` enum to represent pitch-by-pitch sequence including hits
+- Pitch count now increments correctly when a hit command ends a plate appearance
+- Scoreboard now displays:
+    - inning-by-inning runs
+    - total runs (`R`)
+    - total hits (`H`)
+- Linescore adapts dynamically to extra innings
+- New helper utilities for plate appearance sequence handling
+
+### Changed
+
+- `PlateAppearance.pitches_sequence` now stores `Vec<PlateAppearanceStep>` instead of raw pitches
+- Replay engine updated to parse and render hit steps inside pitch sequences
+- Scoreboard layout expanded to support dynamic inning columns
+- Rendering logic refactored using `ScoreboardViewData` and linescore helpers
+- `apply_pitch` and `apply_hit_command` refactored to share pitch-sequence construction logic
+
+### Fixed
+
+- Correct pitch count when a hit command ends a plate appearance
+- Replay log now correctly displays pitch sequences including hit steps
+- Scoreboard rendering alignment issues when runs or hits exceed single digits
+
+### Internal
+
+- Refactored scoreboard rendering pipeline in `tui.rs`
+- Introduced helpers for linescore generation and sequence parsing
+- Improved code reuse between pitch and hit plate appearance logic
+
+---
+
 ## [0.7.1] - 2026-03-06
 
 ### Changed

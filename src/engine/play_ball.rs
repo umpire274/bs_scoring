@@ -2,20 +2,23 @@ use crate::commands::engine_parser::parse_engine_commands;
 use crate::commands::types::EngineCommand;
 use crate::core::play_ball::set_game_status;
 use crate::core::play_ball_apply::apply_engine_command;
-use crate::core::play_ball_reducer::{apply_domain_event, apply_plate_appearance_row};
-use crate::db::at_bat_draft::{
-    AtBatDraftRow, clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft,
+use crate::core::play_ball_reducer::{
+    apply_domain_event, apply_live_plate_appearance, apply_plate_appearance_row,
 };
-use crate::db::game_events::{GameEventRow, append_game_event, list_game_events};
+use crate::db::at_bat_draft::{
+    clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft, AtBatDraftRow,
+};
+use crate::db::game_events::{append_game_event, list_game_events, GameEventRow};
 use crate::db::plate_appearances_compact::{
-    PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
+    append_plate_appearance, list_plate_appearances, PlateAppearanceRow,
 };
 use crate::models::events::{DomainEvent, SideChangeData};
+use crate::models::plate_appearance::PlateAppearanceStep;
 use crate::models::play_ball::{GameState, OutcomeSymbol};
-use crate::ui::Ui;
 use crate::ui::events::UiEvent;
-use crate::{HalfInning, Pitch};
-use rusqlite::{Connection, params};
+use crate::ui::Ui;
+use crate::HalfInning;
+use rusqlite::{params, Connection};
 
 pub enum EngineExit {
     ExitToMenu,
@@ -257,8 +260,13 @@ pub fn run_play_ball_engine(
                         "Failed to append plate appearance: {e}"
                     )));
                 } else {
-                    // PA is over, clear the draft now.
+                    // Apply the compact PA immediately to live state
+                    apply_live_plate_appearance(&mut state, pa);
+
+                    // PA is over, clear the draft now
                     let _ = clear_at_bat_draft(conn, game_pk);
+
+                    has_events = true;
                 }
             }
 
@@ -453,7 +461,7 @@ fn find_order_for_batter(
     None
 }
 
-fn bump_order(x: u8) -> u8 {
+pub fn bump_order(x: u8) -> u8 {
     if x >= 9 { 1 } else { x + 1 }
 }
 
@@ -598,12 +606,13 @@ fn half_symbol(half: &str) -> char {
 }
 
 /// Formatta la sequenza come: [B, K, S, F]
-fn format_pitch_sequence(seq: &[Pitch]) -> String {
+fn format_pitch_sequence(seq: &[PlateAppearanceStep]) -> String {
     let inner = seq
         .iter()
-        .map(|p| p.to_string())
+        .map(|step| step.to_string())
         .collect::<Vec<_>>()
-        .join(",");
+        .join(", ");
+
     format!("[{}]", inner)
 }
 
@@ -629,6 +638,51 @@ fn replay_admin_logs(ui: &mut dyn Ui, rows: &[GameEventRow]) {
         }
     }
 }
+pub(crate) fn parse_pa_sequence(json: &str) -> Vec<PlateAppearanceStep> {
+    if let Ok(seq) = serde_json::from_str::<Vec<PlateAppearanceStep>>(json) {
+        return seq;
+    }
+
+    if let Ok(old_seq) = serde_json::from_str::<Vec<crate::Pitch>>(json) {
+        return old_seq
+            .into_iter()
+            .map(PlateAppearanceStep::Pitch)
+            .collect();
+    }
+
+    Vec::new()
+}
+
+fn outs_label(outs: i64) -> String {
+    if outs == 1 {
+        "1 out".to_string()
+    } else {
+        format!("{outs} outs")
+    }
+}
+
+fn runs_scored_from_pa(state_before: &GameState, pa: &PlateAppearanceRow) -> u32 {
+    let mut runs = 0;
+
+    match pa.outcome_type.as_str() {
+        "home_run" => {
+            runs += 1; // batter
+
+            if state_before.on_1b {
+                runs += 1;
+            }
+            if state_before.on_2b {
+                runs += 1;
+            }
+            if state_before.on_3b {
+                runs += 1;
+            }
+        }
+        _ => {}
+    }
+
+    runs
+}
 
 fn replay_plate_appearances_and_log(
     ui: &mut dyn Ui,
@@ -636,28 +690,37 @@ fn replay_plate_appearances_and_log(
     pas: &[PlateAppearanceRow],
 ) {
     for pa in pas {
-        // 1) Source of truth: ricostruisci state
+        // snapshot stato prima della PA
+        let state_before = state.clone();
+
+        // applica PA (ricostruisce lo stato)
         apply_plate_appearance_row(state, pa);
 
-        match pa.half_inning.as_str() {
-            "Top" => state.away_next_batting_order = bump_order(state.away_next_batting_order),
-            "Bottom" => state.home_next_batting_order = bump_order(state.home_next_batting_order),
-            _ => {}
-        }
+        // ricostruzione sequenza
+        let seq: Vec<PlateAppearanceStep> =
+            serde_json::from_str(&pa.pitches_sequence).unwrap_or_default();
 
-        // 2) Log scorer-friendly: [B, K, ...] -> K
-        let seq: Vec<Pitch> = serde_json::from_str(&pa.pitches_sequence).unwrap_or_default();
         let seq_text = format_pitch_sequence(&seq);
         let outcome_sym = outcome_symbol_from_outcome_type(&pa.outcome_type);
 
+        // calcolo punti segnati
+        let runs = runs_scored_from_pa(&state_before, pa);
+
+        let run_text = if runs > 0 {
+            format!(" (+{})", runs)
+        } else {
+            String::new()
+        };
+
         ui.emit(UiEvent::Line(format!(
-            "PA#{}, {}{}, outs {}, {} → {}",
+            "#{:>3} {}{} {} out {} -> {}{}",
             pa.seq,
             pa.inning,
             half_symbol(&pa.half_inning),
-            pa.outs,
+            outs_label(pa.outs),
             seq_text,
-            outcome_sym
+            outcome_sym,
+            run_text
         )));
     }
 }

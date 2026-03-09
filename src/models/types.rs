@@ -304,21 +304,34 @@ pub enum HalfInning {
     Bottom, // Home team batting
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Score {
+    // Total runs scored by each team
     pub away: u16,
     pub home: u16,
+    // Optional: track runs scored in each inning for more detailed stats
+    pub away_innings: Vec<u16>,
+    pub home_innings: Vec<u16>,
+    // Optional: track hits and errors for more detailed stats
+    pub away_hits: u16,
+    pub home_hits: u16,
+    // Optional: track errors for more detailed stats
+    pub away_errors: u16,
+    pub home_errors: u16,
 }
 
 impl Score {
     pub fn new() -> Self {
-        Self { away: 0, home: 0 }
-    }
-}
-
-impl Default for Score {
-    fn default() -> Self {
-        Self::new()
+        Self {
+            away: 0,
+            home: 0,
+            away_innings: Vec::new(),
+            home_innings: Vec::new(),
+            away_hits: 0,
+            home_hits: 0,
+            away_errors: 0,
+            home_errors: 0,
+        }
     }
 }
 
