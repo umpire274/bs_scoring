@@ -74,6 +74,30 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
         // ✅ NEW: pitch command (0.6.7 baseline)
         EngineCommand::Pitch(pitch) => apply_pitch(state, pitch),
 
+        EngineCommand::Single => apply_hit_command(
+            state,
+            crate::models::plate_appearance::PlateAppearanceOutcome::Single,
+            "1B",
+        ),
+
+        EngineCommand::Double => apply_hit_command(
+            state,
+            crate::models::plate_appearance::PlateAppearanceOutcome::Double,
+            "2B",
+        ),
+
+        EngineCommand::Triple => apply_hit_command(
+            state,
+            crate::models::plate_appearance::PlateAppearanceOutcome::Triple,
+            "3B",
+        ),
+
+        EngineCommand::HomeRun => apply_hit_command(
+            state,
+            crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun,
+            "HR",
+        ),
+
         EngineCommand::Unknown(s) => ApplyResult {
             events: vec![UiEvent::Error(format!("Unknown command: {s}"))],
             ..empty_result()
@@ -126,24 +150,44 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
             strikes_after = strikes_after.saturating_add(1);
         }
         Pitch::InPlay | Pitch::HittedBy => {
-            // reserved for v0.6.9+ (no count changes here)
+            // reserved for future use (no count changes here)
         }
     }
 
     let mut events_ui = vec![UiEvent::Line(format!("Pitch: {}", pitch))];
-    let mut applied: Vec<DomainEvent> = vec![];
-
-    // Apply (but do NOT persist) pitch-by-pitch.
-    applied.push(DomainEvent::PitchRecorded {
+    let mut applied: Vec<DomainEvent> = vec![DomainEvent::PitchRecorded {
         pitcher_id,
         batter_id,
         pitch: pitch.clone(),
-    });
+    }];
 
-    // 2) Terminal outcomes
     let mut needs_next_at_bat = false;
     let mut plate_appearance: Option<crate::models::plate_appearance::PlateAppearance> = None;
+
+    // This pitch counts as one more pitch in the PA
     let pitches_in_pa = state.pitch_count.sequence.len() as u32 + 1;
+
+    // Shared final PA sequence = current sequence + this pitch
+    let mut final_sequence = build_pa_sequence(state);
+    final_sequence.push(crate::models::plate_appearance::PlateAppearanceStep::Pitch(
+        pitch.clone(),
+    ));
+
+    // Helper closure to finalize a PA without duplicating struct construction
+    let finalize_pa = |outcome: crate::models::plate_appearance::PlateAppearanceOutcome,
+                       outs: u8|
+     -> crate::models::plate_appearance::PlateAppearance {
+        crate::models::plate_appearance::PlateAppearance {
+            inning: state.inning,
+            half: state.half,
+            batter_id,
+            pitcher_id,
+            pitches: pitches_in_pa,
+            pitches_sequence: final_sequence.clone(),
+            outcome,
+            outs,
+        }
+    };
 
     // Walk: 4 balls and strikes < 3
     if balls_after >= 4 && strikes_after < 3 {
@@ -164,8 +208,8 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
         applied.push(DomainEvent::RunnerToFirst {
             runner_id: batter_id,
             runner_jersey_no,
-            runner_first_name: runner_first_name.clone(),
-            runner_last_name: runner_last_name.clone(),
+            runner_first_name,
+            runner_last_name,
         });
 
         applied.push(DomainEvent::CountReset);
@@ -173,20 +217,10 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
         events_ui.push(UiEvent::Line("BB: batter to 1B".to_string()));
         needs_next_at_bat = true;
 
-        plate_appearance = Some(crate::models::plate_appearance::PlateAppearance {
-            inning: state.inning,
-            half: state.half,
-            batter_id,
-            pitcher_id,
-            pitches: pitches_in_pa,
-            pitches_sequence: {
-                let mut v = state.pitch_count.sequence.clone();
-                v.push(pitch.clone());
-                v
-            },
-            outcome: crate::models::plate_appearance::PlateAppearanceOutcome::Walk,
-            outs: state.outs,
-        });
+        plate_appearance = Some(finalize_pa(
+            crate::models::plate_appearance::PlateAppearanceOutcome::Walk,
+            state.outs,
+        ));
     }
     // Strikeout: 3 strikes before 4 balls
     else if strikes_after >= 3 && balls_after < 4 {
@@ -194,7 +228,7 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
             Pitch::CalledStrike => StrikeoutKind::Called,
             Pitch::SwingingStrike => StrikeoutKind::Swinging,
             Pitch::FoulBunt => StrikeoutKind::FoulBunt,
-            // non dovrebbe mai succedere qui, ma fallback safety:
+            // safety fallback
             _ => StrikeoutKind::Called,
         };
 
@@ -213,25 +247,12 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
         events_ui.push(UiEvent::Line("K: batter out".to_string()));
         needs_next_at_bat = true;
 
-        plate_appearance = Some(crate::models::plate_appearance::PlateAppearance {
-            inning: state.inning,
-            half: state.half,
-            batter_id,
-            pitcher_id,
-            pitches: pitches_in_pa,
-            pitches_sequence: {
-                let mut v = state.pitch_count.sequence.clone();
-                v.push(pitch.clone());
-                v
-            },
-            outcome: crate::models::plate_appearance::PlateAppearanceOutcome::Strikeout(kind),
-            outs: state.outs.saturating_add(1),
-        });
-    } else {
-        // Optional: if pitch is reserved, make it explicit in the log
-        if matches!(pitch, Pitch::InPlay | Pitch::HittedBy) {
-            events_ui.push(UiEvent::Line("Note: X/H not implemented yet".to_string()));
-        }
+        plate_appearance = Some(finalize_pa(
+            crate::models::plate_appearance::PlateAppearanceOutcome::Strikeout(kind),
+            state.outs.saturating_add(1),
+        ));
+    } else if matches!(pitch, Pitch::InPlay | Pitch::HittedBy) {
+        events_ui.push(UiEvent::Line("Note: X/H not implemented yet".to_string()));
     }
 
     ApplyResult {
@@ -243,4 +264,97 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
         status_change: None,
         needs_next_at_bat,
     }
+}
+
+fn apply_hit_command(
+    state: &mut GameState,
+    outcome: crate::models::plate_appearance::PlateAppearanceOutcome,
+    label: &str,
+) -> ApplyResult {
+    let Some(batter_id) = state.current_batter_id else {
+        return ApplyResult {
+            events: vec![UiEvent::Error(
+                "No active batter. Use PLAYBALL (or resume the game) first.".to_string(),
+            )],
+            ..empty_result()
+        };
+    };
+
+    let Some(pitcher_id) = state.current_pitcher_id else {
+        return ApplyResult {
+            events: vec![UiEvent::Error(
+                "No active pitcher in state (cannot record hit).".to_string(),
+            )],
+            ..empty_result()
+        };
+    };
+
+    let final_step = match &outcome {
+        crate::models::plate_appearance::PlateAppearanceOutcome::Single => {
+            crate::models::plate_appearance::PlateAppearanceStep::Single
+        }
+        crate::models::plate_appearance::PlateAppearanceOutcome::Double => {
+            crate::models::plate_appearance::PlateAppearanceStep::Double
+        }
+        crate::models::plate_appearance::PlateAppearanceOutcome::Triple => {
+            crate::models::plate_appearance::PlateAppearanceStep::Triple
+        }
+        crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun => {
+            crate::models::plate_appearance::PlateAppearanceStep::HomeRun
+        }
+        _ => {
+            return ApplyResult {
+                events: vec![UiEvent::Error(
+                    "Invalid hit outcome passed to apply_hit_command.".to_string(),
+                )],
+                ..empty_result()
+            };
+        }
+    };
+
+    let mut final_sequence = build_pa_sequence(state);
+    final_sequence.push(final_step);
+
+    let pitches_in_pa = final_sequence.len() as u32;
+
+    let plate_appearance = crate::models::plate_appearance::PlateAppearance {
+        inning: state.inning,
+        half: state.half,
+        batter_id,
+        pitcher_id,
+        pitches: pitches_in_pa,
+        pitches_sequence: final_sequence,
+        outcome,
+        outs: state.outs,
+    };
+
+    let message = match label {
+        "1B" => "1B: batter to 1B".to_string(),
+        "2B" => "2B: batter to 2B".to_string(),
+        "3B" => "3B: batter to 3B".to_string(),
+        "HR" => "HR: batter scores.".to_string(),
+        _ => format!("{label}: batter reaches base"),
+    };
+
+    ApplyResult {
+        events: vec![UiEvent::Line(message)],
+        persisted: vec![],
+        applied: vec![DomainEvent::CountReset],
+        plate_appearance: Some(plate_appearance),
+        exit: false,
+        status_change: None,
+        needs_next_at_bat: true,
+    }
+}
+
+fn build_pa_sequence(
+    state: &GameState,
+) -> Vec<crate::models::plate_appearance::PlateAppearanceStep> {
+    state
+        .pitch_count
+        .sequence
+        .iter()
+        .cloned()
+        .map(crate::models::plate_appearance::PlateAppearanceStep::Pitch)
+        .collect()
 }

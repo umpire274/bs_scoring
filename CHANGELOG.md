@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-03-09
+
+### Added
+
+- New hit commands for plate appearance outcomes:
+    - `1B` – Single
+    - `2B` – Double
+    - `3B` – Triple
+    - `HR` – Home Run
+- Simplified runner advancement model:
+    - runners advance automatically according to hit type
+- Automatic scoring for hits and home runs
+- Pitch sequence persistence now supports hit steps (`1B`, `2B`, `3B`, `HR`)
+- New `PlateAppearanceStep` enum to represent pitch-by-pitch sequences including hits
+- Dynamic inning-by-inning scoreboard linescore
+- Hit totals (`H`) column in the scoreboard
+- Linescore adapts automatically to extra innings
+
+### Changed
+
+- `PlateAppearance.pitches_sequence` now stores `Vec<PlateAppearanceStep>` instead of raw pitches
+- Replay engine updated to parse and render hit steps inside pitch sequences
+- Scoreboard layout expanded to support dynamic inning columns
+- `apply_pitch` and `apply_hit_command` refactored to share sequence-building logic
+- Linescore rendering logic refactored to support right-aligned `R/H/E` columns
+- Scoreboard width expanded to support larger inning displays
+
+### Fixed
+
+- Correct pitch count when a hit command ends a plate appearance
+- Replay log now correctly displays pitch sequences including hit steps
+- Scoreboard rendering alignment issues when runs or hits exceed single digits
+
+### Refactor
+
+- Introduced `RheTotals` helper struct to simplify linescore rendering
+- Reduced argument count in `render_linescore_row()` to satisfy Clippy constraints
+- Replaced single-case `match` with `if` in run reconstruction logic
+- Improved internal helper reuse for pitch sequence generation
+
+### Internal
+
+- Refactored scoreboard rendering pipeline in `tui.rs`
+- Improved separation between scoreboard data extraction and rendering
+- Cleaned up code to pass `cargo clippy -- -D warnings`
+
+---
+
 ## [0.7.1] - 2026-03-06
 
 ### Changed
