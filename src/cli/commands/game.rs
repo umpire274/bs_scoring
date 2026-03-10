@@ -328,7 +328,7 @@ fn list_games(db: &Database) {
                 println!("📭 No games found.\n");
             } else {
                 println!("\n📋 Games ({} total):\n", game_list.len());
-                cli::show_separator();
+                cli::show_separator(50);
 
                 for (_id, game_id, date, venue, status_int, away, home, away_score, home_score) in
                     game_list
@@ -344,7 +344,7 @@ fn list_games(db: &Database) {
                     );
                     println!("     Venue: {} | Status: {}", venue, status);
                     println!("     ID: {}", game_id);
-                    cli::show_separator();
+                    cli::show_separator(50);
                 }
             }
         }

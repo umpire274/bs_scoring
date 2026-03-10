@@ -1,5 +1,7 @@
+use crate::models::player_traits::{BatSide, PitchHand};
 use std::io;
 use std::io::Write;
+use strum::IntoEnumIterator;
 
 /// Clear the screen (works on most terminals)
 pub fn clear_screen() {
@@ -86,6 +88,81 @@ pub fn show_list_item(index: usize, item: &str) {
 }
 
 /// Show a table separator
-pub fn show_separator() {
-    println!("  ─────────────────────────────────────────────────");
+pub fn show_separator(n: u16) {
+    println!("  {}", "─".repeat(n as usize));
+}
+
+pub fn choose_enum<T>(current: Option<T>) -> Option<T>
+where
+    T: CliSelectable + Copy + IntoEnumIterator + std::fmt::Display + 'static,
+{
+    let values: Vec<T> = T::iter().collect();
+
+    let current_display = current
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "-".to_string());
+
+    let options_str = values
+        .iter()
+        .enumerate()
+        .map(|(idx, v)| format!("{}:{}", idx + 1, v))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let prompt = format!(
+        "{} [{}] ({} 0:keep): ",
+        T::label(),
+        current_display,
+        options_str
+    );
+
+    let choice = read_i32(&prompt)?;
+
+    if choice == 0 {
+        return None;
+    }
+
+    let idx = (choice - 1) as usize;
+    values.get(idx).copied()
+}
+
+pub fn choose_enum_optional<T>() -> Option<T>
+where
+    T: CliSelectable + Copy + IntoEnumIterator + std::fmt::Display + 'static,
+{
+    let options: Vec<T> = T::iter().collect();
+
+    let options_str = options
+        .iter()
+        .enumerate()
+        .map(|(idx, v)| format!("{}:{}", idx + 1, v))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let prompt = format!("{} ({} 0:none): ", T::label(), options_str);
+
+    let choice = read_i32(&prompt)?;
+
+    if choice == 0 {
+        return None;
+    }
+
+    let idx = (choice - 1) as usize;
+    options.get(idx).copied()
+}
+
+pub trait CliSelectable: Sized + Copy + IntoEnumIterator + std::fmt::Display {
+    fn label() -> &'static str;
+}
+
+impl CliSelectable for PitchHand {
+    fn label() -> &'static str {
+        "Pitch hand"
+    }
+}
+
+impl CliSelectable for BatSide {
+    fn label() -> &'static str {
+        "Bat side"
+    }
 }

@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 11;
+pub const CURRENT_SCHEMA_VERSION: i64 = 12;
 
 /// Migration structure
 pub struct Migration {
@@ -69,6 +69,11 @@ pub fn get_migrations() -> Vec<Migration> {
             version: 11,
             description: "Drop batting_cursors table (no longer needed with new plate_appearances_compact structure)",
             up: migration_v11,
+        },
+        Migration {
+            version: 12,
+            description: "Placeholder for future migration",
+            up: migration_v12,
         },
     ]
 }
@@ -673,6 +678,37 @@ fn migration_v11(conn: &Connection) -> Result<()> {
         COMMIT;
         ",
     )?;
+
+    Ok(())
+}
+
+fn check_column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?; // column name
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn migration_v12(conn: &Connection) -> Result<()> {
+    // Check and add 'pitch' column to players table if it doesn't exist
+    if !check_column_exists(conn, "players", "pitch")? {
+        conn.execute(
+            "ALTER TABLE players ADD COLUMN pitch TEXT CHECK(pitch IN ('LHP', 'RHP', 'SHP'))",
+            [],
+        )?;
+    }
+    // Check and add 'bat' column to players table if it doesn't exist
+    if !check_column_exists(conn, "players", "bat")? {
+        conn.execute(
+            "ALTER TABLE players ADD COLUMN bat TEXT CHECK(bat IN ('L', 'R', 'S'))",
+            [],
+        )?;
+    }
 
     Ok(())
 }

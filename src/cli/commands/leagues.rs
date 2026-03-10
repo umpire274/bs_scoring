@@ -54,7 +54,7 @@ fn view_leagues(db: &Database) {
                     if let Some(desc) = league.description {
                         println!("     {}", desc);
                     }
-                    cli::show_separator();
+                    cli::show_separator(35);
                 }
             }
             cli::wait_for_enter();

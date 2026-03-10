@@ -74,27 +74,27 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
         // ✅ NEW: pitch command (0.6.7 baseline)
         EngineCommand::Pitch(pitch) => apply_pitch(state, pitch),
 
-        EngineCommand::Single => apply_hit_command(
+        EngineCommand::Single { zone } => apply_hit_command(
             state,
-            crate::models::plate_appearance::PlateAppearanceOutcome::Single,
+            crate::models::plate_appearance::PlateAppearanceOutcome::Single { zone },
             "1B",
         ),
 
-        EngineCommand::Double => apply_hit_command(
+        EngineCommand::Double { zone } => apply_hit_command(
             state,
-            crate::models::plate_appearance::PlateAppearanceOutcome::Double,
+            crate::models::plate_appearance::PlateAppearanceOutcome::Double { zone },
             "2B",
         ),
 
-        EngineCommand::Triple => apply_hit_command(
+        EngineCommand::Triple { zone } => apply_hit_command(
             state,
-            crate::models::plate_appearance::PlateAppearanceOutcome::Triple,
+            crate::models::plate_appearance::PlateAppearanceOutcome::Triple { zone },
             "3B",
         ),
 
-        EngineCommand::HomeRun => apply_hit_command(
+        EngineCommand::HomeRun { zone } => apply_hit_command(
             state,
-            crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun,
+            crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { zone },
             "HR",
         ),
 
@@ -290,16 +290,16 @@ fn apply_hit_command(
     };
 
     let final_step = match &outcome {
-        crate::models::plate_appearance::PlateAppearanceOutcome::Single => {
+        crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. } => {
             crate::models::plate_appearance::PlateAppearanceStep::Single
         }
-        crate::models::plate_appearance::PlateAppearanceOutcome::Double => {
+        crate::models::plate_appearance::PlateAppearanceOutcome::Double { .. } => {
             crate::models::plate_appearance::PlateAppearanceStep::Double
         }
-        crate::models::plate_appearance::PlateAppearanceOutcome::Triple => {
+        crate::models::plate_appearance::PlateAppearanceOutcome::Triple { .. } => {
             crate::models::plate_appearance::PlateAppearanceStep::Triple
         }
-        crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun => {
+        crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. } => {
             crate::models::plate_appearance::PlateAppearanceStep::HomeRun
         }
         _ => {
@@ -324,16 +324,30 @@ fn apply_hit_command(
         pitcher_id,
         pitches: pitches_in_pa,
         pitches_sequence: final_sequence,
-        outcome,
+        outcome: outcome.clone(),
         outs: state.outs,
     };
 
-    let message = match label {
-        "1B" => "1B: batter to 1B".to_string(),
-        "2B" => "2B: batter to 2B".to_string(),
-        "3B" => "3B: batter to 3B".to_string(),
-        "HR" => "HR: batter scores.".to_string(),
-        _ => format!("{label}: batter reaches base"),
+    let zone = match &outcome {
+        crate::models::plate_appearance::PlateAppearanceOutcome::Single { zone }
+        | crate::models::plate_appearance::PlateAppearanceOutcome::Double { zone }
+        | crate::models::plate_appearance::PlateAppearanceOutcome::Triple { zone }
+        | crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { zone } => *zone,
+        _ => None,
+    };
+
+    let human_label = match label {
+        "1B" => "Single",
+        "2B" => "Double",
+        "3B" => "Triple",
+        "HR" => "Home run",
+        _ => label,
+    };
+
+    let message = if let Some(z) = zone {
+        format!("{human_label} to {}", z.as_str())
+    } else {
+        human_label.to_string()
     };
 
     ApplyResult {

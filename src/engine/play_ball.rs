@@ -15,7 +15,7 @@ use crate::db::plate_appearances_compact::{
 };
 use crate::models::events::{DomainEvent, SideChangeData};
 use crate::models::plate_appearance::PlateAppearanceStep;
-use crate::models::play_ball::{GameState, OutcomeSymbol};
+use crate::models::play_ball::GameState;
 use crate::ui::Ui;
 use crate::ui::events::UiEvent;
 use rusqlite::{Connection, params};
@@ -736,18 +736,31 @@ fn format_pitch_sequence(seq: &[PlateAppearanceStep]) -> String {
     format!("[{}]", inner)
 }
 
-fn outcome_symbol_from_outcome_type(outcome_type: &str) -> OutcomeSymbol {
-    match outcome_type {
-        // Adatta queste stringhe ai valori REALI che salvi nel DB
-        "walk" | "bb" => OutcomeSymbol::Walk,
-        "strikeout" | "k" => OutcomeSymbol::Strikeout,
-        "in_play" | "inplay" => OutcomeSymbol::InPlay,
-        "out" => OutcomeSymbol::Out,
-        "single" | "1b" => OutcomeSymbol::Single,
-        "double" | "2b" => OutcomeSymbol::Double,
-        "triple" | "3b" => OutcomeSymbol::Triple,
-        "home_run" | "hr" => OutcomeSymbol::HomeRun,
-        _ => OutcomeSymbol::Out,
+fn outcome_symbol_from_row(pa: &PlateAppearanceRow) -> String {
+    let base = match pa.outcome_type.as_str() {
+        "walk" | "bb" => "BB".to_string(),
+        "strikeout" | "k" => "K".to_string(),
+        "in_play" | "inplay" => "IP".to_string(),
+        "out" => "OUT".to_string(),
+        "single" | "1b" => "1B".to_string(),
+        "double" | "2b" => "2B".to_string(),
+        "triple" | "3b" => "3B".to_string(),
+        "home_run" | "hr" => "HR".to_string(),
+        _ => "OUT".to_string(),
+    };
+
+    match pa.outcome_type.as_str() {
+        "single" | "double" | "triple" | "home_run" => {
+            if let Some(raw) = pa.outcome_data.as_deref()
+                && let Ok(data) =
+                    serde_json::from_str::<crate::models::plate_appearance::HitOutcomeData>(raw)
+                && let Some(zone) = data.zone
+            {
+                return format!("{} {}", base, zone.as_str());
+            }
+            base
+        }
+        _ => base,
     }
 }
 
@@ -813,12 +826,12 @@ fn replay_plate_appearances_and_log(
         // applica PA (ricostruisce lo stato)
         apply_plate_appearance_row(state, pa);
 
-        // ricostruzione sequenza
-        let seq: Vec<PlateAppearanceStep> =
-            serde_json::from_str(&pa.pitches_sequence).unwrap_or_default();
+        // ricostruzione sequenza (supports both legacy ["CalledStrike", ...]
+        // and new-format [{"Pitch":"Ball"}, "Single"] JSON payloads)
+        let seq = parse_pa_sequence(&pa.pitches_sequence);
 
         let seq_text = format_pitch_sequence(&seq);
-        let outcome_sym = outcome_symbol_from_outcome_type(&pa.outcome_type);
+        let outcome_sym = outcome_symbol_from_row(pa);
 
         // calcolo punti segnati
         let runs = runs_scored_from_pa(&state_before, pa);

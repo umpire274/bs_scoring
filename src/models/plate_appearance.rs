@@ -1,3 +1,4 @@
+use crate::models::field_zone::FieldZone;
 use crate::models::types::{HalfInning, Pitch};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -41,13 +42,18 @@ impl fmt::Display for PlateAppearanceStep {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HitOutcomeData {
+    pub zone: Option<FieldZone>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum PlateAppearanceOutcome {
     Walk,
     Strikeout(crate::models::events::StrikeoutKind),
     Out,
-    Single,
-    Double,
-    Triple,
-    HomeRun,
+    Single { zone: Option<FieldZone> },
+    Double { zone: Option<FieldZone> },
+    Triple { zone: Option<FieldZone> },
+    HomeRun { zone: Option<FieldZone> },
 }
