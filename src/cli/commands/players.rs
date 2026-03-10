@@ -102,7 +102,6 @@ fn import_csv(db: &Database) {
         }
 
         let team_name = parts[0];
-
         let number = match parts[1].parse::<i32>() {
             Ok(n) if n > 0 && n <= 99 => n,
             _ => {
@@ -115,10 +114,8 @@ fn import_csv(db: &Database) {
                 continue;
             }
         };
-
         let first_name = parts[2].to_string();
         let last_name = parts[3].to_string();
-
         let position_num = match parts[4].parse::<u8>() {
             Ok(n) if (1..=9).contains(&n) => n,
             _ => {
@@ -128,14 +125,8 @@ fn import_csv(db: &Database) {
             }
         };
 
-        if first_name.is_empty() {
-            println!("⚠️  Line {}: First name is required", line_num + 1);
-            errors += 1;
-            continue;
-        }
-
-        let raw_pitch = parts[5];
-        let raw_bat = parts[6];
+        let raw_pitch = parts.get(5).copied().unwrap_or("");
+        let raw_bat = parts.get(6).copied().unwrap_or("");
 
         let pitch = if raw_pitch.is_empty() {
             None
