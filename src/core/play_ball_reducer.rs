@@ -308,22 +308,22 @@ fn apply_plate_appearance_core(
             state.outs = pa.outs;
         }
 
-        crate::models::plate_appearance::PlateAppearanceOutcome::Single => {
+        crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. } => {
             apply_hit_advancement(state, 1);
             state.outs = pa.outs;
         }
 
-        crate::models::plate_appearance::PlateAppearanceOutcome::Double => {
+        crate::models::plate_appearance::PlateAppearanceOutcome::Double { .. } => {
             apply_hit_advancement(state, 2);
             state.outs = pa.outs;
         }
 
-        crate::models::plate_appearance::PlateAppearanceOutcome::Triple => {
+        crate::models::plate_appearance::PlateAppearanceOutcome::Triple { .. } => {
             apply_hit_advancement(state, 3);
             state.outs = pa.outs;
         }
 
-        crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun => {
+        crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. } => {
             apply_hit_advancement(state, 4);
             state.outs = pa.outs;
         }
@@ -360,11 +360,11 @@ pub fn apply_live_plate_appearance(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
 ) {
-    let extra_pitches = match pa.outcome {
-        crate::models::plate_appearance::PlateAppearanceOutcome::Single
-        | crate::models::plate_appearance::PlateAppearanceOutcome::Double
-        | crate::models::plate_appearance::PlateAppearanceOutcome::Triple
-        | crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun => 1,
+    let extra_pitches = match &pa.outcome {
+        crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. }
+        | crate::models::plate_appearance::PlateAppearanceOutcome::Double { .. }
+        | crate::models::plate_appearance::PlateAppearanceOutcome::Triple { .. }
+        | crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. } => 1,
 
         crate::models::plate_appearance::PlateAppearanceOutcome::Walk
         | crate::models::plate_appearance::PlateAppearanceOutcome::Strikeout(_)
@@ -372,6 +372,11 @@ pub fn apply_live_plate_appearance(
     };
 
     apply_plate_appearance_core(state, pa, extra_pitches);
+}
+
+fn parse_hit_outcome_data(raw: Option<&str>) -> crate::models::plate_appearance::HitOutcomeData {
+    serde_json::from_str(raw.unwrap_or(r#"{"zone":null}"#))
+        .unwrap_or(crate::models::plate_appearance::HitOutcomeData { zone: None })
 }
 
 /// Apply a compact, persisted Plate Appearance row to the in-memory GameState.
@@ -391,13 +396,25 @@ pub fn apply_plate_appearance_row(state: &mut GameState, row: &PlateAppearanceRo
 
         "out" => crate::models::plate_appearance::PlateAppearanceOutcome::Out,
 
-        "single" => crate::models::plate_appearance::PlateAppearanceOutcome::Single,
+        "single" => {
+            let data = parse_hit_outcome_data(row.outcome_data.as_deref());
+            crate::models::plate_appearance::PlateAppearanceOutcome::Single { zone: data.zone }
+        }
 
-        "double" => crate::models::plate_appearance::PlateAppearanceOutcome::Double,
+        "double" => {
+            let data = parse_hit_outcome_data(row.outcome_data.as_deref());
+            crate::models::plate_appearance::PlateAppearanceOutcome::Double { zone: data.zone }
+        }
 
-        "triple" => crate::models::plate_appearance::PlateAppearanceOutcome::Triple,
+        "triple" => {
+            let data = parse_hit_outcome_data(row.outcome_data.as_deref());
+            crate::models::plate_appearance::PlateAppearanceOutcome::Triple { zone: data.zone }
+        }
 
-        "home_run" => crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun,
+        "home_run" => {
+            let data = parse_hit_outcome_data(row.outcome_data.as_deref());
+            crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { zone: data.zone }
+        }
 
         _ => crate::models::plate_appearance::PlateAppearanceOutcome::Out,
     };

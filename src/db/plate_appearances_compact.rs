@@ -1,6 +1,6 @@
 use rusqlite::{Connection, Result, params};
 
-use crate::models::plate_appearance::PlateAppearance;
+use crate::models::plate_appearance::{HitOutcomeData, PlateAppearance};
 
 #[derive(Debug, Clone)]
 pub struct PlateAppearanceRow {
@@ -18,6 +18,11 @@ pub struct PlateAppearanceRow {
     pub outs: i64,
 }
 
+fn serialize_hit_outcome_data(zone: &Option<crate::models::field_zone::FieldZone>) -> String {
+    serde_json::to_string(&HitOutcomeData { zone: *zone })
+        .unwrap_or_else(|_| r#"{"zone":null}"#.to_string())
+}
+
 pub fn append_plate_appearance(
     conn: &Connection,
     game_pk: i64,
@@ -30,21 +35,22 @@ pub fn append_plate_appearance(
             "strikeout".to_string(),
             Some(serde_json::to_string(kind).unwrap_or_else(|_| "null".to_string())),
         ),
-        crate::models::plate_appearance::PlateAppearanceOutcome::Single => {
-            ("single".to_string(), None)
+        crate::models::plate_appearance::PlateAppearanceOutcome::Single { zone } => {
+            ("single".to_string(), Some(serialize_hit_outcome_data(zone)))
         }
 
-        crate::models::plate_appearance::PlateAppearanceOutcome::Double => {
-            ("double".to_string(), None)
+        crate::models::plate_appearance::PlateAppearanceOutcome::Double { zone } => {
+            ("double".to_string(), Some(serialize_hit_outcome_data(zone)))
         }
 
-        crate::models::plate_appearance::PlateAppearanceOutcome::Triple => {
-            ("triple".to_string(), None)
+        crate::models::plate_appearance::PlateAppearanceOutcome::Triple { zone } => {
+            ("triple".to_string(), Some(serialize_hit_outcome_data(zone)))
         }
 
-        crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun => {
-            ("home_run".to_string(), None)
-        }
+        crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { zone } => (
+            "home_run".to_string(),
+            Some(serialize_hit_outcome_data(zone)),
+        ),
     };
 
     // per-game sequence

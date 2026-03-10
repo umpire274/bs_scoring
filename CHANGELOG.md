@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4] — 2026-03-10
+
+### Added
+- Added `pitch` field to players (`LHP`, `RHP`, `SHP`) to record pitching hand.
+- Added `bat` field to players (`L`, `R`, `S`) to record batting side.
+- Support for `pitch` and `bat` in:
+    - player creation
+    - player editing
+    - CSV import/export
+    - JSON import/export.
+
+- Introduced `FieldZone` enum to represent field hit zones used by official scorers.
+- Added support for recording hit zones (e.g. `1b ll`, `2b cf`, `hr rc`).
+- Hit zones are persisted in the database and used during replay reconstruction.
+
+### Improved
+- Refactored CLI enum selection using reusable helpers.
+- Simplified CLI logic for selecting enum values.
+- Improved roster display to include pitching and batting handedness.
+
+### Database
+- Updated `players` table schema to include:
+    - `pitch`
+    - `bat`
+
+### Internal
+- Added `models/field_zone.rs`.
+- Improved replay formatting compatibility for legacy pitch sequences.
+- Minor CLI and formatting improvements.
+
+---
+
 ## [0.7.3] - 2026-03-09
 
 ### Added

@@ -90,7 +90,7 @@ fn view_teams(db: &Database) {
                         print!(" [{}]", abbr);
                     }
                     println!();
-                    cli::show_separator();
+                    cli::show_separator(40);
                 }
             }
             cli::wait_for_enter();

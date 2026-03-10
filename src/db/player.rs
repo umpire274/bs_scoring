@@ -1,3 +1,4 @@
+use crate::models::player_traits::{BatSide, PitchHand};
 use crate::models::types::Position;
 use rusqlite::{Connection, Result, params};
 
@@ -9,6 +10,8 @@ pub struct Player {
     pub first_name: String,
     pub last_name: String,
     pub position: Position,
+    pub pitch: Option<PitchHand>,
+    pub bat: Option<BatSide>,
     pub is_active: bool,
 }
 
@@ -19,6 +22,8 @@ impl Player {
         first_name: String,
         last_name: String,
         position: Position,
+        pitch: Option<PitchHand>,
+        bat: Option<BatSide>,
     ) -> Self {
         Player {
             id: None,
@@ -27,6 +32,8 @@ impl Player {
             first_name,
             last_name,
             position,
+            pitch,
+            bat,
             is_active: true,
         }
     }
@@ -37,7 +44,7 @@ impl Player {
     }
 
     /// Helper function to map a database row to a Player struct
-    fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+    fn from_row(row: &rusqlite::Row) -> Result<Self> {
         let position_num: u8 = row.get(5)?;
         Ok(Player {
             id: Some(row.get(0)?),
@@ -46,29 +53,33 @@ impl Player {
             first_name: row.get(3)?,
             last_name: row.get(4)?,
             position: Position::from_number(position_num).unwrap_or(Position::RightField),
-            is_active: row.get(6)?,
+            pitch: row.get(6).ok().and_then(|s: String| PitchHand::parse(&s)),
+            bat: row.get(7).ok().and_then(|s: String| BatSide::parse(&s)),
+            is_active: row.get(8)?,
         })
     }
 
     /// Helper to map a database row with team_name to (Player, String)
     /// Expects columns: id, team_id, number, first_name, last_name, position, is_active, team_name
-    pub fn from_row_with_team(row: &rusqlite::Row) -> rusqlite::Result<(Self, String)> {
+    pub fn from_row_with_team(row: &rusqlite::Row) -> Result<(Self, String)> {
         let player = Self::from_row(row)?;
-        let team_name: String = row.get(7)?;
+        let team_name: String = row.get(9)?;
         Ok((player, team_name))
     }
 
     /// Create a new player
     pub fn create(&mut self, conn: &Connection) -> Result<i64> {
         conn.execute(
-            "INSERT INTO players (team_id, number, first_name, last_name, position, is_active)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO players (team_id, number, first_name, last_name, position, pitch, bat, is_active)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 self.team_id,
                 self.number,
                 self.first_name,
                 self.last_name,
                 self.position.to_number(),
+                self.pitch.map(|p| p.as_str().to_string()),
+                self.bat.map(|b| b.as_str().to_string()),
                 self.is_active
             ],
         )?;
@@ -81,7 +92,7 @@ impl Player {
     /// Get player by ID
     pub fn get_by_id(conn: &Connection, id: i64) -> Result<Player> {
         let mut stmt = conn.prepare(
-            "SELECT id, team_id, number, first_name, last_name, position, is_active
+            "SELECT id, team_id, number, first_name, last_name, position, pitch, bat, is_active
              FROM players WHERE id = ?1",
         )?;
 
@@ -91,7 +102,7 @@ impl Player {
     /// Get all players for a team
     pub fn get_by_team(conn: &Connection, team_id: i64) -> Result<Vec<Player>> {
         let mut stmt = conn.prepare(
-            "SELECT id, team_id, number, first_name, last_name, position, is_active
+            "SELECT id, team_id, number, first_name, last_name, position, pitch, bat, is_active
              FROM players WHERE team_id = ?1 AND is_active = 1
              ORDER BY number",
         )?;
@@ -106,13 +117,15 @@ impl Player {
         if let Some(id) = self.id {
             conn.execute(
                 "UPDATE players SET team_id = ?1, number = ?2, first_name = ?3, last_name = ?4,
-                 position = ?5, is_active = ?6 WHERE id = ?7",
+                 position = ?5, pitch = ?6, bat = ?7, is_active = ?8 WHERE id = ?9",
                 params![
                     self.team_id,
                     self.number,
                     self.first_name,
                     self.last_name,
                     self.position.to_number(),
+                    self.pitch.map(|p| p.as_str().to_string()),
+                    self.bat.map(|b| b.as_str().to_string()),
                     self.is_active,
                     id
                 ],
@@ -149,6 +162,8 @@ mod tests {
             "Aaron".to_string(),
             "Judge".to_string(),
             Position::RightField,
+            Some(PitchHand::Rhp),
+            Some(BatSide::R),
         );
         let player_id = player.create(conn).unwrap();
         assert!(player_id > 0);
