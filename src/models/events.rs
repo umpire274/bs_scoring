@@ -1,5 +1,5 @@
-use crate::Pitch;
 use crate::models::types::{GameStatus, HalfInning};
+use crate::{Pitch, Position};
 use serde::{Deserialize, Serialize};
 
 /// Persisted, replayable domain events for the Play Ball engine.
@@ -24,6 +24,8 @@ pub enum DomainEvent {
         batter_jersey_no: i32,
         batter_first_name: String,
         batter_last_name: String,
+        batter_order: String,
+        batter_position: Position,
 
         pitcher_id: i64,
         pitcher_jersey_no: i32,

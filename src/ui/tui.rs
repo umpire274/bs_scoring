@@ -52,9 +52,9 @@ struct ScoreboardViewData {
     away_innings: Vec<u16>,
     home_innings: Vec<u16>,
 
-    batter: String,
+    pub batter_left: String,
+    pub batter_right: String,
 
-    pitcher_jersey_no: i32,
     pitcher_first_name: String,
     pitcher_last_name: String,
 
@@ -62,7 +62,6 @@ struct ScoreboardViewData {
     on_1b: bool,
     on_2b: bool,
     on_3b: bool,
-    current_pitch_count: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -342,24 +341,19 @@ impl TuiUi {
         format!("OUT {} {}", o1, o2)
     }
 
-    fn format_player_name_for_scoreboard(
-        jersey: i32,
-        first: &str,
-        last: &str,
-        max_len: usize,
-    ) -> String {
-        let full = format!("#{jersey} {first} {last}");
+    fn format_player_name_for_scoreboard(first: &str, last: &str, max_len: usize) -> String {
+        let full = format!("P. {first} {last}");
         if full.chars().count() <= max_len {
             return full;
         }
 
         let initial = first.chars().next().unwrap_or('?');
-        let abbr = format!("#{jersey} {}. {last}", initial.to_uppercase());
+        let abbr = format!("P. {}. {last}", initial.to_uppercase());
         if abbr.chars().count() <= max_len {
             return abbr;
         }
 
-        let last_only = format!("#{jersey} {last}");
+        let last_only = format!("P. {last}");
         if last_only.chars().count() <= max_len {
             return last_only;
         }
@@ -369,13 +363,18 @@ impl TuiUi {
 
     fn scoreboard_view_data(state: Option<&GameState>) -> ScoreboardViewData {
         if let Some(s) = state {
-            let batter = match (
-                s.current_batter_jersey_no,
+            let (batter_left, batter_right) = match (
+                s.current_batter_order.clone(),
                 s.current_batter_first_name.as_deref(),
                 s.current_batter_last_name.as_deref(),
+                s.current_batter_jersey_no,
+                s.current_batter_position,
             ) {
-                (Some(j), Some(first), Some(last)) => format!("#{j}  {first} {last}"),
-                _ => "-".to_string(),
+                (Some(order), Some(first), Some(last), Some(jersey), Some(pos)) => (
+                    format!("{}. {} {}", order, first, last),
+                    format!("(#{} {})", jersey, pos),
+                ),
+                _ => ("-".to_string(), "".to_string()),
             };
 
             let count = format!("{}-{}", s.pitch_count.balls, s.pitch_count.strikes);
@@ -394,9 +393,9 @@ impl TuiUi {
                 away_innings: s.score.away_innings.clone(),
                 home_innings: s.score.home_innings.clone(),
 
-                batter,
+                batter_left,
+                batter_right,
 
-                pitcher_jersey_no: s.current_pitcher_jersey_no.unwrap_or(0),
                 pitcher_first_name: s
                     .current_pitcher_first_name
                     .clone()
@@ -410,7 +409,6 @@ impl TuiUi {
                 on_1b: s.on_1b,
                 on_2b: s.on_2b,
                 on_3b: s.on_3b,
-                current_pitch_count: s.current_pitch_count,
             }
         } else {
             ScoreboardViewData {
@@ -427,9 +425,9 @@ impl TuiUi {
                 away_innings: Vec::new(),
                 home_innings: Vec::new(),
 
-                batter: "-".to_string(),
+                batter_left: "-".to_string(),
+                batter_right: "".to_string(),
 
-                pitcher_jersey_no: 0,
                 pitcher_first_name: "-".to_string(),
                 pitcher_last_name: "-".to_string(),
 
@@ -437,7 +435,6 @@ impl TuiUi {
                 on_1b: false,
                 on_2b: false,
                 on_3b: false,
-                current_pitch_count: 0,
             }
         }
     }
@@ -510,23 +507,37 @@ impl TuiUi {
         let outs_str = Self::outs_dots(data.outs);
         let status = format!(
             "{}{}  {}  {}",
-            data.half_sym, data.inning, data.count, outs_str
+            data.inning, data.half_sym, data.count, outs_str
         );
         let status_line = Self::pad_right_fit(Self::center_text(&status, w).as_str(), w);
 
-        let batter_line = Self::pad_right_fit(data.batter.as_str(), w);
+        let batter_line =
+            Self::fit_two_columns(data.batter_left.as_str(), data.batter_right.as_str(), w);
 
-        let right = format!("(P {:>3})", data.current_pitch_count);
-        let max_left = w.saturating_sub(Self::display_width(&right) + 1);
+        let (pitches, strikes, balls) = if let Some(s) = state {
+            if let Some(pid) = s.current_pitcher_id {
+                if let Some(stats) = s.pitcher_stats.get(&pid) {
+                    (stats.balls + stats.strikes, stats.strikes, stats.balls)
+                } else {
+                    (0, 0, 0)
+                }
+            } else {
+                (0, 0, 0)
+            }
+        } else {
+            (0, 0, 0)
+        };
+        let pitcher_right = format!("(P {}: {}-{})", pitches, strikes, balls);
+
+        let max_left = w.saturating_sub(Self::display_width(&pitcher_right) + 1);
 
         let pitcher_left = Self::format_player_name_for_scoreboard(
-            data.pitcher_jersey_no,
             data.pitcher_first_name.as_str(),
             data.pitcher_last_name.as_str(),
             max_left,
         );
 
-        let pitcher_line = Self::fit_two_columns(&pitcher_left, &right, w);
+        let pitcher_line = Self::fit_two_columns(&pitcher_left, &pitcher_right, w);
 
         let lines = vec![
             Line::from(Self::pad_right_fit(header.as_str(), w)),
@@ -560,9 +571,9 @@ impl TuiUi {
             Line::from("  fl  Foul bunt"),
             Line::from(""),
             Line::from("Hit commands"),
-            Line::from("  1b [zone]  Single"),
-            Line::from("  2b [zone]  Double"),
-            Line::from("  3b [zone]  Triple"),
+            Line::from("  h  [zone]  Single"),
+            Line::from("  2h [zone]  Double"),
+            Line::from("  3h [zone]  Triple"),
             Line::from("  hr [zone]  Home run"),
             Line::from(""),
             Line::from("Hit zones"),

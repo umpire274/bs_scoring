@@ -1,5 +1,6 @@
 use crate::cli::commands::play_ball::play_ball;
 use crate::core::menu::GameMenuChoice;
+use crate::db::game_events::refactor_batter_order;
 use crate::utils::cli;
 use crate::{Database, Menu, Team};
 use chrono::Local;
@@ -17,6 +18,12 @@ pub enum EditGameMenuChoice {
     Back,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum UtilitiesGameMenuChoice {
+    RefactorBattersOrder,
+    Back,
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 struct ImportLineupRow {
     batting_order: i32,
@@ -31,6 +38,7 @@ pub fn handle_game_menu(db: &mut Database) {
             GameMenuChoice::ListGames => list_games(db),
             GameMenuChoice::EditGame => handle_edit_game_menu(db),
             GameMenuChoice::PlayBall => play_ball(db),
+            GameMenuChoice::Utilities => handle_utilities_game_menu(db),
             GameMenuChoice::Back => break,
         }
     }
@@ -44,6 +52,64 @@ pub fn handle_edit_game_menu(db: &mut Database) {
             EditGameMenuChoice::ImportLineup => import_lineup(db),
             EditGameMenuChoice::EditInningsScore => edit_innings_score(db),
             EditGameMenuChoice::Back => break,
+        }
+    }
+}
+
+#[allow(clippy::while_let_loop)]
+pub fn handle_utilities_game_menu(db: &mut Database) {
+    loop {
+        match show_utilities_game_menu() {
+            UtilitiesGameMenuChoice::RefactorBattersOrder => {
+                cli::show_header("REFACTOR BATTER ORDERS");
+                println!(
+                    "This utility will recalculate and update the 'batter_order' field in 'plate_appearances'\nbased on the current lineups and batting orders defined in 'game_lineups'."
+                );
+                println!(
+                    "This is useful if you have made manual edits to lineups or\nif you want to ensure consistency after data imports."
+                );
+                println!();
+                if cli::confirm("Proceed with refactoring batter orders? This cannot be undone!") {
+                    match refactor_batter_order(db.get_connection_mut()) {
+                        Ok(_) => cli::show_success_no_wait_for_enter(
+                            "Batter orders refactored successfully!",
+                        ),
+                        Err(e) => {
+                            cli::show_error(&format!("Error refactoring batter orders: {}", e))
+                        }
+                    }
+                } else {
+                    println!("\n❌ Refactoring cancelled.");
+                }
+                cli::wait_for_enter();
+            }
+            UtilitiesGameMenuChoice::Back => break,
+        }
+    }
+}
+
+pub fn show_utilities_game_menu() -> UtilitiesGameMenuChoice {
+    loop {
+        cli::clear_screen();
+        println!("╔════════════════════════════════════════════╗");
+        println!("║            🛠️  GAME UTILITIES              ║");
+        println!("╚════════════════════════════════════════════╝");
+        println!();
+        println!("  1. 🔄 Refactor Batter Orders");
+        println!();
+        println!("  0. 🔙 Back to Game Menu");
+        println!();
+        print!("Select an option (1 or 0): ");
+        io::stdout().flush().unwrap();
+
+        let choice = cli::read_choice();
+        match choice {
+            1 => return UtilitiesGameMenuChoice::RefactorBattersOrder,
+            0 => return UtilitiesGameMenuChoice::Back,
+            _ => {
+                println!("\n❌ Invalid choice. Press ENTER to continue...");
+                cli::wait_for_enter();
+            }
         }
     }
 }

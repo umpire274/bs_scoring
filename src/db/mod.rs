@@ -1,10 +1,9 @@
+pub mod at_bat_draft;
 pub mod config;
 pub mod database;
 pub mod game_events;
 pub mod league;
 pub mod migrations;
+pub mod plate_appearances;
 pub mod player;
 pub mod team;
-
-pub mod at_bat_draft;
-pub mod plate_appearances_compact;

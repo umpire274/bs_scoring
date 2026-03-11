@@ -77,19 +77,19 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
         EngineCommand::Single { zone } => apply_hit_command(
             state,
             crate::models::plate_appearance::PlateAppearanceOutcome::Single { zone },
-            "1B",
+            "H",
         ),
 
         EngineCommand::Double { zone } => apply_hit_command(
             state,
             crate::models::plate_appearance::PlateAppearanceOutcome::Double { zone },
-            "2B",
+            "2H",
         ),
 
         EngineCommand::Triple { zone } => apply_hit_command(
             state,
             crate::models::plate_appearance::PlateAppearanceOutcome::Triple { zone },
-            "3B",
+            "3H",
         ),
 
         EngineCommand::HomeRun { zone } => apply_hit_command(
@@ -110,6 +110,15 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
         return ApplyResult {
             events: vec![UiEvent::Error(
                 "No active batter. Use PLAYBALL (or resume the game) first.".to_string(),
+            )],
+            ..empty_result()
+        };
+    };
+
+    let Some(batter_order) = state.current_batter_order.clone() else {
+        return ApplyResult {
+            events: vec![UiEvent::Error(
+                "No active batter order in state.".to_string(),
             )],
             ..empty_result()
         };
@@ -181,6 +190,7 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
             inning: state.inning,
             half: state.half,
             batter_id,
+            batter_order: batter_order.clone(),
             pitcher_id,
             pitches: pitches_in_pa,
             pitches_sequence: final_sequence.clone(),
@@ -280,6 +290,15 @@ fn apply_hit_command(
         };
     };
 
+    let Some(batter_order) = state.current_batter_order.clone() else {
+        return ApplyResult {
+            events: vec![UiEvent::Error(
+                "No active batter order in state.".to_string(),
+            )],
+            ..empty_result()
+        };
+    };
+
     let Some(pitcher_id) = state.current_pitcher_id else {
         return ApplyResult {
             events: vec![UiEvent::Error(
@@ -321,6 +340,7 @@ fn apply_hit_command(
         inning: state.inning,
         half: state.half,
         batter_id,
+        batter_order: batter_order.clone(),
         pitcher_id,
         pitches: pitches_in_pa,
         pitches_sequence: final_sequence,
@@ -337,9 +357,9 @@ fn apply_hit_command(
     };
 
     let human_label = match label {
-        "1B" => "Single",
-        "2B" => "Double",
-        "3B" => "Triple",
+        "H" => "Single",
+        "2H" => "Double",
+        "3H" => "Triple",
         "HR" => "Home run",
         _ => label,
     };

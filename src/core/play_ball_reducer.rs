@@ -1,4 +1,4 @@
-use crate::db::plate_appearances_compact::PlateAppearanceRow;
+use crate::db::plate_appearances::PlateAppearanceRow;
 use crate::engine::play_ball::{bump_order, parse_pa_sequence};
 use crate::models::events::{DomainEvent, StrikeoutKind};
 use crate::models::plate_appearance::PlateAppearanceStep;
@@ -15,42 +15,49 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
             state.half = d.half;
             state.outs = 0;
 
-            // ✅ cambio half-inning => si azzerano le basi
             state.on_1b = false;
             state.on_2b = false;
             state.on_3b = false;
 
-            // ✅ invalida PA corrente (battitore) perché inizia una nuova fase offensiva
             state.current_batter_id = None;
             state.current_batter_jersey_no = None;
             state.current_batter_first_name = None;
             state.current_batter_last_name = None;
+            state.current_batter_order = None;
+            state.current_batter_position = None;
 
-            // ✅ reset del count della PA (balls/strikes + sequence)
             state.pitch_count.balls = 0;
             state.pitch_count.strikes = 0;
             state.pitch_count.sequence.clear();
         }
 
-        DomainEvent::StatusChanged(_) => {
-            // Prompt state is not affected by status.
-        }
+        DomainEvent::StatusChanged(_) => {}
+
         DomainEvent::GameStarted => {
             state.started = true;
             state.inning = 1;
-            state.half = HalfInning::Top; // away bats first
+            state.half = HalfInning::Top;
             state.outs = 0;
 
-            // reset PA count
+            state.current_batter_id = None;
+            state.current_batter_jersey_no = None;
+            state.current_batter_first_name = None;
+            state.current_batter_last_name = None;
+            state.current_batter_order = None;
+            state.current_batter_position = None;
+
             state.pitch_count.balls = 0;
             state.pitch_count.strikes = 0;
             state.pitch_count.sequence.clear();
         }
+
         DomainEvent::AtBatStarted {
             batter_id,
             batter_jersey_no,
             batter_first_name,
             batter_last_name,
+            batter_order,
+            batter_position,
             pitcher_id,
             pitcher_jersey_no,
             pitcher_first_name,
@@ -59,25 +66,25 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
         } => {
             state.started = true;
 
-            // Batter
             state.current_batter_id = Some(*batter_id);
             state.current_batter_jersey_no = Some(*batter_jersey_no);
             state.current_batter_first_name = Some(batter_first_name.clone());
             state.current_batter_last_name = Some(batter_last_name.clone());
+            state.current_batter_order = Some(batter_order.clone());
+            state.current_batter_position = Some(*batter_position);
 
-            // Pitcher
             state.current_pitcher_id = Some(*pitcher_id);
             state.current_pitcher_jersey_no = Some(*pitcher_jersey_no);
             state.current_pitcher_first_name = Some(pitcher_first_name.clone());
             state.current_pitcher_last_name = Some(pitcher_last_name.clone());
 
-            // ✅ PA count reset (solo balls/strikes/sequence)
             state.pitch_count.balls = 0;
             state.pitch_count.strikes = 0;
             state.pitch_count.sequence.clear();
 
-            state.current_pitch_count = *state.pitcher_pitch_counts.get(pitcher_id).unwrap_or(&0);
+            state.pitcher_stats.entry(*pitcher_id).or_default();
         }
+
         DomainEvent::PitcherChanged {
             pitcher_id,
             pitcher_jersey_no,
@@ -89,23 +96,19 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
             state.current_pitcher_first_name = Some(pitcher_first_name.clone());
             state.current_pitcher_last_name = Some(pitcher_last_name.clone());
 
-            // reset count per nuovo pitcher
-            state.current_pitch_count = 0;
+            state.pitcher_stats.entry(*pitcher_id).or_default();
         }
 
         DomainEvent::PitchRecorded {
             pitcher_id, pitch, ..
         } => {
-            // Pitch count del pitcher (persistente per pitcher)
-            let entry = state.pitcher_pitch_counts.entry(*pitcher_id).or_insert(0);
-            *entry = entry.saturating_add(1);
+            let stats = state.pitcher_stats.entry(*pitcher_id).or_default();
 
-            // Pitch count del pitcher corrente
-            if state.current_pitcher_id == Some(*pitcher_id) {
-                state.current_pitch_count = *entry;
+            match pitch {
+                Pitch::Ball => stats.balls += 1,
+                _ => stats.strikes += 1,
             }
 
-            // Sequenza lanci per PA
             state.pitch_count.sequence.push(pitch.clone());
 
             match pitch {
@@ -126,7 +129,6 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
                 Pitch::InPlay | Pitch::HittedBy => {}
             }
 
-            // opzionale: clamp per UI pulita
             if state.pitch_count.balls > 4 {
                 state.pitch_count.balls = 4;
             }
@@ -135,17 +137,7 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
             }
         }
 
-        DomainEvent::AtBatPitchesCount {
-            pitcher_id,
-            pitches,
-        } => {
-            let entry = state.pitcher_pitch_counts.entry(*pitcher_id).or_insert(0);
-            *entry = entry.saturating_add(*pitches);
-
-            if state.current_pitcher_id == Some(*pitcher_id) {
-                state.current_pitch_count = *entry;
-            }
-        }
+        DomainEvent::AtBatPitchesCount { .. } => {}
 
         DomainEvent::CountReset => {
             state.pitch_count.balls = 0;
@@ -154,6 +146,7 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
         }
 
         DomainEvent::WalkIssued { .. } => {}
+
         DomainEvent::Strikeout { .. } => {}
 
         DomainEvent::OutRecorded(data) => {
@@ -272,7 +265,6 @@ fn apply_hit_advancement(state: &mut GameState, bases: u8) {
 fn apply_plate_appearance_core(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
-    pitcher_pitches_to_add: u32,
 ) {
     // Align inning / half
     if state.inning != pa.inning || state.half != pa.half {
@@ -288,14 +280,37 @@ fn apply_plate_appearance_core(
         state.current_batter_jersey_no = None;
         state.current_batter_first_name = None;
         state.current_batter_last_name = None;
+        state.current_batter_order = None;
+        state.current_batter_position = None;
     }
 
-    // Pitcher pitch totals
-    let entry = state.pitcher_pitch_counts.entry(pa.pitcher_id).or_insert(0);
+    // Pitcher stats update from actual pitch sequence
+    let stats = state.pitcher_stats.entry(pa.pitcher_id).or_default();
 
-    *entry = entry.saturating_add(pitcher_pitches_to_add);
+    for step in &pa.pitches_sequence {
+        match step {
+            PlateAppearanceStep::Pitch(Pitch::Ball) => {
+                stats.balls = stats.balls.saturating_add(1);
+            }
+
+            PlateAppearanceStep::Pitch(_) => {
+                stats.strikes = stats.strikes.saturating_add(1);
+            }
+
+            PlateAppearanceStep::Single
+            | PlateAppearanceStep::Double
+            | PlateAppearanceStep::Triple
+            | PlateAppearanceStep::HomeRun => {
+                stats.strikes = stats.strikes.saturating_add(1);
+            }
+
+            PlateAppearanceStep::Walk
+            | PlateAppearanceStep::Strikeout
+            | PlateAppearanceStep::Out => {}
+        }
+    }
+
     state.current_pitcher_id = Some(pa.pitcher_id);
-    state.current_pitch_count = *entry;
 
     // Outcome effects
     match &pa.outcome {
@@ -351,7 +366,7 @@ pub fn apply_plate_appearance(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
 ) {
-    apply_plate_appearance_core(state, pa, pa.pitches);
+    apply_plate_appearance_core(state, pa);
 }
 
 /// Live game flow:
@@ -360,7 +375,7 @@ pub fn apply_live_plate_appearance(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
 ) {
-    let extra_pitches = match &pa.outcome {
+    let _extra_pitches = match &pa.outcome {
         crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. }
         | crate::models::plate_appearance::PlateAppearanceOutcome::Double { .. }
         | crate::models::plate_appearance::PlateAppearanceOutcome::Triple { .. }
@@ -371,7 +386,7 @@ pub fn apply_live_plate_appearance(
         | crate::models::plate_appearance::PlateAppearanceOutcome::Out => 0,
     };
 
-    apply_plate_appearance_core(state, pa, extra_pitches);
+    apply_plate_appearance_core(state, pa);
 }
 
 fn parse_hit_outcome_data(raw: Option<&str>) -> crate::models::plate_appearance::HitOutcomeData {
@@ -429,6 +444,7 @@ pub fn apply_plate_appearance_row(state: &mut GameState, row: &PlateAppearanceRo
             HalfInning::Top
         },
         batter_id: row.batter_id,
+        batter_order: row.batter_order.clone(),
         pitcher_id: row.pitcher_id,
         pitches: row.pitches as u32,
         pitches_sequence: seq,

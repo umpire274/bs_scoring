@@ -1,6 +1,7 @@
 pub(crate) use crate::HalfInning;
-use crate::PitchCount;
 use crate::models::types::{GameStatus, Score};
+use crate::{PitchCount, Position};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -47,6 +48,14 @@ pub enum PlayBallGate {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PitchStats {
+    pub balls: u32,
+    pub strikes: u32,
+}
+
+pub type BatterOrder = String;
+
 #[derive(Debug, Clone)]
 pub struct GameState {
     pub inning: u32,
@@ -59,17 +68,16 @@ pub struct GameState {
     pub current_batter_jersey_no: Option<i32>,
     pub current_batter_first_name: Option<String>,
     pub current_batter_last_name: Option<String>,
+    pub current_batter_order: Option<BatterOrder>,
+    pub current_batter_position: Option<Position>,
 
     pub current_pitcher_id: Option<i64>,
     pub current_pitcher_jersey_no: Option<i32>,
     pub current_pitcher_first_name: Option<String>,
     pub current_pitcher_last_name: Option<String>,
 
-    pub current_pitch_count: u32, // già ce l’hai per pitcher pitches
-    pub pitch_count: PitchCount,  // NEW: balls/strikes + sequence (per PA)
-
-    // NEW: pitch count per pitcher (persistente durante la partita)
-    pub pitcher_pitch_counts: HashMap<i64, u32>,
+    pub pitch_count: PitchCount,
+    pub pitcher_stats: HashMap<i64, PitchStats>,
 
     // NEW: cursore per prossimo battitore (resume-safe)
     pub away_next_batting_order: u8, // 1..=9
@@ -94,21 +102,24 @@ impl GameState {
             current_batter_jersey_no: None,
             current_batter_first_name: None,
             current_batter_last_name: None,
+            current_batter_order: None,
+            current_batter_position: None,
 
             current_pitcher_id: None,
             current_pitcher_jersey_no: None,
             current_pitcher_first_name: None,
             current_pitcher_last_name: None,
 
-            pitcher_pitch_counts: HashMap::new(),
-            current_pitch_count: 0,
             pitch_count: PitchCount {
                 balls: 0,
                 strikes: 0,
                 sequence: vec![],
             },
+            pitcher_stats: HashMap::new(),
+
             away_next_batting_order: 1,
             home_next_batting_order: 1,
+
             on_1b: false,
             on_2b: false,
             on_3b: false,
@@ -147,9 +158,9 @@ impl fmt::Display for OutcomeSymbol {
             OutcomeSymbol::Strikeout => "K",
             OutcomeSymbol::InPlay => "In Play",
             OutcomeSymbol::Out => "Out",
-            OutcomeSymbol::Single => "1B",
-            OutcomeSymbol::Double => "2B",
-            OutcomeSymbol::Triple => "3B",
+            OutcomeSymbol::Single => "H",
+            OutcomeSymbol::Double => "2H",
+            OutcomeSymbol::Triple => "3H",
             OutcomeSymbol::HomeRun => "HR",
         };
         write!(f, "{}", symbol)

@@ -61,6 +61,7 @@ pub enum GameMenuChoice {
     ListGames,
     EditGame,
     PlayBall,
+    Utilities,
     Back,
 }
 
@@ -116,6 +117,7 @@ impl Menu {
             println!("  2. 📋 List Games");
             println!("  3. ✏️  Edit Game");
             println!("  4. ⚾ Play Ball!");
+            println!("  5. 🧰 Utilities");
             println!();
             println!("  0. 🔙 Back to Main Menu");
             println!();
@@ -128,6 +130,7 @@ impl Menu {
                 2 => return GameMenuChoice::ListGames,
                 3 => return GameMenuChoice::EditGame,
                 4 => return GameMenuChoice::PlayBall,
+                5 => return GameMenuChoice::Utilities,
                 0 => return GameMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");

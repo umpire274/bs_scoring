@@ -5,9 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] - 2026-03-11
+
+### Added
+
+- Added `batter_order` field to the `plate_appearances` table.
+- Introduced `type BatterOrder = String` to support flexible batting order representations (future DH support).
+- New utility: **Game Management → Utilities → Refactor Batter Order** to rebuild batting order for existing games.
+
+### Changed
+
+- Renamed database table `plate_appearances_compact` → `plate_appearances`.
+- Refactored engine to use `BatterOrder` instead of numeric batting order types.
+- Replay log now displays `batter_order` instead of internal sequence (`seq`).
+
+### UI Improvements
+
+- **Scoreboard layout improved**
+    - Batter line now shows batting order and field position:
+      ```
+      <order>. <firstname> <lastname> (#<jersey> <position>)
+      ```
+    - Pitcher statistics aligned on the right side:
+      ```
+      (P <total_pitches>: <strikes>-<balls>)
+      ```
+    - Improved alignment and spacing of player information.
+
+- **Replay log visualization redesigned**
+    - Replay output now grouped by half-inning.
+    - Batting order is displayed instead of internal PA sequence numbers.
+    - Outs are shown only when they change, improving readability.
+    - Log layout optimized for better scanning during replay.
+
+### Fixed
+
+- Fixed SQL syntax error in `append_plate_appearance()` INSERT statement.
+- Fixed edge cases during game resume where batter information could be missing.
+- Fixed pitch counting inconsistencies for hits (`H`, `2H`, `HR`) during replay reconstruction.
+
+### Internal
+
+- Introduced `plate_appearances` as the main persisted PA structure.
+- Updated multiple modules (`engine`, `db`, `reducer`) to support the new `batter_order` model.
+
+---
+
 ## [0.7.4] — 2026-03-10
 
 ### Added
+
 - Added `pitch` field to players (`LHP`, `RHP`, `SHP`) to record pitching hand.
 - Added `bat` field to players (`L`, `R`, `S`) to record batting side.
 - Support for `pitch` and `bat` in:
@@ -21,16 +68,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hit zones are persisted in the database and used during replay reconstruction.
 
 ### Improved
+
 - Refactored CLI enum selection using reusable helpers.
 - Simplified CLI logic for selecting enum values.
 - Improved roster display to include pitching and batting handedness.
 
 ### Database
+
 - Updated `players` table schema to include:
     - `pitch`
     - `bat`
 
 ### Internal
+
 - Added `models/field_zone.rs`.
 - Improved replay formatting compatibility for legacy pitch sequences.
 - Minor CLI and formatting improvements.
