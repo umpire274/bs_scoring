@@ -1,6 +1,8 @@
+use crate::engine::play_ball::{bump_order, bump_order_str};
 use crate::models::events::DomainEvent;
 use crate::models::types::HalfInning;
 use rusqlite::{Connection, params};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct GameEventRow {
@@ -109,4 +111,148 @@ pub fn get_lineup_batter_by_order(
         rusqlite::params![game_id_str, team_id, batting_order],
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )
+}
+
+pub fn refactor_batter_order(conn: &mut Connection) -> rusqlite::Result<()> {
+    let tx = conn.transaction()?;
+
+    // 1) prendo l'elenco delle partite
+    let game_ids: Vec<i64> = {
+        let mut stmt_games = tx.prepare(
+            r#"
+            SELECT DISTINCT game_id
+            FROM plate_appearances
+            ORDER BY game_id
+            "#,
+        )?;
+
+        stmt_games
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+
+    // statement UPDATE preparato una sola volta
+    let mut stmt_update = tx.prepare(
+        r#"
+        UPDATE plate_appearances
+        SET batter_order = ?1
+        WHERE id = ?2
+        "#,
+    )?;
+
+    for game_pk in game_ids {
+        // 2) ricavo home/away team della partita
+        let (away_team_id, home_team_id): (i64, i64) = {
+            let mut stmt_game = tx.prepare(
+                r#"
+                SELECT away_team_id, home_team_id
+                FROM games
+                WHERE id = ?1
+                LIMIT 1
+                "#,
+            )?;
+
+            stmt_game.query_row([game_pk], |row| Ok((row.get(0)?, row.get(1)?)))?
+        };
+
+        // 3) costruisco mappa player_id -> batter_order per ciascun team
+        let (away_orders, home_orders): (HashMap<i64, String>, HashMap<i64, String>) = {
+            let mut stmt_lineup = tx.prepare(
+                r#"
+                SELECT team_id, player_id, batting_order
+                FROM game_lineups
+                WHERE game_id = ?1
+                  AND is_starting = 1
+                ORDER BY team_id, batting_order
+                "#,
+            )?;
+
+            let mut away = HashMap::new();
+            let mut home = HashMap::new();
+
+            let rows = stmt_lineup.query_map([game_pk], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?, // team_id
+                    row.get::<_, i64>(1)?, // player_id
+                    row.get::<_, i64>(2)?, // batting_order
+                ))
+            })?;
+
+            for row in rows {
+                let (team_id, player_id, batting_order) = row?;
+                let order_str = batting_order.to_string();
+
+                if team_id == away_team_id {
+                    away.insert(player_id, order_str);
+                } else if team_id == home_team_id {
+                    home.insert(player_id, order_str);
+                }
+            }
+
+            (away, home)
+        };
+
+        // 4) cursori fallback sequenziali per half-inning
+        let mut away_next: u8 = 1;
+        let mut home_next: u8 = 1;
+
+        // 5) itero tutte le PA in ordine cronologico
+        let pa_rows: Vec<(i64, String, i64, String)> = {
+            let mut stmt_pa = tx.prepare(
+                r#"
+                SELECT id, half_inning, batter_id, COALESCE(batter_order, '')
+                FROM plate_appearances
+                WHERE game_id = ?1
+                ORDER BY seq
+                "#,
+            )?;
+
+            stmt_pa
+                .query_map([game_pk], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,    // id
+                        row.get::<_, String>(1)?, // half_inning
+                        row.get::<_, i64>(2)?,    // batter_id
+                        row.get::<_, String>(3)?, // batter_order
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
+        for (pa_id, half_inning, batter_id, current_batter_order) in pa_rows {
+            // se già valorizzato, lo lascio stare
+            if !current_batter_order.trim().is_empty() {
+                continue;
+            }
+
+            let is_top = half_inning.eq_ignore_ascii_case("Top");
+
+            let resolved_order = if is_top {
+                // 1) provo a risolvere dal lineup
+                if let Some(order) = away_orders.get(&batter_id) {
+                    // allineo comunque il cursore fallback
+                    away_next = bump_order_str(order);
+                    order.clone()
+                } else {
+                    // 2) fallback sequenziale
+                    let order = away_next.to_string();
+                    away_next = bump_order(away_next);
+                    order
+                }
+            } else if let Some(order) = home_orders.get(&batter_id) {
+                home_next = bump_order_str(order);
+                order.clone()
+            } else {
+                let order = home_next.to_string();
+                home_next = bump_order(home_next);
+                order
+            };
+
+            stmt_update.execute(params![resolved_order, pa_id])?;
+        }
+    }
+
+    drop(stmt_update);
+    tx.commit()?;
+    Ok(())
 }

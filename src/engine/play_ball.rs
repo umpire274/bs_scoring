@@ -1,4 +1,3 @@
-use crate::HalfInning;
 use crate::commands::engine_parser::parse_engine_commands;
 use crate::commands::types::EngineCommand;
 use crate::core::play_ball::set_game_status;
@@ -10,14 +9,15 @@ use crate::db::at_bat_draft::{
     AtBatDraftRow, clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft,
 };
 use crate::db::game_events::{GameEventRow, append_game_event, list_game_events};
-use crate::db::plate_appearances_compact::{
+use crate::db::plate_appearances::{
     PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
 };
 use crate::models::events::{DomainEvent, SideChangeData};
 use crate::models::plate_appearance::PlateAppearanceStep;
-use crate::models::play_ball::GameState;
+use crate::models::play_ball::{BatterOrder, GameState};
 use crate::ui::Ui;
 use crate::ui::events::UiEvent;
+use crate::{HalfInning, Pitch, Position};
 use rusqlite::{Connection, params};
 
 pub enum EngineExit {
@@ -144,7 +144,7 @@ pub fn run_play_ball_engine(
                 ui.set_state(&state);
 
                 // 2) Determine away leadoff batter (batting_order=1)
-                let (batter_id, team_abbrv, jersey_no, first, last) =
+                let (batter_id, team_abbrv, jersey_no, first, last, batter_order, batter_position) =
                     match get_batter_by_order(conn, game_id, away_team_id, 1) {
                         Ok(v) => v,
                         Err(e) => {
@@ -178,6 +178,8 @@ pub fn run_play_ball_engine(
                     batter_jersey_no: jersey_no,
                     batter_first_name: first,
                     batter_last_name: last,
+                    batter_order,
+                    batter_position,
 
                     pitcher_id,
                     pitcher_jersey_no: pitcher_no,
@@ -282,59 +284,77 @@ pub fn run_play_ball_engine(
 
             if should_start_next_at_bat {
                 if pa_applied_live {
-                    let pa = match &result.plate_appearance {
-                        Some(pa) => pa,
-                        None => {
-                            ui.emit(UiEvent::Error(
-                                "Internal error: live PA was applied but no plate appearance is available."
-                                    .to_string(),
-                            ));
-                            ui.set_state(&state);
-                            continue;
+                    let inning_ended = state.outs >= 3;
+
+                    if inning_ended
+                        && !handle_three_outs_and_change_side(conn, ui, game_pk, &mut state)
+                    {
+                        ui.emit(UiEvent::Error(
+                            "Failed to change side after 3 outs.".to_string(),
+                        ));
+                        ui.set_state(&state);
+                        continue;
+                    }
+
+                    let (batting_team_id, fielding_team_id, next_order) = match state.half {
+                        HalfInning::Top => {
+                            (away_team_id, home_team_id, state.away_next_batting_order)
+                        }
+                        HalfInning::Bottom => {
+                            (home_team_id, away_team_id, state.home_next_batting_order)
                         }
                     };
 
-                    let batting_team_id = match state.half {
-                        HalfInning::Top => away_team_id,
-                        HalfInning::Bottom => home_team_id,
-                    };
+                    let next_order = if inning_ended {
+                        next_order
+                    } else {
+                        let pa = match &result.plate_appearance {
+                            Some(pa) => pa,
+                            None => {
+                                ui.emit(UiEvent::Error(
+                                    "Internal error: live PA was applied but no plate appearance is available."
+                                        .to_string(),
+                                ));
+                                ui.set_state(&state);
+                                continue;
+                            }
+                        };
 
-                    let fielding_team_id = match state.half {
-                        HalfInning::Top => home_team_id,
-                        HalfInning::Bottom => away_team_id,
-                    };
+                        let completed_batter_id = pa.batter_id;
 
-                    let completed_batter_id = pa.batter_id;
-
-                    let completed_order = match find_order_for_batter(
-                        conn,
-                        game_id,
-                        batting_team_id,
-                        completed_batter_id,
-                    ) {
-                        Some(order) => order,
-                        None => {
-                            ui.emit(UiEvent::Error(format!(
+                        let completed_order = match find_order_for_batter(
+                            conn,
+                            game_id,
+                            batting_team_id,
+                            completed_batter_id,
+                        ) {
+                            Some(order) => order,
+                            None => {
+                                ui.emit(UiEvent::Error(format!(
                                     "Failed to start next at-bat: cannot resolve batting order for batter_id={completed_batter_id}."
                                 )));
-                            ui.set_state(&state);
-                            continue;
-                        }
+                                ui.set_state(&state);
+                                continue;
+                            }
+                        };
+
+                        bump_order(completed_order)
                     };
 
-                    let next_order = bump_order(completed_order);
-
-                    let (batter_id, team_abbrv, jersey_no, first, last) = match get_batter_by_order(
-                        conn,
-                        game_id,
-                        batting_team_id,
-                        next_order,
-                    ) {
+                    let (
+                        batter_id,
+                        team_abbrv,
+                        jersey_no,
+                        first,
+                        last,
+                        batter_order,
+                        batter_position,
+                    ) = match get_batter_by_order(conn, game_id, batting_team_id, next_order) {
                         Ok(v) => v,
                         Err(e) => {
                             ui.emit(UiEvent::Error(format!(
-                                    "Failed to start next at-bat: missing lineup batter #{next_order} ({e})"
-                                )));
+                                "Failed to start next at-bat: missing lineup batter #{next_order} ({e})"
+                            )));
                             ui.set_state(&state);
                             continue;
                         }
@@ -366,6 +386,8 @@ pub fn run_play_ball_engine(
                         batter_jersey_no: jersey_no,
                         batter_first_name: first,
                         batter_last_name: last,
+                        batter_order,
+                        batter_position,
 
                         pitcher_id,
                         pitcher_jersey_no: pitcher_no,
@@ -385,6 +407,13 @@ pub fn run_play_ball_engine(
                         state.current_pitcher_id,
                         &state.pitch_count,
                     );
+
+                    match state.half {
+                        HalfInning::Top => state.away_next_batting_order = bump_order(next_order),
+                        HalfInning::Bottom => {
+                            state.home_next_batting_order = bump_order(next_order)
+                        }
+                    }
                 } else if result.plate_appearance.is_some() {
                     ui.emit(UiEvent::Error(
                         "Next at-bat was not started because the completed plate appearance could not be persisted."
@@ -458,8 +487,50 @@ fn get_player_basic(conn: &Connection, player_id: i64) -> rusqlite::Result<(i32,
     })
 }
 
-/// After resume/replay, ensure `GameState` contains the batter/pitcher display fields
-/// used by the TUI scoreboard (jersey + names).
+fn get_batter_order_and_position(
+    conn: &Connection,
+    game_id: &str,
+    team_id: i64,
+    batter_id: i64,
+) -> rusqlite::Result<(BatterOrder, Position)> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT gl.batting_order, gl.defensive_position
+        FROM game_lineups gl
+        WHERE gl.game_id = ?1
+          AND gl.team_id = ?2
+          AND gl.player_id = ?3
+          AND gl.is_starting = 1
+        LIMIT 1
+        "#,
+    )?;
+
+    stmt.query_row(params![game_id, team_id, batter_id], |row| {
+        let order_i64: i64 = row.get(0)?;
+        let order: BatterOrder = order_i64.to_string();
+
+        let position_raw: String = row.get(1)?;
+
+        let position_num: u8 = position_raw.parse().map_err(|_| {
+            rusqlite::Error::FromSqlConversionFailure(
+                1,
+                rusqlite::types::Type::Text,
+                format!("Invalid defensive_position value: {}", position_raw).into(),
+            )
+        })?;
+
+        let position = Position::from_number(position_num).ok_or_else(|| {
+            rusqlite::Error::FromSqlConversionFailure(
+                1,
+                rusqlite::types::Type::Text,
+                format!("Invalid defensive_position value: {}", position_raw).into(),
+            )
+        })?;
+
+        Ok((order, position))
+    })
+}
+
 fn hydrate_current_matchup(
     conn: &Connection,
     game_id: &str,
@@ -467,30 +538,36 @@ fn hydrate_current_matchup(
     away_team_id: i64,
     home_team_id: i64,
 ) -> rusqlite::Result<()> {
-    // Determine batting/fielding teams based on current half.
     let (batting_team_id, fielding_team_id, next_order) = match state.half {
         HalfInning::Top => (away_team_id, home_team_id, state.away_next_batting_order),
         HalfInning::Bottom => (home_team_id, away_team_id, state.home_next_batting_order),
     };
 
-    // Batter: hydrate by id if present (draft), otherwise from batting order cursor.
     if let Some(bid) = state.current_batter_id {
         if let Ok((num, first, last)) = get_player_basic(conn, bid) {
             state.current_batter_jersey_no = Some(num);
             state.current_batter_first_name = Some(first);
             state.current_batter_last_name = Some(last);
         }
+
+        if let Ok((order, position)) =
+            get_batter_order_and_position(conn, game_id, batting_team_id, bid)
+        {
+            state.current_batter_order = Some(order);
+            state.current_batter_position = Some(position);
+        }
     } else if (1..=9).contains(&next_order)
-        && let Ok((batter_id, _abbr, jersey_no, first, last)) =
+        && let Ok((batter_id, _abbr, jersey_no, first, last, batter_order, batter_position)) =
             get_batter_by_order(conn, game_id, batting_team_id, next_order)
     {
         state.current_batter_id = Some(batter_id);
         state.current_batter_jersey_no = Some(jersey_no);
         state.current_batter_first_name = Some(first);
         state.current_batter_last_name = Some(last);
+        state.current_batter_order = Some(batter_order);
+        state.current_batter_position = Some(batter_position);
     }
 
-    // Pitcher: hydrate by id if present (replay/draft), otherwise from starting pitcher.
     if let Some(pid) = state.current_pitcher_id {
         if let Ok((num, first, last)) = get_player_basic(conn, pid) {
             state.current_pitcher_jersey_no = Some(num);
@@ -537,10 +614,17 @@ fn get_batter_by_order(
     game_id: &str,
     team_id: i64,
     batting_order: u8,
-) -> rusqlite::Result<(i64, String, i32, String, String)> {
+) -> rusqlite::Result<(i64, String, i32, String, String, BatterOrder, Position)> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT p.id, t.abbreviation, p.number, p.first_name, p.last_name
+        SELECT
+            p.id,
+            t.abbreviation,
+            p.number,
+            p.first_name,
+            p.last_name,
+            gl.batting_order,
+            gl.defensive_position
         FROM game_lineups gl
         JOIN players p ON gl.player_id = p.id
         JOIN teams t ON gl.team_id = t.id
@@ -553,12 +637,31 @@ fn get_batter_by_order(
     )?;
 
     stmt.query_row(params![game_id, team_id, batting_order as i64], |row| {
+        let position_raw: String = row.get(6)?;
+        let position_num: u8 = position_raw.parse().map_err(|_| {
+            rusqlite::Error::FromSqlConversionFailure(
+                6,
+                rusqlite::types::Type::Text,
+                format!("Invalid defensive_position value: {}", position_raw).into(),
+            )
+        })?;
+
+        let position = Position::from_number(position_num).ok_or_else(|| {
+            rusqlite::Error::FromSqlConversionFailure(
+                6,
+                rusqlite::types::Type::Text,
+                format!("Invalid defensive_position value: {}", position_raw).into(),
+            )
+        })?;
+
         Ok((
             row.get(0)?,
             row.get(1)?,
             row.get(2)?,
             row.get(3)?,
             row.get(4)?,
+            row.get::<_, i64>(5)?.to_string(),
+            position,
         ))
     })
 }
@@ -571,7 +674,7 @@ fn find_order_for_batter(
 ) -> Option<u8> {
     for order in 1..=9 {
         match get_batter_by_order(conn, game_id, batting_team_id, order) {
-            Ok((bid, _, _, _, _)) if bid == batter_id => {
+            Ok((bid, _, _, _, _, _, _)) if bid == batter_id => {
                 return Some(order);
             }
             _ => continue,
@@ -583,6 +686,13 @@ fn find_order_for_batter(
 
 pub fn bump_order(x: u8) -> u8 {
     if x >= 9 { 1 } else { x + 1 }
+}
+
+pub fn bump_order_str(order: &str) -> u8 {
+    match order.parse::<u8>() {
+        Ok(n) if (1..=9).contains(&n) => bump_order(n),
+        _ => 1,
+    }
 }
 
 fn start_next_at_bat(
@@ -606,7 +716,7 @@ fn start_next_at_bat(
     };
 
     // 3) Get next batter (by batting order cursor)
-    let (batter_id, team_abbrv, jersey_no, first, last) =
+    let (batter_id, team_abbrv, jersey_no, first, last, batter_order, batter_position) =
         match get_batter_by_order(conn, game_id, batting_team_id, next_order) {
             Ok(v) => v,
             Err(e) => {
@@ -640,6 +750,8 @@ fn start_next_at_bat(
         batter_jersey_no: jersey_no,
         batter_first_name: first,
         batter_last_name: last,
+        batter_order,
+        batter_position,
 
         pitcher_id,
         pitcher_jersey_no: pitcher_no,
@@ -717,6 +829,43 @@ fn handle_three_outs_and_change_side(
     true
 }
 
+fn replay_batter_label(pa: &PlateAppearanceRow) -> String {
+    if pa.batter_order.trim().is_empty() {
+        "?".to_string()
+    } else {
+        pa.batter_order.clone()
+    }
+}
+
+fn format_replay_prefix(
+    inning: i64,
+    half_inning: &str,
+    outs: i64,
+    batter_label: &str,
+    show_half: bool,
+    show_outs: bool,
+) -> String {
+    let half_part = if show_half {
+        format!("{}{}", inning, half_symbol(half_inning))
+    } else {
+        "  ".to_string()
+    };
+
+    let outs_part = if show_outs {
+        outs_label(outs)
+    } else {
+        String::new()
+    };
+
+    // colonne fisse:
+    // - half_part: 3
+    // - outs_part: 6
+    // - batter_label: 3
+    //format!("{:<3} {:<6} {:>3}", half_part, outs_part, batter_label)
+    //format!("{:<3} {:<6} {:>2}", half_part, outs_part, batter_label)
+    format!("{:<4} {:<7} {:>2}", half_part, outs_part, batter_label)
+}
+
 fn half_symbol(half: &str) -> char {
     match half {
         "Top" | "top" => '↑',
@@ -742,9 +891,9 @@ fn outcome_symbol_from_row(pa: &PlateAppearanceRow) -> String {
         "strikeout" | "k" => "K".to_string(),
         "in_play" | "inplay" => "IP".to_string(),
         "out" => "OUT".to_string(),
-        "single" | "1b" => "1B".to_string(),
-        "double" | "2b" => "2B".to_string(),
-        "triple" | "3b" => "3B".to_string(),
+        "single" | "h" => "H".to_string(),
+        "double" | "2h" => "2H".to_string(),
+        "triple" | "3h" => "3H".to_string(),
         "home_run" | "hr" => "HR".to_string(),
         _ => "OUT".to_string(),
     };
@@ -776,7 +925,7 @@ pub(crate) fn parse_pa_sequence(json: &str) -> Vec<PlateAppearanceStep> {
         return seq;
     }
 
-    if let Ok(old_seq) = serde_json::from_str::<Vec<crate::Pitch>>(json) {
+    if let Ok(old_seq) = serde_json::from_str::<Vec<Pitch>>(json) {
         return old_seq
             .into_iter()
             .map(PlateAppearanceStep::Pitch)
@@ -819,6 +968,10 @@ fn replay_plate_appearances_and_log(
     state: &mut GameState,
     pas: &[PlateAppearanceRow],
 ) {
+    let mut last_inning: Option<i64> = None;
+    let mut last_half: Option<String> = None;
+    let mut last_outs: Option<i64> = None;
+
     for pa in pas {
         // snapshot stato prima della PA
         let state_before = state.clone();
@@ -826,32 +979,57 @@ fn replay_plate_appearances_and_log(
         // applica PA (ricostruisce lo stato)
         apply_plate_appearance_row(state, pa);
 
-        // ricostruzione sequenza (supports both legacy ["CalledStrike", ...]
-        // and new-format [{"Pitch":"Ball"}, "Single"] JSON payloads)
+        // ricostruzione sequenza
         let seq = parse_pa_sequence(&pa.pitches_sequence);
-
         let seq_text = format_pitch_sequence(&seq);
         let outcome_sym = outcome_symbol_from_row(pa);
 
         // calcolo punti segnati
         let runs = runs_scored_from_pa(&state_before, pa);
-
         let run_text = if runs > 0 {
             format!(" (+{})", runs)
         } else {
             String::new()
         };
 
-        ui.emit(UiEvent::Line(format!(
-            "#{:>3} {}{} {} out {} -> {}{}",
-            pa.seq,
+        // label battitore (temporanea: poi la sostituiremo col vero batting_order string)
+        let batter_label = replay_batter_label(pa);
+
+        // mostro inning/half solo al primo PA del half inning
+        let show_half = match (&last_inning, &last_half) {
+            (Some(prev_inning), Some(prev_half)) => {
+                *prev_inning != pa.inning || prev_half != &pa.half_inning
+            }
+            _ => true,
+        };
+
+        // mostro outs solo quando cambiano, oppure quando cambia half inning
+        let show_outs = if show_half {
+            true
+        } else {
+            match last_outs {
+                Some(prev_outs) => prev_outs != pa.outs,
+                None => true,
+            }
+        };
+
+        let prefix = format_replay_prefix(
             pa.inning,
-            half_symbol(&pa.half_inning),
-            outs_label(pa.outs),
-            seq_text,
-            outcome_sym,
-            run_text
+            &pa.half_inning,
+            pa.outs,
+            &batter_label,
+            show_half,
+            show_outs,
+        );
+
+        ui.emit(UiEvent::Line(format!(
+            "{} -> {} -> {}{}",
+            prefix, seq_text, outcome_sym, run_text
         )));
+
+        last_inning = Some(pa.inning);
+        last_half = Some(pa.half_inning.clone());
+        last_outs = Some(pa.outs);
     }
 }
 
@@ -893,15 +1071,28 @@ fn load_and_apply_draft(
     }
 
     state.current_batter_id = draft.batter_id;
+    state.current_batter_jersey_no = None;
+    state.current_batter_first_name = None;
+    state.current_batter_last_name = None;
+    state.current_batter_order = None;
+    state.current_batter_position = None;
+
     state.current_pitcher_id = draft.pitcher_id;
+    state.current_pitcher_jersey_no = None;
+    state.current_pitcher_first_name = None;
+    state.current_pitcher_last_name = None;
+
     state.pitch_count = pc;
 
+    // Ricostruzione statistiche pitcher dal draft
     if let Some(pid) = state.current_pitcher_id {
-        let n = state.pitch_count.sequence.len() as u32;
-        if n > 0 {
-            let entry = state.pitcher_pitch_counts.entry(pid).or_insert(0);
-            *entry = entry.saturating_add(n);
-            state.current_pitch_count = *entry;
+        let stats = state.pitcher_stats.entry(pid).or_default();
+
+        for pitch in &state.pitch_count.sequence {
+            match pitch {
+                Pitch::Ball => stats.balls += 1,
+                _ => stats.strikes += 1,
+            }
         }
     }
 

@@ -47,7 +47,7 @@ fn parse_one(raw: &str) -> EngineCommand {
         "fl" => EngineCommand::Pitch(Pitch::FoulBunt),
 
         // ---- Hit commands (0.7.4) ----
-        "1b" => {
+        "h" => {
             let zone = match arg {
                 Some(z) => match FieldZone::parse(z) {
                     Some(zone) => Some(zone),
@@ -57,7 +57,7 @@ fn parse_one(raw: &str) -> EngineCommand {
             };
             EngineCommand::Single { zone }
         }
-        "2b" => {
+        "2h" => {
             let zone = match arg {
                 Some(z) => match FieldZone::parse(z) {
                     Some(zone) => Some(zone),
@@ -67,7 +67,7 @@ fn parse_one(raw: &str) -> EngineCommand {
             };
             EngineCommand::Double { zone }
         }
-        "3b" => {
+        "3h" => {
             let zone = match arg {
                 Some(z) => match FieldZone::parse(z) {
                     Some(zone) => Some(zone),

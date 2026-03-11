@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 12;
+pub const CURRENT_SCHEMA_VERSION: i64 = 14;
 
 /// Migration structure
 pub struct Migration {
@@ -72,8 +72,13 @@ pub fn get_migrations() -> Vec<Migration> {
         },
         Migration {
             version: 12,
-            description: "Placeholder for future migration",
+            description: "Add 'pitch' and 'bat' columns to players table for handedness information",
             up: migration_v12,
+        },
+        Migration {
+            version: 14,
+            description: "Restructure plate_appearances_compact into plate_appearances with batter_order and improved indexing",
+            up: migration_v14,
         },
     ]
 }
@@ -706,6 +711,70 @@ fn migration_v12(conn: &Connection) -> Result<()> {
     if !check_column_exists(conn, "players", "bat")? {
         conn.execute(
             "ALTER TABLE players ADD COLUMN bat TEXT CHECK(bat IN ('L', 'R', 'S'))",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn migration_v14(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "
+        BEGIN IMMEDIATE;
+
+        CREATE TABLE plate_appearances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            seq INTEGER NOT NULL,
+            inning INTEGER NOT NULL,
+            half_inning TEXT NOT NULL CHECK(half_inning IN ('Top', 'Bottom')),
+            batter_id INTEGER NOT NULL,
+            batter_order TEXT NOT NULL DEFAULT '',
+            pitcher_id INTEGER NOT NULL,
+            pitches INTEGER NOT NULL DEFAULT 0,
+            pitches_sequence TEXT NOT NULL DEFAULT '[]',
+            outcome_type TEXT NOT NULL,
+            outcome_data TEXT,
+            outs INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (batter_id) REFERENCES players(id),
+            FOREIGN KEY (pitcher_id) REFERENCES players(id)
+        );
+
+        INSERT INTO plate_appearances
+        SELECT
+            id,
+            game_id,
+            seq,
+            inning,
+            half_inning,
+            batter_id,
+            '',
+            pitcher_id,
+            pitches,
+            pitches_sequence,
+            outcome_type,
+            outcome_data,
+            outs,
+            created_at
+        FROM plate_appearances_compact;
+
+        DROP TABLE plate_appearances_compact;
+
+        CREATE INDEX IF NOT EXISTS idx_pa_compact_game_seq
+            ON plate_appearances(game_id, seq);
+        CREATE INDEX IF NOT EXISTS idx_pa_batter
+            ON plate_appearances(game_id, seq, inning, half_inning, batter_id, batter_order);
+
+        COMMIT;
+        ",
+    )?;
+
+    if !check_column_exists(conn, "runner_movements", "batter_order")? {
+        conn.execute(
+            "ALTER TABLE runner_movements ADD COLUMN batter_order TEXT NOT NULL DEFAULT ''",
             [],
         )?;
     }

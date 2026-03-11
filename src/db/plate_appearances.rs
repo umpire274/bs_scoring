@@ -1,6 +1,7 @@
 use rusqlite::{Connection, Result, params};
 
 use crate::models::plate_appearance::{HitOutcomeData, PlateAppearance};
+use crate::models::play_ball::BatterOrder;
 
 #[derive(Debug, Clone)]
 pub struct PlateAppearanceRow {
@@ -10,6 +11,7 @@ pub struct PlateAppearanceRow {
     pub inning: i64,
     pub half_inning: String,
     pub batter_id: i64,
+    pub batter_order: BatterOrder,
     pub pitcher_id: i64,
     pub pitches: i64,
     pub pitches_sequence: String,
@@ -55,7 +57,7 @@ pub fn append_plate_appearance(
 
     // per-game sequence
     let seq: i64 = conn.query_row(
-        "SELECT COALESCE(MAX(seq), 0) + 1 FROM plate_appearances_compact WHERE game_id = ?1",
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM plate_appearances WHERE game_id = ?1",
         params![game_pk],
         |r| r.get(0),
     )?;
@@ -65,14 +67,13 @@ pub fn append_plate_appearance(
 
     conn.execute(
         r#"
-        INSERT INTO plate_appearances_compact (
+        INSERT INTO plate_appearances (
             game_id, seq, inning, half_inning,
-            batter_id, pitcher_id,
-            pitches,
-            pitches_sequence,
+            batter_id, batter_order,
+            pitcher_id, pitches, pitches_sequence,
             outcome_type, outcome_data,
             outs
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
         "#,
         params![
             game_pk,
@@ -83,6 +84,7 @@ pub fn append_plate_appearance(
                 crate::models::types::HalfInning::Bottom => "Bottom",
             },
             pa.batter_id,
+            pa.batter_order,
             pa.pitcher_id,
             pa.pitches as i64,
             pitches_sequence,
@@ -99,10 +101,11 @@ pub fn list_plate_appearances(conn: &Connection, game_pk: i64) -> Result<Vec<Pla
     let mut stmt = conn.prepare(
         r#"
         SELECT id, game_id, seq, inning, half_inning,
-               batter_id, pitcher_id, pitches, pitches_sequence,
+               batter_id, batter_order,
+               pitcher_id, pitches, pitches_sequence,
                outcome_type, outcome_data,
                outs
-        FROM plate_appearances_compact
+        FROM plate_appearances
         WHERE game_id = ?1
         ORDER BY seq ASC
         "#,
@@ -118,12 +121,13 @@ pub fn list_plate_appearances(conn: &Connection, game_pk: i64) -> Result<Vec<Pla
             inning: r.get(3)?,
             half_inning: r.get(4)?,
             batter_id: r.get(5)?,
-            pitcher_id: r.get(6)?,
-            pitches: r.get(7)?,
-            pitches_sequence: r.get(8)?,
-            outcome_type: r.get(9)?,
-            outcome_data: r.get(10)?,
-            outs: r.get(11)?,
+            batter_order: r.get(6)?,
+            pitcher_id: r.get(7)?,
+            pitches: r.get(8)?,
+            pitches_sequence: r.get(9)?,
+            outcome_type: r.get(10)?,
+            outcome_data: r.get(11)?,
+            outs: r.get(12)?,
         });
     }
     Ok(out)

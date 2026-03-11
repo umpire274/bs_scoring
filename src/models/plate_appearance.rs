@@ -1,4 +1,5 @@
 use crate::models::field_zone::FieldZone;
+use crate::models::play_ball::BatterOrder;
 use crate::models::types::{HalfInning, Pitch};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -11,6 +12,7 @@ pub struct PlateAppearance {
     pub inning: u32,
     pub half: HalfInning,
     pub batter_id: i64,
+    pub batter_order: BatterOrder,
     pub pitcher_id: i64,
     /// Total pitches thrown in this PA.
     pub pitches: u32,
@@ -27,16 +29,22 @@ pub enum PlateAppearanceStep {
     Double,
     Triple,
     HomeRun,
+    Walk,
+    Strikeout,
+    Out,
 }
 
 impl fmt::Display for PlateAppearanceStep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PlateAppearanceStep::Pitch(p) => write!(f, "{p}"),
-            PlateAppearanceStep::Single => write!(f, "1B"),
-            PlateAppearanceStep::Double => write!(f, "2B"),
-            PlateAppearanceStep::Triple => write!(f, "3B"),
+            PlateAppearanceStep::Single => write!(f, "H"),
+            PlateAppearanceStep::Double => write!(f, "2H"),
+            PlateAppearanceStep::Triple => write!(f, "3H"),
             PlateAppearanceStep::HomeRun => write!(f, "HR"),
+            PlateAppearanceStep::Walk => write!(f, "BB"),
+            PlateAppearanceStep::Strikeout => write!(f, "K"),
+            PlateAppearanceStep::Out => write!(f, "OUT"),
         }
     }
 }

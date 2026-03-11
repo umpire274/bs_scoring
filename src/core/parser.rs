@@ -7,7 +7,7 @@ pub struct CommandParser;
 impl CommandParser {
     /// Parse a scoring command from user input
     /// Examples:
-    /// "1B" -> Single
+    /// "H" -> Single
     /// "K" -> Strikeout swinging
     /// "Kꓘ" or "KL" -> Strikeout looking
     /// "6-3" -> Groundout shortstop to first
@@ -25,7 +25,7 @@ impl CommandParser {
         let input = input.trim().to_uppercase();
 
         // Hit types
-        if input == "1B" || input == "SINGLE" {
+        if input == "H" || input == "SINGLE" {
             return Ok(PlateAppearanceResult::Hit {
                 hit_type: HitType::Single,
                 location: None,
@@ -33,7 +33,7 @@ impl CommandParser {
             });
         }
 
-        if input == "2B" || input == "DOUBLE" {
+        if input == "2H" || input == "DOUBLE" {
             return Ok(PlateAppearanceResult::Hit {
                 hit_type: HitType::Double,
                 location: None,
@@ -41,7 +41,7 @@ impl CommandParser {
             });
         }
 
-        if input == "3B" || input == "TRIPLE" {
+        if input == "3H" || input == "TRIPLE" {
             return Ok(PlateAppearanceResult::Hit {
                 hit_type: HitType::Triple,
                 location: None,
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn test_parse_hits() {
         assert!(matches!(
-            CommandParser::parse_command("1B"),
+            CommandParser::parse_command("H"),
             Ok(PlateAppearanceResult::Hit { .. })
         ));
         assert!(matches!(

@@ -145,9 +145,9 @@ impl fmt::Display for GameStatus {
 /// Type of hit
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum HitType {
-    Single,        // 1B
-    Double,        // 2B
-    Triple,        // 3B
+    Single,        // H
+    Double,        // 2H
+    Triple,        // 3H
     HomeRun,       // HR
     GroundRule,    // GRD (Ground Rule Double)
     InsideThePark, // ITP (Inside the Park Home Run)
