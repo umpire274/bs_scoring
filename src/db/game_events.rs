@@ -142,17 +142,17 @@ pub fn refactor_batter_order(conn: &mut Connection) -> rusqlite::Result<()> {
 
     for game_pk in game_ids {
         // 2) ricavo home/away team della partita
-        let (away_team_id, home_team_id): (i64, i64) = {
+        let (game_id, away_team_id, home_team_id): (String, i64, i64) = {
             let mut stmt_game = tx.prepare(
                 r#"
-                SELECT away_team_id, home_team_id
+                SELECT game_id, away_team_id, home_team_id
                 FROM games
                 WHERE id = ?1
                 LIMIT 1
                 "#,
             )?;
 
-            stmt_game.query_row([game_pk], |row| Ok((row.get(0)?, row.get(1)?)))?
+            stmt_game.query_row([game_pk], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
         };
 
         // 3) costruisco mappa player_id -> batter_order per ciascun team
@@ -170,7 +170,7 @@ pub fn refactor_batter_order(conn: &mut Connection) -> rusqlite::Result<()> {
             let mut away = HashMap::new();
             let mut home = HashMap::new();
 
-            let rows = stmt_lineup.query_map([game_pk], |row| {
+            let rows = stmt_lineup.query_map([&game_id], |row| {
                 Ok((
                     row.get::<_, i64>(0)?, // team_id
                     row.get::<_, i64>(1)?, // player_id
