@@ -298,6 +298,7 @@ fn apply_plate_appearance_core(
     pa: &crate::models::plate_appearance::PlateAppearance,
     recount_pitcher_stats_from_sequence: bool,
     add_terminal_live_pitch: bool,
+    apply_walk_base_advancement: bool,
 ) {
     // Align inning / half
     if state.inning != pa.inning || state.half != pa.half {
@@ -356,7 +357,9 @@ fn apply_plate_appearance_core(
     // Outcome effects
     match &pa.outcome {
         crate::models::plate_appearance::PlateAppearanceOutcome::Walk => {
-            apply_walk_advancement(state);
+            if apply_walk_base_advancement {
+                apply_walk_advancement(state);
+            }
         }
 
         crate::models::plate_appearance::PlateAppearanceOutcome::Strikeout(_)
@@ -407,7 +410,7 @@ pub fn apply_plate_appearance(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
 ) {
-    apply_plate_appearance_core(state, pa, true, false);
+    apply_plate_appearance_core(state, pa, true, false, true);
 }
 
 /// Live game flow:
@@ -424,7 +427,7 @@ pub fn apply_live_plate_appearance(
             | crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. }
     );
 
-    apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch);
+    apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
 }
 
 fn parse_hit_outcome_data(raw: Option<&str>) -> crate::models::plate_appearance::HitOutcomeData {
