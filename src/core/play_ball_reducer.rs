@@ -265,6 +265,7 @@ fn apply_hit_advancement(state: &mut GameState, bases: u8) {
 fn apply_plate_appearance_core(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
+    recount_pitcher_stats_from_sequence: bool,
 ) {
     // Align inning / half
     if state.inning != pa.inning || state.half != pa.half {
@@ -285,29 +286,33 @@ fn apply_plate_appearance_core(
     }
 
     // Pitcher stats update from actual pitch sequence
-    let stats = state.pitcher_stats.entry(pa.pitcher_id).or_default();
+    if recount_pitcher_stats_from_sequence {
+        let stats = state.pitcher_stats.entry(pa.pitcher_id).or_default();
 
-    for step in &pa.pitches_sequence {
-        match step {
-            PlateAppearanceStep::Pitch(Pitch::Ball) => {
-                stats.balls = stats.balls.saturating_add(1);
+        for step in &pa.pitches_sequence {
+            match step {
+                PlateAppearanceStep::Pitch(Pitch::Ball) => {
+                    stats.balls = stats.balls.saturating_add(1);
+                }
+
+                PlateAppearanceStep::Pitch(_) => {
+                    stats.strikes = stats.strikes.saturating_add(1);
+                }
+
+                PlateAppearanceStep::Single
+                | PlateAppearanceStep::Double
+                | PlateAppearanceStep::Triple
+                | PlateAppearanceStep::HomeRun => {
+                    stats.strikes = stats.strikes.saturating_add(1);
+                }
+
+                PlateAppearanceStep::Walk
+                | PlateAppearanceStep::Strikeout
+                | PlateAppearanceStep::Out => {}
             }
-
-            PlateAppearanceStep::Pitch(_) => {
-                stats.strikes = stats.strikes.saturating_add(1);
-            }
-
-            PlateAppearanceStep::Single
-            | PlateAppearanceStep::Double
-            | PlateAppearanceStep::Triple
-            | PlateAppearanceStep::HomeRun => {
-                stats.strikes = stats.strikes.saturating_add(1);
-            }
-
-            PlateAppearanceStep::Walk
-            | PlateAppearanceStep::Strikeout
-            | PlateAppearanceStep::Out => {}
         }
+    } else {
+        state.pitcher_stats.entry(pa.pitcher_id).or_default();
     }
 
     state.current_pitcher_id = Some(pa.pitcher_id);
@@ -366,7 +371,7 @@ pub fn apply_plate_appearance(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
 ) {
-    apply_plate_appearance_core(state, pa);
+    apply_plate_appearance_core(state, pa, true);
 }
 
 /// Live game flow:
@@ -375,18 +380,7 @@ pub fn apply_live_plate_appearance(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
 ) {
-    let _extra_pitches = match &pa.outcome {
-        crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. }
-        | crate::models::plate_appearance::PlateAppearanceOutcome::Double { .. }
-        | crate::models::plate_appearance::PlateAppearanceOutcome::Triple { .. }
-        | crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. } => 1,
-
-        crate::models::plate_appearance::PlateAppearanceOutcome::Walk
-        | crate::models::plate_appearance::PlateAppearanceOutcome::Strikeout(_)
-        | crate::models::plate_appearance::PlateAppearanceOutcome::Out => 0,
-    };
-
-    apply_plate_appearance_core(state, pa);
+    apply_plate_appearance_core(state, pa, false);
 }
 
 fn parse_hit_outcome_data(raw: Option<&str>) -> crate::models::plate_appearance::HitOutcomeData {
