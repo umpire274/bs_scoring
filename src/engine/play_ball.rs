@@ -670,22 +670,29 @@ fn get_batter_by_order(
     })
 }
 
+/// Returns the batting order position for a given batter in a game lineup.
+/// Uses a direct SQL lookup instead of iterating 1..=9.
 fn find_order_for_batter(
     conn: &mut Connection,
     game_id: &str,
     batting_team_id: i64,
     batter_id: i64,
 ) -> Option<u8> {
-    for order in 1..=9 {
-        match get_batter_by_order(conn, game_id, batting_team_id, order) {
-            Ok((bid, _, _, _, _, _, _)) if bid == batter_id => {
-                return Some(order);
-            }
-            _ => continue,
-        }
-    }
-
-    None
+    conn.query_row(
+        r#"
+        SELECT batting_order
+        FROM game_lineups
+        WHERE game_id = ?1
+          AND team_id = ?2
+          AND player_id = ?3
+          AND is_starting = 1
+        LIMIT 1
+        "#,
+        params![game_id, batting_team_id, batter_id],
+        |row| row.get::<_, i64>(0),
+    )
+    .ok()
+    .map(|n| n as u8)
 }
 
 pub fn bump_order(x: u8) -> u8 {

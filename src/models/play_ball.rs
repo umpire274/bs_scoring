@@ -1,5 +1,5 @@
-pub(crate) use crate::HalfInning;
-use crate::models::types::{GameStatus, Score};
+// HalfInning lives in models::types — import from there directly.
+use crate::models::types::{GameStatus, HalfInning, Score};
 use crate::{PitchCount, Position};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -7,8 +7,8 @@ use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct PlayBallGameContext {
-    pub id: i64,         // games.id (pk interno)
-    pub game_id: String, // games.game_id (string id che usi ovunque)
+    pub id: i64,
+    pub game_id: String,
     pub game_date: String,
     pub venue: String,
 
@@ -79,11 +79,11 @@ pub struct GameState {
     pub pitch_count: PitchCount,
     pub pitcher_stats: HashMap<i64, PitchStats>,
 
-    // NEW: cursore per prossimo battitore (resume-safe)
+    /// Cursor for next batter — resume-safe
     pub away_next_batting_order: u8, // 1..=9
     pub home_next_batting_order: u8, // 1..=9
 
-    // (opzionale per 0.6.7: basi)
+    /// Bases occupied (simplified boolean flags)
     pub on_1b: bool,
     pub on_2b: bool,
     pub on_3b: bool,

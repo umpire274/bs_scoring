@@ -25,7 +25,6 @@ pub enum Position {
     DesignatedHitter = 10,
 }
 
-#[allow(dead_code)]
 impl Position {
     pub fn from_number(n: u8) -> Option<Self> {
         match n {
@@ -38,6 +37,7 @@ impl Position {
             7 => Some(Position::LeftField),
             8 => Some(Position::CenterField),
             9 => Some(Position::RightField),
+            10 => Some(Position::DesignatedHitter),
             _ => None,
         }
     }
@@ -53,7 +53,7 @@ impl Position {
             "7" | "LF" => Some(Position::LeftField),
             "8" | "CF" => Some(Position::CenterField),
             "9" | "RF" => Some(Position::RightField),
-            "DH" => Some(Position::DesignatedHitter),
+            "10" | "DH" => Some(Position::DesignatedHitter),
             _ => None,
         }
     }
@@ -95,22 +95,14 @@ pub enum GameStatus {
 }
 
 impl GameStatus {
+    /// Parse from DB integer. Prefer `TryFrom<i64>` for new code.
     pub fn from_i64(n: i64) -> Option<Self> {
-        match n {
-            1 => Some(GameStatus::Pregame),
-            2 => Some(GameStatus::InProgress),
-            3 => Some(GameStatus::Regulation),
-            4 => Some(GameStatus::Postponed),
-            5 => Some(GameStatus::Cancelled),
-            6 => Some(GameStatus::Suspended),
-            7 => Some(GameStatus::Forfeited),
-            8 => Some(GameStatus::Protested),
-            _ => None,
-        }
+        Self::try_from(n).ok()
     }
 
+    /// Convert to DB integer. Prefer `i64::from(status)` for new code.
     pub fn to_i64(self) -> i64 {
-        self as i64
+        i64::from(self)
     }
 
     pub fn as_str(&self) -> &'static str {
@@ -140,6 +132,30 @@ impl GameStatus {
     }
 }
 
+impl TryFrom<i64> for GameStatus {
+    type Error = i64;
+
+    fn try_from(n: i64) -> Result<Self, Self::Error> {
+        match n {
+            1 => Ok(GameStatus::Pregame),
+            2 => Ok(GameStatus::InProgress),
+            3 => Ok(GameStatus::Regulation),
+            4 => Ok(GameStatus::Postponed),
+            5 => Ok(GameStatus::Cancelled),
+            6 => Ok(GameStatus::Suspended),
+            7 => Ok(GameStatus::Forfeited),
+            8 => Ok(GameStatus::Protested),
+            other => Err(other),
+        }
+    }
+}
+
+impl From<GameStatus> for i64 {
+    fn from(s: GameStatus) -> i64 {
+        s as i64
+    }
+}
+
 impl fmt::Display for GameStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -160,205 +176,12 @@ impl fmt::Display for GameStatus {
     }
 }
 
-/// Type of hit
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum HitType {
-    Single,        // H
-    Double,        // 2H
-    Triple,        // 3H
-    HomeRun,       // HR
-    GroundRule,    // GRD (Ground Rule Double)
-    InsideThePark, // ITP (Inside the Park Home Run)
-}
-
-/// Type of out
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum OutType {
-    Strikeout {
-        swinging: bool,
-        looking: bool,
-    }, // K (swinging), ꓘ or K-L (looking)
-    Flyout {
-        positions: Vec<Position>,
-    }, // F7, F8, etc.
-    Groundout {
-        positions: Vec<Position>,
-    }, // 6-3, 4-3, etc.
-    Lineout {
-        positions: Vec<Position>,
-    }, // L6, L9, etc.
-    Popup {
-        positions: Vec<Position>,
-    }, // P4, P5, etc.
-    Foulout {
-        positions: Vec<Position>,
-    }, // FF (foul fly)
-    Bunt {
-        positions: Vec<Position>,
-    }, // SAC (sacrifice bunt)
-    DoublePlay {
-        positions: Vec<Position>,
-    }, // 6-4-3, 4-6-3, etc.
-    TriplePlay {
-        positions: Vec<Position>,
-    },
-    Forceout {
-        positions: Vec<Position>,
-    }, // FC (fielder's choice)
-    TagOut {
-        position: Position,
-        base: Base,
-    },
-    CaughtStealing {
-        catcher_to: Position,
-        base: Base,
-    }, // CS (caught stealing)
-    PickedOff {
-        positions: Vec<Position>,
-        base: Base,
-    }, // PO (picked off)
-    IntentionalWalk, // IBB
-}
-
-/// Walks and hit by pitch
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum Walk {
-    BaseOnBalls, // BB
-    Intentional, // IBB
-    HitByPitch,  // HBP
-}
-
-/// Errors
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Error {
-    pub position: Position,
-    pub description: String, // E6, E4, etc.
-}
-
-/// Advanced plays
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum AdvancedPlay {
-    StolenBase { from: Base, to: Base },       // SB
-    Balk,                                      // BK
-    WildPitch,                                 // WP
-    PassedBall,                                // PB
-    Interference { by: String },               // INT (catcher interference, etc.)
-    Obstruction,                               // OBS
-    SacrificeHit,                              // SH (sacrifice bunt)
-    SacrificeFly { positions: Vec<Position> }, // SF
-}
-
-/// Result of a plate appearance
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum PlateAppearanceResult {
-    Hit {
-        hit_type: HitType,
-        location: Option<String>, // "7-8" (between LF and CF), etc.
-        rbis: u8,
-    },
-    Out {
-        out_type: OutType,
-        rbi: bool, // Can score on out (sac fly, groundout)
-    },
-    Walk(Walk),
-    Error {
-        error: Error,
-        reached_base: Base,
-    },
-    FieldersChoice {
-        positions: Vec<Position>,
-        out_at: Option<Base>,
-    }, // FC
-    DroppedThirdStrike, // K+E2, K+WP, K+PB
-    AdvancedPlay(AdvancedPlay),
-}
-
-/// Runners on base and their advancement
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct BaseRunner {
-    pub number: u8, // Jersey number or batting order position
-    pub starting_base: Base,
-    pub ending_base: Option<Base>, // None if out
-    pub scored: bool,
-    pub how_advanced: RunnerAdvancement,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum RunnerAdvancement {
-    OnHit,
-    StolenBase,
-    WildPitch,
-    PassedBall,
-    Balk,
-    Error(Position),
-    FieldersChoice,
-    Advance, // Advanced on play without specific reason
-    Out(OutType),
-}
-
-/// Complete plate appearance
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlateAppearance {
-    pub inning: u8,
-    pub half_inning: HalfInning,
-    pub batter_number: u8,
-    pub batter_name: String,
-    pub pitcher_name: String,
-    pub result: PlateAppearanceResult,
-    pub pitch_count: Option<PitchCount>,
-    pub runners: Vec<BaseRunner>,
-    pub outs_before: u8,
-    pub outs_after: u8,
-    pub runs_scored: u8,
-    pub notes: Option<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum HalfInning {
-    Top,    // Visiting team batting
-    Bottom, // Home team batting
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Score {
-    // Total runs scored by each team
-    pub away: u16,
-    pub home: u16,
-    // Optional: track runs scored in each inning for more detailed stats
-    pub away_innings: Vec<u16>,
-    pub home_innings: Vec<u16>,
-    // Optional: track hits and errors for more detailed stats
-    pub away_hits: u16,
-    pub home_hits: u16,
-    // Optional: track errors for more detailed stats
-    pub away_errors: u16,
-    pub home_errors: u16,
-}
-
-impl Score {
-    pub fn new() -> Self {
-        Self {
-            away: 0,
-            home: 0,
-            away_innings: Vec::new(),
-            home_innings: Vec::new(),
-            away_hits: 0,
-            home_hits: 0,
-            away_errors: 0,
-            home_errors: 0,
-        }
-    }
-}
-
 /// Pitch count details
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PitchCount {
     pub balls: u8,
     pub strikes: u8,
-    pub sequence: Vec<Pitch>, // Detailed pitch sequence
+    pub sequence: Vec<Pitch>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -387,70 +210,145 @@ impl fmt::Display for Pitch {
     }
 }
 
-/// Complete game scoresheet
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Game {
-    pub game_id: String,
-    pub date: String,
-    pub home_team: GameTeam,
-    pub away_team: GameTeam,
-    pub venue: String,
-    pub plate_appearances: Vec<PlateAppearance>,
-    pub current_inning: u8,
-    pub current_half: HalfInning,
+/// Half inning (Top = visiting team bats, Bottom = home team bats)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum HalfInning {
+    Top,    // Visiting team batting
+    Bottom, // Home team batting
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GameTeam {
-    pub name: String,
-    pub lineup: Vec<GamePlayer>,
-    pub runs: u8,
-    pub hits: u8,
-    pub errors: u8,
+/// Score tracking for a game
+#[derive(Debug, Clone, Default)]
+pub struct Score {
+    pub away: u16,
+    pub home: u16,
+    pub away_innings: Vec<u16>,
+    pub home_innings: Vec<u16>,
+    pub away_hits: u16,
+    pub home_hits: u16,
+    pub away_errors: u16,
+    pub home_errors: u16,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GamePlayer {
-    pub number: u8,
-    pub name: String,
+impl Score {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+// ─── Legacy types used only by CommandParser ────────────────────────────────
+// These types support the full scoring notation parser (core/parser.rs).
+// They are not yet wired to the live engine but are preserved for future use.
+
+/// Type of hit
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum HitType {
+    Single,
+    Double,
+    Triple,
+    HomeRun,
+    GroundRule,
+    InsideThePark,
+}
+
+/// Type of out
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum OutType {
+    Strikeout {
+        swinging: bool,
+        looking: bool,
+    },
+    Flyout {
+        positions: Vec<Position>,
+    },
+    Groundout {
+        positions: Vec<Position>,
+    },
+    Lineout {
+        positions: Vec<Position>,
+    },
+    Popup {
+        positions: Vec<Position>,
+    },
+    Foulout {
+        positions: Vec<Position>,
+    },
+    Bunt {
+        positions: Vec<Position>,
+    },
+    DoublePlay {
+        positions: Vec<Position>,
+    },
+    TriplePlay {
+        positions: Vec<Position>,
+    },
+    Forceout {
+        positions: Vec<Position>,
+    },
+    TagOut {
+        position: Position,
+        base: Base,
+    },
+    CaughtStealing {
+        catcher_to: Position,
+        base: Base,
+    },
+    PickedOff {
+        positions: Vec<Position>,
+        base: Base,
+    },
+    IntentionalWalk,
+}
+
+/// Walks and hit by pitch
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum Walk {
+    BaseOnBalls,
+    Intentional,
+    HitByPitch,
+}
+
+/// Error on a fielder
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Error {
     pub position: Position,
-    pub batting_order: u8,
+    pub description: String,
 }
 
-#[allow(dead_code)]
-impl Game {
-    pub fn new(
-        game_id: String,
-        date: String,
-        home_team: GameTeam,
-        away_team: GameTeam,
-        venue: String,
-    ) -> Self {
-        Game {
-            game_id,
-            date,
-            home_team,
-            away_team,
-            venue,
-            plate_appearances: Vec::new(),
-            current_inning: 1,
-            current_half: HalfInning::Top,
-        }
-    }
+/// Advanced plays (SB, WP, PB, BK, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AdvancedPlay {
+    StolenBase { from: Base, to: Base },
+    Balk,
+    WildPitch,
+    PassedBall,
+    Interference { by: String },
+    Obstruction,
+    SacrificeHit,
+    SacrificeFly { positions: Vec<Position> },
+}
 
-    pub fn add_plate_appearance(&mut self, pa: PlateAppearance) {
-        self.plate_appearances.push(pa);
-    }
-
-    pub fn to_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string_pretty(self)
-    }
-
-    pub fn save_to_file(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let json = self.to_json()?;
-        std::fs::write(path, json)?;
-        Ok(())
-    }
+/// Result of a plate appearance (used by CommandParser)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PlateAppearanceResult {
+    Hit {
+        hit_type: HitType,
+        location: Option<String>,
+        rbis: u8,
+    },
+    Out {
+        out_type: OutType,
+        rbi: bool,
+    },
+    Walk(Walk),
+    Error {
+        error: Error,
+        reached_base: Base,
+    },
+    FieldersChoice {
+        positions: Vec<Position>,
+        out_at: Option<Base>,
+    },
+    DroppedThirdStrike,
+    AdvancedPlay(AdvancedPlay),
 }

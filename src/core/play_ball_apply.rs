@@ -1,7 +1,7 @@
 use crate::commands::types::EngineCommand;
 use crate::models::events::{DomainEvent, OutRecordedData, StatusChangedData, StrikeoutKind};
-use crate::models::play_ball::{GameState, HalfInning};
-use crate::models::types::{GameStatus, Pitch};
+use crate::models::play_ball::GameState;
+use crate::models::types::{GameStatus, HalfInning, Pitch};
 use crate::ui::events::UiEvent;
 
 #[derive(Debug, Clone)]
@@ -12,6 +12,7 @@ pub struct PersistedEvent {
     pub description: String,
 }
 
+#[derive(Default)]
 pub struct ApplyResult {
     pub events: Vec<UiEvent>,
     /// Events to persist in `game_events` (administrative / low-frequency).
@@ -26,15 +27,7 @@ pub struct ApplyResult {
 }
 
 fn empty_result() -> ApplyResult {
-    ApplyResult {
-        events: vec![],
-        persisted: vec![],
-        applied: vec![],
-        plate_appearance: None,
-        exit: false,
-        status_change: None,
-        needs_next_at_bat: false,
-    }
+    ApplyResult::default()
 }
 
 pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyResult {
