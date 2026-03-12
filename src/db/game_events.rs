@@ -1,7 +1,7 @@
 use crate::engine::play_ball::bump_order;
 use crate::models::events::DomainEvent;
 use crate::models::types::HalfInning;
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -200,7 +200,11 @@ pub fn refactor_batter_order(conn: &mut Connection) -> rusqlite::Result<()> {
         let pa_rows: Vec<(i64, String, i64, i64)> = {
             let mut stmt_pa = tx.prepare(
                 r#"
-                SELECT id, half_inning, batter_id, COALESCE(batter_order, 0)
+                SELECT
+                    id,
+                    half_inning,
+                    batter_id,
+                    COALESCE(NULLIF(batter_order,''),0) as batter_order
                 FROM plate_appearances
                 WHERE game_id = ?1
                 ORDER BY seq
