@@ -1,7 +1,7 @@
 use crate::engine::play_ball::bump_order;
 use crate::models::events::DomainEvent;
 use crate::models::types::HalfInning;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
