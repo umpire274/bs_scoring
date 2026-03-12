@@ -115,7 +115,7 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
         };
     };
 
-    let Some(batter_order) = state.current_batter_order.clone() else {
+    let Some(batter_order) = state.current_batter_order else {
         return ApplyResult {
             events: vec![UiEvent::Error(
                 "No active batter order in state.".to_string(),
@@ -190,7 +190,7 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
             inning: state.inning,
             half: state.half,
             batter_id,
-            batter_order: batter_order.clone(),
+            batter_order,
             pitcher_id,
             pitches: pitches_in_pa,
             pitches_sequence: final_sequence.clone(),
@@ -290,7 +290,7 @@ fn apply_hit_command(
         };
     };
 
-    let Some(batter_order) = state.current_batter_order.clone() else {
+    let Some(batter_order) = state.current_batter_order else {
         return ApplyResult {
             events: vec![UiEvent::Error(
                 "No active batter order in state.".to_string(),
@@ -340,7 +340,7 @@ fn apply_hit_command(
         inning: state.inning,
         half: state.half,
         batter_id,
-        batter_order: batter_order.clone(),
+        batter_order,
         pitcher_id,
         pitches: pitches_in_pa,
         pitches_sequence: final_sequence,

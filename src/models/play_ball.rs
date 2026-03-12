@@ -54,7 +54,7 @@ pub struct PitchStats {
     pub strikes: u32,
 }
 
-pub type BatterOrder = String;
+pub type BatterOrder = u8;
 
 #[derive(Debug, Clone)]
 pub struct GameState {

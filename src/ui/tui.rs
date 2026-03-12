@@ -364,7 +364,7 @@ impl TuiUi {
     fn scoreboard_view_data(state: Option<&GameState>) -> ScoreboardViewData {
         if let Some(s) = state {
             let (batter_left, batter_right) = match (
-                s.current_batter_order.clone(),
+                s.current_batter_order,
                 s.current_batter_first_name.as_deref(),
                 s.current_batter_last_name.as_deref(),
                 s.current_batter_jersey_no,

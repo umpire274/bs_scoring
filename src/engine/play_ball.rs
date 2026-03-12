@@ -168,7 +168,16 @@ pub fn run_play_ball_engine(
                         }
                     };
 
-                let msg_ab = format!("At bat: {} #{} {} {}", team_abbrv, jersey_no, first, last);
+                let msg_ab = format_live_at_bat(&FormatLiveAtBatInput {
+                    inning: state.inning,
+                    half: state.half,
+                    outs: state.outs,
+                    order: batter_order,
+                    first: first.clone(),
+                    last: last.clone(),
+                    jersey: jersey_no,
+                    pos: batter_position,
+                });
 
                 let ev_ab = DomainEvent::AtBatStarted {
                     team_abbrv,
@@ -368,15 +377,23 @@ pub fn run_play_ball_engine(
                         Ok(v) => v,
                         Err(e) => {
                             ui.emit(UiEvent::Error(format!(
-                                    "Failed to start next at-bat: missing current pitcher for fielding team ({e})"
-                                )));
+                                "Failed to start next at-bat: missing current pitcher for fielding team ({e})"
+                            )));
                             ui.set_state(&state);
                             continue;
                         }
                     };
 
-                    let msg_ab =
-                        format!("At bat: {} #{} {} {}", team_abbrv, jersey_no, first, last);
+                    let msg_ab = format_live_at_bat(&FormatLiveAtBatInput {
+                        inning: state.inning,
+                        half: state.half,
+                        outs: state.outs,
+                        order: batter_order,
+                        first: first.clone(),
+                        last: last.clone(),
+                        jersey: jersey_no,
+                        pos: batter_position,
+                    });
 
                     let ev_ab = DomainEvent::AtBatStarted {
                         team_abbrv,
@@ -495,7 +512,9 @@ fn get_batter_order_and_position(
 ) -> rusqlite::Result<(BatterOrder, Position)> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT gl.batting_order, gl.defensive_position
+        SELECT
+            gl.batting_order,
+            gl.defensive_position
         FROM game_lineups gl
         WHERE gl.game_id = ?1
           AND gl.team_id = ?2
@@ -506,20 +525,11 @@ fn get_batter_order_and_position(
     )?;
 
     stmt.query_row(params![game_id, team_id, batter_id], |row| {
-        let order_i64: i64 = row.get(0)?;
-        let order: BatterOrder = order_i64.to_string();
+        let order: BatterOrder = row.get::<_, i64>(0)? as u8;
 
         let position_raw: String = row.get(1)?;
 
-        let position_num: u8 = position_raw.parse().map_err(|_| {
-            rusqlite::Error::FromSqlConversionFailure(
-                1,
-                rusqlite::types::Type::Text,
-                format!("Invalid defensive_position value: {}", position_raw).into(),
-            )
-        })?;
-
-        let position = Position::from_number(position_num).ok_or_else(|| {
+        let position = Position::from_db_value(&position_raw).ok_or_else(|| {
             rusqlite::Error::FromSqlConversionFailure(
                 1,
                 rusqlite::types::Type::Text,
@@ -598,7 +608,7 @@ fn get_current_pitcher(
         WHERE gl.game_id = ?1
           AND gl.team_id = ?2
           AND gl.is_starting = 1
-          AND gl.defensive_position = '1'
+          AND gl.defensive_position IN ('1', 'P')
         LIMIT 1
         "#,
     )?;
@@ -637,16 +647,10 @@ fn get_batter_by_order(
     )?;
 
     stmt.query_row(params![game_id, team_id, batting_order as i64], |row| {
-        let position_raw: String = row.get(6)?;
-        let position_num: u8 = position_raw.parse().map_err(|_| {
-            rusqlite::Error::FromSqlConversionFailure(
-                6,
-                rusqlite::types::Type::Text,
-                format!("Invalid defensive_position value: {}", position_raw).into(),
-            )
-        })?;
+        let batter_order: BatterOrder = row.get::<_, i64>(5)? as u8;
 
-        let position = Position::from_number(position_num).ok_or_else(|| {
+        let position_raw: String = row.get(6)?;
+        let position = Position::from_db_value(&position_raw).ok_or_else(|| {
             rusqlite::Error::FromSqlConversionFailure(
                 6,
                 rusqlite::types::Type::Text,
@@ -660,7 +664,7 @@ fn get_batter_by_order(
             row.get(2)?,
             row.get(3)?,
             row.get(4)?,
-            row.get::<_, i64>(5)?.to_string(),
+            batter_order,
             position,
         ))
     })
@@ -695,6 +699,46 @@ pub fn bump_order_str(order: &str) -> u8 {
     }
 }
 
+#[derive(Debug, Clone)]
+struct FormatLiveAtBatInput {
+    inning: u32,
+    half: HalfInning,
+    outs: u8,
+    order: BatterOrder,
+    first: String,
+    last: String,
+    jersey: i32,
+    pos: Position,
+}
+
+fn live_half_label(inning: u32, half: HalfInning) -> String {
+    let sym = match half {
+        HalfInning::Top => '↑',
+        HalfInning::Bottom => '↓',
+    };
+
+    format!("{inning}{sym}")
+}
+
+fn format_live_at_bat(flabi: &FormatLiveAtBatInput) -> String {
+    let outs_label = if flabi.outs == 1 {
+        "1 out".to_string()
+    } else {
+        format!("{} outs", flabi.outs)
+    };
+
+    format!(
+        "{:<3} {:<6} At bat: {}. {} {} (#{:>2} {})",
+        live_half_label(flabi.inning, flabi.half),
+        outs_label,
+        flabi.order,
+        flabi.first,
+        flabi.last,
+        flabi.jersey,
+        flabi.pos
+    )
+}
+
 fn start_next_at_bat(
     conn: &mut Connection,
     ui: &mut dyn Ui,
@@ -721,8 +765,8 @@ fn start_next_at_bat(
             Ok(v) => v,
             Err(e) => {
                 ui.emit(UiEvent::Error(format!(
-                "Failed to load next batter (team_id={batting_team_id}, order={next_order}): {e}"
-            )));
+                    "Failed to load next batter (team_id={batting_team_id}, order={next_order}): {e}"
+                )));
                 return false;
             }
         };
@@ -740,7 +784,16 @@ fn start_next_at_bat(
         };
 
     // 5) Start next at-bat (NOT persisted anymore)
-    let msg_ab = format!("At bat: {team_abbrv} #{jersey_no} {first} {last}");
+    let msg_ab = format_live_at_bat(&FormatLiveAtBatInput {
+        inning: state.inning,
+        half: state.half,
+        outs: state.outs,
+        order: batter_order,
+        first: first.clone(),
+        last: last.clone(),
+        jersey: jersey_no,
+        pos: batter_position,
+    });
 
     let ev_ab = DomainEvent::AtBatStarted {
         team_abbrv,
@@ -830,11 +883,7 @@ fn handle_three_outs_and_change_side(
 }
 
 fn replay_batter_label(pa: &PlateAppearanceRow) -> String {
-    if pa.batter_order.trim().is_empty() {
-        "?".to_string()
-    } else {
-        pa.batter_order.clone()
-    }
+    pa.batter_order.to_string()
 }
 
 fn format_replay_prefix(

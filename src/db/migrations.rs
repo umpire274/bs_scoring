@@ -730,7 +730,7 @@ fn migration_v14(conn: &Connection) -> Result<()> {
             inning INTEGER NOT NULL,
             half_inning TEXT NOT NULL CHECK(half_inning IN ('Top', 'Bottom')),
             batter_id INTEGER NOT NULL,
-            batter_order TEXT NOT NULL DEFAULT '',
+            batter_order INTEGER NOT NULL DEFAULT 0,
             pitcher_id INTEGER NOT NULL,
             pitches INTEGER NOT NULL DEFAULT 0,
             pitches_sequence TEXT NOT NULL DEFAULT '[]',
@@ -751,7 +751,7 @@ fn migration_v14(conn: &Connection) -> Result<()> {
             inning,
             half_inning,
             batter_id,
-            '',
+            0,
             pitcher_id,
             pitches,
             pitches_sequence,
@@ -774,7 +774,7 @@ fn migration_v14(conn: &Connection) -> Result<()> {
 
     if !check_column_exists(conn, "runner_movements", "batter_order")? {
         conn.execute(
-            "ALTER TABLE runner_movements ADD COLUMN batter_order TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE runner_movements ADD COLUMN batter_order INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
     }

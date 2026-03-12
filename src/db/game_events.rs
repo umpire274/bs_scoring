@@ -1,4 +1,4 @@
-use crate::engine::play_ball::{bump_order, bump_order_str};
+use crate::engine::play_ball::bump_order;
 use crate::models::events::DomainEvent;
 use crate::models::types::HalfInning;
 use rusqlite::{Connection, params};
@@ -156,7 +156,7 @@ pub fn refactor_batter_order(conn: &mut Connection) -> rusqlite::Result<()> {
         };
 
         // 3) costruisco mappa player_id -> batter_order per ciascun team
-        let (away_orders, home_orders): (HashMap<i64, String>, HashMap<i64, String>) = {
+        let (away_orders, home_orders): (HashMap<i64, u8>, HashMap<i64, u8>) = {
             let mut stmt_lineup = tx.prepare(
                 r#"
                 SELECT team_id, player_id, batting_order
@@ -180,12 +180,12 @@ pub fn refactor_batter_order(conn: &mut Connection) -> rusqlite::Result<()> {
 
             for row in rows {
                 let (team_id, player_id, batting_order) = row?;
-                let order_str = batting_order.to_string();
+                let order_u8 = batting_order as u8;
 
                 if team_id == away_team_id {
-                    away.insert(player_id, order_str);
+                    away.insert(player_id, order_u8);
                 } else if team_id == home_team_id {
-                    home.insert(player_id, order_str);
+                    home.insert(player_id, order_u8);
                 }
             }
 
@@ -197,10 +197,10 @@ pub fn refactor_batter_order(conn: &mut Connection) -> rusqlite::Result<()> {
         let mut home_next: u8 = 1;
 
         // 5) itero tutte le PA in ordine cronologico
-        let pa_rows: Vec<(i64, String, i64, String)> = {
+        let pa_rows: Vec<(i64, String, i64, i64)> = {
             let mut stmt_pa = tx.prepare(
                 r#"
-                SELECT id, half_inning, batter_id, COALESCE(batter_order, '')
+                SELECT id, half_inning, batter_id, COALESCE(batter_order, 0)
                 FROM plate_appearances
                 WHERE game_id = ?1
                 ORDER BY seq
@@ -213,7 +213,7 @@ pub fn refactor_batter_order(conn: &mut Connection) -> rusqlite::Result<()> {
                         row.get::<_, i64>(0)?,    // id
                         row.get::<_, String>(1)?, // half_inning
                         row.get::<_, i64>(2)?,    // batter_id
-                        row.get::<_, String>(3)?, // batter_order
+                        row.get::<_, i64>(3)?,    // batter_order
                     ))
                 })?
                 .collect::<Result<Vec<_>, _>>()?
@@ -221,34 +221,31 @@ pub fn refactor_batter_order(conn: &mut Connection) -> rusqlite::Result<()> {
 
         for (pa_id, half_inning, batter_id, current_batter_order) in pa_rows {
             // se già valorizzato, lo lascio stare
-            if !current_batter_order.trim().is_empty() {
+            if current_batter_order > 0 {
                 continue;
             }
 
             let is_top = half_inning.eq_ignore_ascii_case("Top");
 
-            let resolved_order = if is_top {
-                // 1) provo a risolvere dal lineup
+            let resolved_order: u8 = if is_top {
                 if let Some(order) = away_orders.get(&batter_id) {
-                    // allineo comunque il cursore fallback
-                    away_next = bump_order_str(order);
-                    order.clone()
+                    away_next = bump_order(*order);
+                    *order
                 } else {
-                    // 2) fallback sequenziale
-                    let order = away_next.to_string();
+                    let order = away_next;
                     away_next = bump_order(away_next);
                     order
                 }
             } else if let Some(order) = home_orders.get(&batter_id) {
-                home_next = bump_order_str(order);
-                order.clone()
+                home_next = bump_order(*order);
+                *order
             } else {
-                let order = home_next.to_string();
+                let order = home_next;
                 home_next = bump_order(home_next);
                 order
             };
 
-            stmt_update.execute(params![resolved_order, pa_id])?;
+            stmt_update.execute(params![resolved_order as i64, pa_id])?;
         }
     }
 

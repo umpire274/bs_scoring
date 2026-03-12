@@ -70,7 +70,7 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
             state.current_batter_jersey_no = Some(*batter_jersey_no);
             state.current_batter_first_name = Some(batter_first_name.clone());
             state.current_batter_last_name = Some(batter_last_name.clone());
-            state.current_batter_order = Some(batter_order.clone());
+            state.current_batter_order = Some(*batter_order);
             state.current_batter_position = Some(*batter_position);
 
             state.current_pitcher_id = Some(*pitcher_id);
@@ -154,7 +154,7 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
         }
 
         DomainEvent::RunnerToFirst { .. } => {
-            state.on_1b = true;
+            apply_walk_advancement(state);
         }
     }
 }
@@ -262,6 +262,37 @@ fn apply_hit_advancement(state: &mut GameState, bases: u8) {
     }
 }
 
+fn apply_walk_advancement(state: &mut GameState) {
+    // Bases loaded: runner from 3B scores
+    if state.on_1b && state.on_2b && state.on_3b {
+        match state.half {
+            HalfInning::Top => {
+                state.score.away = state.score.away.saturating_add(1);
+                ensure_inning(&mut state.score.away_innings, state.inning);
+                let idx = (state.inning - 1) as usize;
+                state.score.away_innings[idx] = state.score.away_innings[idx].saturating_add(1);
+            }
+            HalfInning::Bottom => {
+                state.score.home = state.score.home.saturating_add(1);
+                ensure_inning(&mut state.score.home_innings, state.inning);
+                let idx = (state.inning - 1) as usize;
+                state.score.home_innings[idx] = state.score.home_innings[idx].saturating_add(1);
+            }
+        }
+    }
+
+    // Forced advancements
+    if state.on_1b && state.on_2b {
+        state.on_3b = true;
+    }
+
+    if state.on_1b {
+        state.on_2b = true;
+    }
+
+    state.on_1b = true;
+}
+
 fn apply_plate_appearance_core(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
@@ -325,7 +356,7 @@ fn apply_plate_appearance_core(
     // Outcome effects
     match &pa.outcome {
         crate::models::plate_appearance::PlateAppearanceOutcome::Walk => {
-            state.on_1b = true;
+            apply_walk_advancement(state);
         }
 
         crate::models::plate_appearance::PlateAppearanceOutcome::Strikeout(_)
@@ -451,7 +482,7 @@ pub fn apply_plate_appearance_row(state: &mut GameState, row: &PlateAppearanceRo
             HalfInning::Top
         },
         batter_id: row.batter_id,
-        batter_order: row.batter_order.clone(),
+        batter_order: row.batter_order,
         pitcher_id: row.pitcher_id,
         pitches: row.pitches as u32,
         pitches_sequence: seq,
