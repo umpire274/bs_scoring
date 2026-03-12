@@ -24,7 +24,7 @@ pub enum DomainEvent {
         batter_jersey_no: i32,
         batter_first_name: String,
         batter_last_name: String,
-        batter_order: String,
+        batter_order: u8,
         batter_position: Position,
 
         pitcher_id: i64,

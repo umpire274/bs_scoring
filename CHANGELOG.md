@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.6] - 2026-03-12
+
+### Added
+
+- New live log message format for new at-bat:
+    ```text
+    <inning><↑/↓> <outs> At bat: <order>. <firstname> <lastname> (#<jersey> <position>)
+    ```
+  Example:
+
+    ```text
+    3↓ 1 out At bat: 5. Sam Garcia (#7 DH)
+    ```
+
+- Added support for **DH (Designated Hitter)** as defensive position.
+- Added helper `Position::from_db_value()` to correctly parse position codes from DB.
+
+### Changed
+
+- Restored `batter_order` as **numeric (u8)** instead of `String`.
+- Database schema updated: `plate_appearances.batter_order` is now stored as **INTEGER**.
+- `defensive_position` is now treated as **TEXT** (`P`, `C`, `1B`, `2B`, `3B`, `SS`, `LF`, `CF`, `RF`, `DH`).
+- Improved **live log readability** by aligning formatting with scoreboard information.
+- Updated **replay log layout** to display batting order instead of sequential plate appearance id.
+- Unified formatting of player information between scoreboard and log.
+
+### Fixed
+
+- Walk (BB) runner advancement logic.
+- Correct forced advancement of runners.
+- Correct scoring when bases are loaded.
+- Fixed mismatch between **live state** and **replay reconstruction** for walk events.
+- Fixed `apply_plate_appearance_core()` walk handling.
+- Fixed pitcher pitch counting inconsistencies between live mode and replay.
+- Fixed scoreboard base occupancy not updating correctly after BB.
+- Fixed conversion errors when reading `DH` as defensive position.
+
+### Internal
+
+- Refactored lineup lookup helpers:
+- `get_batter_by_order`
+- `get_batter_order_and_position`
+- Added `apply_walk_advancement()` helper to centralize forced runner movement logic.
+- Reduced unnecessary `.clone()` calls on `Option<u8>`.
+-
+
+---
+
 ## [0.7.5] - 2026-03-11
 
 ### Added

@@ -22,6 +22,7 @@ pub enum Position {
     LeftField = 7,
     CenterField = 8,
     RightField = 9,
+    DesignatedHitter = 10,
 }
 
 #[allow(dead_code)]
@@ -37,6 +38,22 @@ impl Position {
             7 => Some(Position::LeftField),
             8 => Some(Position::CenterField),
             9 => Some(Position::RightField),
+            _ => None,
+        }
+    }
+
+    pub fn from_db_value(value: &str) -> Option<Self> {
+        match value {
+            "1" | "P" => Some(Position::Pitcher),
+            "2" | "C" => Some(Position::Catcher),
+            "3" | "1B" => Some(Position::FirstBase),
+            "4" | "2B" => Some(Position::SecondBase),
+            "5" | "3B" => Some(Position::ThirdBase),
+            "6" | "SS" => Some(Position::Shortstop),
+            "7" | "LF" => Some(Position::LeftField),
+            "8" | "CF" => Some(Position::CenterField),
+            "9" | "RF" => Some(Position::RightField),
+            "DH" => Some(Position::DesignatedHitter),
             _ => None,
         }
     }
@@ -58,6 +75,7 @@ impl fmt::Display for Position {
             Position::LeftField => "LF",
             Position::CenterField => "CF",
             Position::RightField => "RF",
+            Position::DesignatedHitter => "DH",
         };
         write!(f, "{}", name)
     }

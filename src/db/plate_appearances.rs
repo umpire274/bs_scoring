@@ -101,7 +101,7 @@ pub fn list_plate_appearances(conn: &Connection, game_pk: i64) -> Result<Vec<Pla
     let mut stmt = conn.prepare(
         r#"
         SELECT id, game_id, seq, inning, half_inning,
-               batter_id, batter_order,
+               batter_id, CAST(batter_order AS INTEGER),
                pitcher_id, pitches, pitches_sequence,
                outcome_type, outcome_data,
                outs
