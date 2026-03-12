@@ -3,7 +3,7 @@ use crate::engine::play_ball::{bump_order, parse_pa_sequence};
 use crate::models::events::{DomainEvent, StrikeoutKind};
 use crate::models::plate_appearance::PlateAppearanceStep;
 use crate::models::play_ball::GameState;
-use crate::{HalfInning, Pitch};
+use crate::models::types::{HalfInning, Pitch};
 
 /// Apply a persisted DomainEvent to the in-memory GameState.
 ///

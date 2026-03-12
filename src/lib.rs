@@ -44,11 +44,14 @@ pub use core::menu::{
 };
 pub use core::parser::CommandParser;
 
+// Primitive domain types — used throughout the engine and DB layers
 pub use models::types::{
-    AdvancedPlay, Base, BaseRunner, Error, Game, GamePlayer, GameTeam, HalfInning, HitType,
-    OutType, Pitch, PitchCount, PlateAppearance, PlateAppearanceResult, Position,
-    RunnerAdvancement, Walk,
+    AdvancedPlay, Base, Error, HalfInning, HitType, OutType, Pitch, PitchCount,
+    PlateAppearanceResult, Position, Walk,
 };
+
+// The live PA model (compact, 1-row-per-batter)
+pub use models::plate_appearance::PlateAppearance;
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

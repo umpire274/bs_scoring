@@ -5,7 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.6] - 2026-03-12
+## [0.7.7] - 2026-03-12
+
+### Changed (Refactoring / Internal)
+
+- **`HalfInning` now lives exclusively in `models::types`** — removed the stale
+  `pub(crate) use crate::HalfInning` re-export from `models::play_ball` that caused
+  ambiguity. All modules now import it from one canonical location.
+- **Removed legacy dead-code from `models/types.rs`** — deleted `Game`, `GameTeam`,
+  `GamePlayer`, `BaseRunner`, and `RunnerAdvancement` structs that were marked
+  `#[allow(dead_code)]` and had no callers. The live engine uses `models/plate_appearance.rs`
+  and `models/play_ball.rs` exclusively.
+- **`PlateAppearance` re-export fixed in `lib.rs`** — was incorrectly pointing to the
+  legacy (dead) struct in `models::types`; now correctly re-exports the live
+  `models::plate_appearance::PlateAppearance`.
+- **`GameStatus` now implements `TryFrom<i64>` and `From<GameStatus> for i64`** —
+  the existing `from_i64`/`to_i64` helpers are kept as thin wrappers for
+  backward compatibility.
+- **`Position::from_number` now handles `10 => DesignatedHitter`** — previously
+  the DH case was only handled in `from_db_value`, causing inconsistency.
+- **`find_order_for_batter` rewritten as a single SQL query** — replaced the
+  O(n) loop (up to 9 sequential DB round-trips) with one direct lookup against
+  `game_lineups`.
+- **`ApplyResult` now implements `Default`** — internal `empty_result()` free
+  function replaced by `ApplyResult::default()`.
+- **`player_traits.rs` no longer depends on strum** — `PitchHand` and `BatSide`
+  now provide `all()` static slice helpers; `Display` and `FromStr` are
+  implemented by hand. The `strum` and `strum_macros` crates have been removed
+  from `Cargo.toml`.
+- **`utils/cli.rs` `CliSelectable` trait decoupled from strum** — replaced
+  `IntoEnumIterator` bound with a new `all_variants() -> &'static [Self]`
+  method on the trait.
+- **Migration v13 added as a no-op placeholder** — closes the gap between v12
+  and v14 in the migration chain, preventing confusion when auditing schema
+  history.
+
+
 
 ### Added
 

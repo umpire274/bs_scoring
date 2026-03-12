@@ -76,6 +76,11 @@ pub fn get_migrations() -> Vec<Migration> {
             up: migration_v12,
         },
         Migration {
+            version: 13,
+            description: "No-op placeholder (version 13 was skipped during development)",
+            up: migration_v13,
+        },
+        Migration {
             version: 14,
             description: "Restructure plate_appearances_compact into plate_appearances with batter_order and improved indexing",
             up: migration_v14,
@@ -715,6 +720,12 @@ fn migration_v12(conn: &Connection) -> Result<()> {
         )?;
     }
 
+    Ok(())
+}
+
+fn migration_v13(_conn: &Connection) -> Result<()> {
+    // No-op: version 13 was skipped during development.
+    // This placeholder ensures the migration chain is contiguous.
     Ok(())
 }
 

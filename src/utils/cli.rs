@@ -1,7 +1,6 @@
 use crate::models::player_traits::{BatSide, PitchHand};
 use std::io;
 use std::io::Write;
-use strum::IntoEnumIterator;
 
 /// Clear the screen (works on most terminals)
 pub fn clear_screen() {
@@ -92,11 +91,38 @@ pub fn show_separator(n: u16) {
     println!("  {}", "─".repeat(n as usize));
 }
 
+/// Trait for types that can be presented as enum choices in a CLI menu.
+/// Implementors supply a human-readable label and a static slice of all variants.
+pub trait CliSelectable: Sized + Copy + std::fmt::Display {
+    fn label() -> &'static str;
+    fn all_variants() -> &'static [Self];
+}
+
+impl CliSelectable for PitchHand {
+    fn label() -> &'static str {
+        "Pitch hand"
+    }
+
+    fn all_variants() -> &'static [Self] {
+        PitchHand::all()
+    }
+}
+
+impl CliSelectable for BatSide {
+    fn label() -> &'static str {
+        "Bat side"
+    }
+
+    fn all_variants() -> &'static [Self] {
+        BatSide::all()
+    }
+}
+
 pub fn choose_enum<T>(current: Option<T>) -> Option<T>
 where
-    T: CliSelectable + Copy + IntoEnumIterator + std::fmt::Display + 'static,
+    T: CliSelectable + 'static,
 {
-    let values: Vec<T> = T::iter().collect();
+    let values = T::all_variants();
 
     let current_display = current
         .map(|c| c.to_string())
@@ -128,9 +154,9 @@ where
 
 pub fn choose_enum_optional<T>() -> Option<T>
 where
-    T: CliSelectable + Copy + IntoEnumIterator + std::fmt::Display + 'static,
+    T: CliSelectable + 'static,
 {
-    let options: Vec<T> = T::iter().collect();
+    let options = T::all_variants();
 
     let options_str = options
         .iter()
@@ -149,20 +175,4 @@ where
 
     let idx = (choice - 1) as usize;
     options.get(idx).copied()
-}
-
-pub trait CliSelectable: Sized + Copy + IntoEnumIterator + std::fmt::Display {
-    fn label() -> &'static str;
-}
-
-impl CliSelectable for PitchHand {
-    fn label() -> &'static str {
-        "Pitch hand"
-    }
-}
-
-impl CliSelectable for BatSide {
-    fn label() -> &'static str {
-        "Bat side"
-    }
 }

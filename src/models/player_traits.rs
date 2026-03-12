@@ -1,15 +1,12 @@
 use serde::{Deserialize, Serialize};
-use strum_macros::{Display, EnumIter, EnumString};
+use std::fmt;
+use std::str::FromStr;
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, EnumString, Display,
-)]
+/// Throwing hand of a pitcher.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PitchHand {
-    #[strum(serialize = "LHP")]
     Lhp,
-    #[strum(serialize = "RHP")]
     Rhp,
-    #[strum(serialize = "SHP")]
     Shp,
 }
 
@@ -30,17 +27,31 @@ impl PitchHand {
             _ => None,
         }
     }
+
+    /// Iterate all variants (replaces strum EnumIter).
+    pub fn all() -> &'static [Self] {
+        &[Self::Lhp, Self::Rhp, Self::Shp]
+    }
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, EnumString, Display,
-)]
+impl fmt::Display for PitchHand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for PitchHand {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or(())
+    }
+}
+
+/// Batting side of a player.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BatSide {
-    #[strum(serialize = "L")]
     L,
-    #[strum(serialize = "R")]
     R,
-    #[strum(serialize = "S")]
     S,
 }
 
@@ -60,5 +71,23 @@ impl BatSide {
             "S" => Some(Self::S),
             _ => None,
         }
+    }
+
+    /// Iterate all variants (replaces strum EnumIter).
+    pub fn all() -> &'static [Self] {
+        &[Self::L, Self::R, Self::S]
+    }
+}
+
+impl fmt::Display for BatSide {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for BatSide {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or(())
     }
 }
