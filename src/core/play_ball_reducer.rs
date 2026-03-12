@@ -266,6 +266,7 @@ fn apply_plate_appearance_core(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
     recount_pitcher_stats_from_sequence: bool,
+    add_terminal_live_pitch: bool,
 ) {
     // Align inning / half
     if state.inning != pa.inning || state.half != pa.half {
@@ -312,7 +313,11 @@ fn apply_plate_appearance_core(
             }
         }
     } else {
-        state.pitcher_stats.entry(pa.pitcher_id).or_default();
+        let stats = state.pitcher_stats.entry(pa.pitcher_id).or_default();
+
+        if add_terminal_live_pitch {
+            stats.strikes = stats.strikes.saturating_add(1);
+        }
     }
 
     state.current_pitcher_id = Some(pa.pitcher_id);
@@ -371,7 +376,7 @@ pub fn apply_plate_appearance(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
 ) {
-    apply_plate_appearance_core(state, pa, true);
+    apply_plate_appearance_core(state, pa, true, false);
 }
 
 /// Live game flow:
@@ -380,7 +385,15 @@ pub fn apply_live_plate_appearance(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
 ) {
-    apply_plate_appearance_core(state, pa, false);
+    let add_terminal_live_pitch = matches!(
+        &pa.outcome,
+        crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. }
+            | crate::models::plate_appearance::PlateAppearanceOutcome::Double { .. }
+            | crate::models::plate_appearance::PlateAppearanceOutcome::Triple { .. }
+            | crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. }
+    );
+
+    apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch);
 }
 
 fn parse_hit_outcome_data(raw: Option<&str>) -> crate::models::plate_appearance::HitOutcomeData {
