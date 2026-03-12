@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::style::{Color, Stylize};
-use figlet_rs::FIGfont;
+use figlet_rs::FIGlet;
 use std::io::Write;
 use std::time::Duration;
 use std::{io, thread};
@@ -93,7 +93,7 @@ where
 pub fn boot_screen_header() {
     println!();
 
-    if let Ok(font) = FIGfont::from_content(DOOM)
+    if let Ok(font) = FIGlet::from_content(DOOM)
         && let Some(fig) = font.convert("BS Scoring")
     {
         println!("{fig}");

@@ -34,7 +34,7 @@ chrono = { version = "0.4.44", features = ["serde"] }
 rusqlite = { version = "0.38.0", features = ["bundled"] }
 csv = "1.4.0"
 unicode-width = "0.2.2"
-figlet-rs = "0.1.5"
+figlet-rs = "1.0.0"
 anyhow = "1.0.102"
 strum = "0.28.0"
 strum_macros = "0.28.0"
