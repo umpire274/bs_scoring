@@ -610,9 +610,7 @@ impl TuiUi {
             Line::from(""),
             Line::from("Other commands"),
             Line::from("  <n> st <base>  Steal (1 st 2b)"),
-            Line::from("  bb             Walk"),
-            Line::from("  out            Generic out"),
-            Line::from(""),
+           Line::from(""),
             Line::from("Tip"),
             Line::from("  Commands are case-insensitive."),
         ]
