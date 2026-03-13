@@ -22,6 +22,13 @@ use ratatui::{
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+/// Which panel currently receives scroll input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Focus {
+    Log,
+    Help,
+}
+
 /// Minimal TUI implementation:
 /// - scrollable output pane (above)
 /// - input prompt anchored at the bottom
@@ -33,6 +40,8 @@ pub struct TuiUi {
     log: Vec<String>,
     input: String,
     scroll: u16, // number of lines scrolled from the top
+    help_scroll: u16,
+    focus: Focus,
     state: Option<GameState>,
     ctx: Option<PlayBallUiContext>,
 }
@@ -96,6 +105,8 @@ impl TuiUi {
             log: Vec::new(),
             input: String::new(),
             scroll: 0,
+            help_scroll: 0,
+            focus: Focus::Log,
             state: None,
             ctx: None,
         })
@@ -140,7 +151,11 @@ impl TuiUi {
 
         let outer = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(3)].as_ref())
+            .constraints([
+                Constraint::Min(1),
+                Constraint::Length(1),
+                Constraint::Length(3),
+            ].as_ref())
             .split(Rect::from(size));
 
         let top = Layout::default()
@@ -148,12 +163,22 @@ impl TuiUi {
             .constraints([Constraint::Min(20), Constraint::Length(50)].as_ref())
             .split(outer[0]);
 
-        let log_area = top[0];
-        let viewport_h = log_area.height.saturating_sub(2); // account for borders
+        let log_area   = top[0];
+        let right_pane = top[1];
+
+        let viewport_h = log_area.height.saturating_sub(2);
         let log_len = self.log_line_count();
         let max_scroll = log_len.saturating_sub(viewport_h);
-
         self.scroll = self.scroll.min(max_scroll);
+
+        let right = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(13), Constraint::Min(5)].as_ref())
+            .split(right_pane);
+        let help_viewport_h = right[1].height.saturating_sub(2);
+        let help_lines = Self::help_line_count() as u16;
+        let max_help_scroll = help_lines.saturating_sub(help_viewport_h);
+        self.help_scroll = self.help_scroll.min(max_help_scroll);
     }
 
     pub fn set_state(&mut self, state: GameState) {
@@ -557,12 +582,12 @@ impl TuiUi {
         f.render_widget(p, inner);
     }
 
-    fn render_help(f: &mut Frame, area: Rect) {
-        let block = Block::default().borders(Borders::ALL).title("Help");
-        let inner = block.inner(area);
-        f.render_widget(block, area);
+    fn help_line_count() -> usize {
+        Self::help_lines().len()
+    }
 
-        let lines = vec![
+    fn help_lines() -> Vec<Line<'static>> {
+        vec![
             Line::from("Pitch commands"),
             Line::from("  b   Ball"),
             Line::from("  k   Called strike"),
@@ -580,17 +605,36 @@ impl TuiUi {
             Line::from("  LL LF LC CF RC RF RL"),
             Line::from("  GLL LS MI RS GRL"),
             Line::from(""),
-            Line::from("Log navigation"),
-            Line::from("  ↑/↓        Scroll"),
-            Line::from("  PgUp/PgDn  Page scroll"),
-            Line::from("  Home/End   Top / Bottom"),
+            Line::from("Other commands"),
+            Line::from("  <n> st <base>  Steal (1 st 2b)"),
+            Line::from("  bb             Walk"),
+            Line::from("  out            Generic out"),
             Line::from(""),
             Line::from("Tip"),
             Line::from("  Commands are case-insensitive."),
-        ];
+        ]
+    }
 
-        let p = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
+    fn render_help(f: &mut Frame, area: Rect, scroll: u16, focused: bool) {
+        let title = if focused { "Help ►" } else { "Help" };
+        let block = Block::default().borders(Borders::ALL).title(title);
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let p = Paragraph::new(Text::from(Self::help_lines()))
+            .wrap(Wrap { trim: false })
+            .scroll((scroll, 0));
         f.render_widget(p, inner);
+    }
+
+    fn render_shortcuts(f: &mut Frame, area: Rect, focus: Focus) {
+        let focus_label = match focus {
+            Focus::Log  => "Log",
+            Focus::Help => "Help",
+        };
+        let bar = format!(" - focus on:{focus_label} - Tab:change focus ↑↓:scroll  PgUp/Dn:page  Home/End:top/bot");
+        let p = Paragraph::new(bar).style(Style::default());
+        f.render_widget(p, area);
     }
 
     fn render(&mut self, prompt: &str) -> io::Result<()> {
@@ -599,6 +643,8 @@ impl TuiUi {
         let log = self.log.clone();
         let input = self.input.clone();
         let scroll = self.scroll;
+        let help_scroll = self.help_scroll;
+        let focus = self.focus;
         let state = self.state.clone();
         let ctx = self.ctx.clone();
         let prompt = prompt.to_string();
@@ -606,9 +652,14 @@ impl TuiUi {
         self.terminal.draw(move |f| {
             let size = f.area();
 
+            // Vertical split: main panels | shortcuts bar (1 line) | command box
             let outer = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Min(1), Constraint::Length(3)].as_ref())
+                .constraints([
+                    Constraint::Min(1),
+                    Constraint::Length(1),
+                    Constraint::Length(3),
+                ].as_ref())
                 .split(size);
 
             let top = Layout::default()
@@ -616,9 +667,10 @@ impl TuiUi {
                 .constraints([Constraint::Min(20), Constraint::Length(50)].as_ref())
                 .split(outer[0]);
 
-            let log_area = top[0];
-            let right_pane = top[1];
-            let command_area = outer[1];
+            let log_area       = top[0];
+            let right_pane     = top[1];
+            let shortcuts_area = outer[1];
+            let command_area   = outer[2];
 
             let right = Layout::default()
                 .direction(Direction::Vertical)
@@ -626,21 +678,23 @@ impl TuiUi {
                 .split(right_pane);
 
             let scoreboard_area = right[0];
-            let help_area = right[1];
+            let help_area       = right[1];
 
             let mut text = Text::default();
             for line in &log {
                 text.lines.push(Line::from(line.as_str()));
             }
 
+            let log_title = if focus == Focus::Log { "Log ►" } else { "Log" };
             let log_widget = Paragraph::new(text)
-                .block(Block::default().borders(Borders::ALL).title("Log"))
+                .block(Block::default().borders(Borders::ALL).title(log_title))
                 .wrap(Wrap { trim: false })
                 .scroll((scroll, 0));
 
             f.render_widget(log_widget, log_area);
             Self::render_scoreboard(ctx.as_ref(), state.as_ref(), f, scoreboard_area);
-            Self::render_help(f, help_area);
+            Self::render_help(f, help_area, help_scroll, focus == Focus::Help);
+            Self::render_shortcuts(f, shortcuts_area, focus);
 
             let input_line = format!("{prompt}{input}");
 
@@ -726,12 +780,36 @@ impl Ui for TuiUi {
                         KeyCode::Esc => {
                             self.input.clear();
                         }
-                        KeyCode::Up => self.scroll_up(1),
-                        KeyCode::Down => self.scroll_down(1),
-                        KeyCode::PageUp => self.scroll_up(10),
-                        KeyCode::PageDown => self.scroll_down(10),
-                        KeyCode::Home => self.scroll = 0,
-                        KeyCode::End => self.scroll_to_bottom(),
+                        KeyCode::Tab => {
+                            self.focus = match self.focus {
+                                Focus::Log  => Focus::Help,
+                                Focus::Help => Focus::Log,
+                            };
+                        }
+                        KeyCode::Up => match self.focus {
+                            Focus::Log  => self.scroll_up(1),
+                            Focus::Help => self.help_scroll = self.help_scroll.saturating_sub(1),
+                        },
+                        KeyCode::Down => match self.focus {
+                            Focus::Log  => self.scroll_down(1),
+                            Focus::Help => self.help_scroll = self.help_scroll.saturating_add(1),
+                        },
+                        KeyCode::PageUp => match self.focus {
+                            Focus::Log  => self.scroll_up(10),
+                            Focus::Help => self.help_scroll = self.help_scroll.saturating_sub(10),
+                        },
+                        KeyCode::PageDown => match self.focus {
+                            Focus::Log  => self.scroll_down(10),
+                            Focus::Help => self.help_scroll = self.help_scroll.saturating_add(10),
+                        },
+                        KeyCode::Home => match self.focus {
+                            Focus::Log  => self.scroll = 0,
+                            Focus::Help => self.help_scroll = 0,
+                        },
+                        KeyCode::End => match self.focus {
+                            Focus::Log  => self.scroll_to_bottom(),
+                            Focus::Help => self.help_scroll = u16::MAX,
+                        },
                         _ => {}
                     }
                 }

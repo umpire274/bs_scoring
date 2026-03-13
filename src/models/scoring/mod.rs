@@ -2,4 +2,6 @@
 
 pub mod types;
 
-pub use types::{AdvancedPlay, Base, HitType, OutType, PlateAppearanceResult, ScoringError, Walk};
+pub use types::{
+    AdvancedPlay, Base, HitType, OutType, PlateAppearanceResult, ScoringError, Walk,
+};

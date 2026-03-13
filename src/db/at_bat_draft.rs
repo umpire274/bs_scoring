@@ -1,5 +1,5 @@
-use crate::PitchCount;
 use crate::models::types::HalfInning;
+use crate::PitchCount;
 use rusqlite::{Connection, params};
 
 #[derive(Debug, Clone)]

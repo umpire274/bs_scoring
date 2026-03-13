@@ -228,7 +228,7 @@ pub fn apply_hit_with_overrides(
     use crate::db::runner_movements::RunnerMovementInsert;
 
     let half_str = match state.half {
-        HalfInning::Top => "Top",
+        HalfInning::Top    => "Top",
         HalfInning::Bottom => "Bottom",
     };
     let inning = state.inning;
@@ -249,22 +249,15 @@ pub fn apply_hit_with_overrides(
         overrides.iter().map(|r| (r.order, r.dest)).collect();
 
     // Helper: resolve destination for a runner already on base
-    let resolve = |order: BatterOrder,
-                   auto_dest: u8,
-                   runs_scored: &mut u32,
-                   on_1b: &mut Option<BatterOrder>,
-                   on_2b: &mut Option<BatterOrder>,
-                   on_3b: &mut Option<BatterOrder>| {
+    let resolve = |order: BatterOrder, auto_dest: u8,
+                       runs_scored: &mut u32,
+                       on_1b: &mut Option<BatterOrder>,
+                       on_2b: &mut Option<BatterOrder>,
+                       on_3b: &mut Option<BatterOrder>| {
         match override_map.get(&order) {
-            Some(RunnerDest::First) => {
-                place_runner_with_order(order, 1, runs_scored, on_1b, on_2b, on_3b)
-            }
-            Some(RunnerDest::Second) => {
-                place_runner_with_order(order, 2, runs_scored, on_1b, on_2b, on_3b)
-            }
-            Some(RunnerDest::Third) => {
-                place_runner_with_order(order, 3, runs_scored, on_1b, on_2b, on_3b)
-            }
+            Some(RunnerDest::First) => place_runner_with_order(order, 1, runs_scored, on_1b, on_2b, on_3b),
+            Some(RunnerDest::Second) => place_runner_with_order(order, 2, runs_scored, on_1b, on_2b, on_3b),
+            Some(RunnerDest::Third) => place_runner_with_order(order, 3, runs_scored, on_1b, on_2b, on_3b),
             Some(RunnerDest::Score) => *runs_scored += 1,
             None => place_runner_with_order(order, auto_dest, runs_scored, on_1b, on_2b, on_3b),
         }
@@ -272,45 +265,17 @@ pub fn apply_hit_with_overrides(
 
     // Move runners already on base (order: 3B first to avoid collisions)
     if let Some(order) = runner_on_3b {
-        resolve(
-            order,
-            3 + bases,
-            &mut runs_scored,
-            &mut state.on_1b,
-            &mut state.on_2b,
-            &mut state.on_3b,
-        );
+        resolve(order, 3 + bases, &mut runs_scored, &mut state.on_1b, &mut state.on_2b, &mut state.on_3b);
     }
     if let Some(order) = runner_on_2b {
-        resolve(
-            order,
-            2 + bases,
-            &mut runs_scored,
-            &mut state.on_1b,
-            &mut state.on_2b,
-            &mut state.on_3b,
-        );
+        resolve(order, 2 + bases, &mut runs_scored, &mut state.on_1b, &mut state.on_2b, &mut state.on_3b);
     }
     if let Some(order) = runner_on_1b {
-        resolve(
-            order,
-            1 + bases,
-            &mut runs_scored,
-            &mut state.on_1b,
-            &mut state.on_2b,
-            &mut state.on_3b,
-        );
+        resolve(order, 1 + bases, &mut runs_scored, &mut state.on_1b, &mut state.on_2b, &mut state.on_3b);
     }
 
     // Place batter (no override allowed on batter — enforced at parse time)
-    place_runner_with_order(
-        batter_order,
-        bases,
-        &mut runs_scored,
-        &mut state.on_1b,
-        &mut state.on_2b,
-        &mut state.on_3b,
-    );
+    place_runner_with_order(batter_order, bases, &mut runs_scored, &mut state.on_1b, &mut state.on_2b, &mut state.on_3b);
 
     add_runs_to_score(state, runs_scored);
 
@@ -322,26 +287,18 @@ pub fn apply_hit_with_overrides(
 
     // Build RunnerMovementInsert rows from snapshot + resolved destinations.
     let base_str = |b: u8| -> &'static str {
-        match b {
-            1 => "1B",
-            2 => "2B",
-            3 => "3B",
-            _ => "HOME",
-        }
+        match b { 1 => "1B", 2 => "2B", 3 => "3B", _ => "HOME" }
     };
     let effective_end = |order: BatterOrder, start_base_n: u8| -> (&'static str, bool) {
         let raw_dest = start_base_n + bases;
         match override_map.get(&order) {
-            Some(RunnerDest::First) => ("1B", false),
-            Some(RunnerDest::Second) => ("2B", false),
-            Some(RunnerDest::Third) => ("3B", false),
-            Some(RunnerDest::Score) => ("HOME", true),
+            Some(RunnerDest::First)  => ("1B",   false),
+            Some(RunnerDest::Second) => ("2B",   false),
+            Some(RunnerDest::Third)  => ("3B",   false),
+            Some(RunnerDest::Score)  => ("HOME", true),
             None => {
-                if raw_dest > 3 {
-                    ("HOME", true)
-                } else {
-                    (base_str(raw_dest), false)
-                }
+                if raw_dest > 3 { ("HOME", true) }
+                else            { (base_str(raw_dest), false) }
             }
         }
     };
@@ -355,12 +312,12 @@ pub fn apply_hit_with_overrides(
                    scored: bool,
                    adv_type: &'static str| {
         movements.push(RunnerMovementInsert {
-            game_id: 0,   // filled by engine
-            pa_seq: None, // filled by engine after PA insert
+            game_id: 0,           // filled by engine
+            pa_seq: None,         // filled by engine after PA insert
             game_event_id: None,
             inning,
             half_inning: half_str.to_string(),
-            runner_id: None, // no player_id in reducer; batter_order is the identity
+            runner_id: None,      // no player_id in reducer; batter_order is the identity
             batter_order: border,
             start_base: start,
             end_base: end,
@@ -373,39 +330,23 @@ pub fn apply_hit_with_overrides(
 
     if let Some(order) = runner_on_3b {
         let (end, scored) = effective_end(order, 3);
-        let adv = if override_map.contains_key(&order) {
-            "hit_override"
-        } else {
-            "hit_auto"
-        };
+        let adv = if override_map.contains_key(&order) { "hit_override" } else { "hit_auto" };
         push_rm(&mut movements, order, "3B", end, scored, adv);
     }
     if let Some(order) = runner_on_2b {
         let (end, scored) = effective_end(order, 2);
-        let adv = if override_map.contains_key(&order) {
-            "hit_override"
-        } else {
-            "hit_auto"
-        };
+        let adv = if override_map.contains_key(&order) { "hit_override" } else { "hit_auto" };
         push_rm(&mut movements, order, "2B", end, scored, adv);
     }
     if let Some(order) = runner_on_1b {
         let (end, scored) = effective_end(order, 1);
-        let adv = if override_map.contains_key(&order) {
-            "hit_override"
-        } else {
-            "hit_auto"
-        };
+        let adv = if override_map.contains_key(&order) { "hit_override" } else { "hit_auto" };
         push_rm(&mut movements, order, "1B", end, scored, adv);
     }
     // Batter
     {
         let raw_end = bases;
-        let (end, scored) = if raw_end > 3 {
-            ("HOME", true)
-        } else {
-            (base_str(raw_end), false)
-        };
+        let (end, scored) = if raw_end > 3 { ("HOME", true) } else { (base_str(raw_end), false) };
         push_rm(&mut movements, batter_order, "BAT", end, scored, "hit_auto");
     }
 
@@ -429,44 +370,16 @@ pub fn apply_hit_advancement(state: &mut GameState, bases: u8) {
     state.on_3b = None;
 
     if let Some(order) = runner_on_3b {
-        place_runner_with_order(
-            order,
-            3 + bases,
-            &mut runs_scored,
-            &mut state.on_1b,
-            &mut state.on_2b,
-            &mut state.on_3b,
-        );
+        place_runner_with_order(order, 3 + bases, &mut runs_scored, &mut state.on_1b, &mut state.on_2b, &mut state.on_3b);
     }
     if let Some(order) = runner_on_2b {
-        place_runner_with_order(
-            order,
-            2 + bases,
-            &mut runs_scored,
-            &mut state.on_1b,
-            &mut state.on_2b,
-            &mut state.on_3b,
-        );
+        place_runner_with_order(order, 2 + bases, &mut runs_scored, &mut state.on_1b, &mut state.on_2b, &mut state.on_3b);
     }
     if let Some(order) = runner_on_1b {
-        place_runner_with_order(
-            order,
-            1 + bases,
-            &mut runs_scored,
-            &mut state.on_1b,
-            &mut state.on_2b,
-            &mut state.on_3b,
-        );
+        place_runner_with_order(order, 1 + bases, &mut runs_scored, &mut state.on_1b, &mut state.on_2b, &mut state.on_3b);
     }
 
-    place_runner_with_order(
-        batter_order,
-        bases,
-        &mut runs_scored,
-        &mut state.on_1b,
-        &mut state.on_2b,
-        &mut state.on_3b,
-    );
+    place_runner_with_order(batter_order, bases, &mut runs_scored, &mut state.on_1b, &mut state.on_2b, &mut state.on_3b);
 
     add_runs_to_score(state, runs_scored);
 
@@ -640,7 +553,7 @@ pub fn apply_live_plate_appearance(
     let runner_on_3b = state.on_3b;
     let inning = state.inning;
     let half_str = match state.half {
-        HalfInning::Top => "Top",
+        HalfInning::Top    => "Top",
         HalfInning::Bottom => "Bottom",
     };
 
@@ -660,53 +573,33 @@ pub fn apply_live_plate_appearance(
             apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
             // Rebuild movements from snapshot (state already mutated by core)
             build_hit_movements_from_snapshot(
-                runner_on_1b,
-                runner_on_2b,
-                runner_on_3b,
-                pa.batter_order,
-                1,
-                &pa.runner_overrides,
-                inning,
-                half_str,
+                runner_on_1b, runner_on_2b, runner_on_3b,
+                pa.batter_order, 1, &pa.runner_overrides,
+                inning, half_str,
             )
         }
         crate::models::plate_appearance::PlateAppearanceOutcome::Double { .. } => {
             apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
             build_hit_movements_from_snapshot(
-                runner_on_1b,
-                runner_on_2b,
-                runner_on_3b,
-                pa.batter_order,
-                2,
-                &pa.runner_overrides,
-                inning,
-                half_str,
+                runner_on_1b, runner_on_2b, runner_on_3b,
+                pa.batter_order, 2, &pa.runner_overrides,
+                inning, half_str,
             )
         }
         crate::models::plate_appearance::PlateAppearanceOutcome::Triple { .. } => {
             apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
             build_hit_movements_from_snapshot(
-                runner_on_1b,
-                runner_on_2b,
-                runner_on_3b,
-                pa.batter_order,
-                3,
-                &pa.runner_overrides,
-                inning,
-                half_str,
+                runner_on_1b, runner_on_2b, runner_on_3b,
+                pa.batter_order, 3, &pa.runner_overrides,
+                inning, half_str,
             )
         }
         crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. } => {
             apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
             build_hit_movements_from_snapshot(
-                runner_on_1b,
-                runner_on_2b,
-                runner_on_3b,
-                pa.batter_order,
-                4,
-                &pa.runner_overrides,
-                inning,
-                half_str,
+                runner_on_1b, runner_on_2b, runner_on_3b,
+                pa.batter_order, 4, &pa.runner_overrides,
+                inning, half_str,
             )
         }
         _ => {
@@ -737,38 +630,23 @@ fn build_hit_movements_from_snapshot(
         overrides.iter().map(|r| (r.order, r.dest)).collect();
 
     let base_str = |b: u8| -> &'static str {
-        match b {
-            1 => "1B",
-            2 => "2B",
-            3 => "3B",
-            _ => "HOME",
-        }
+        match b { 1 => "1B", 2 => "2B", 3 => "3B", _ => "HOME" }
     };
 
     let effective_end = |order: u8, start_base_n: u8| -> (&'static str, bool) {
         let raw = start_base_n + bases;
         match override_map.get(&order) {
-            Some(RunnerDest::First) => ("1B", false),
-            Some(RunnerDest::Second) => ("2B", false),
-            Some(RunnerDest::Third) => ("3B", false),
-            Some(RunnerDest::Score) => ("HOME", true),
-            None => {
-                if raw > 3 {
-                    ("HOME", true)
-                } else {
-                    (base_str(raw), false)
-                }
-            }
+            Some(RunnerDest::First)  => ("1B",   false),
+            Some(RunnerDest::Second) => ("2B",   false),
+            Some(RunnerDest::Third)  => ("3B",   false),
+            Some(RunnerDest::Score)  => ("HOME", true),
+            None => if raw > 3 { ("HOME", true) } else { (base_str(raw), false) },
         }
     };
 
     let mut movements = vec![];
-    let push = |movements: &mut Vec<RunnerMovementInsert>,
-                border: u8,
-                start: &'static str,
-                end: &'static str,
-                scored: bool,
-                adv: &'static str| {
+    let push = |movements: &mut Vec<RunnerMovementInsert>, border: u8,
+                start: &'static str, end: &'static str, scored: bool, adv: &'static str| {
         movements.push(RunnerMovementInsert {
             game_id: 0,
             pa_seq: None,
@@ -788,39 +666,23 @@ fn build_hit_movements_from_snapshot(
 
     if let Some(order) = runner_on_3b {
         let (end, scored) = effective_end(order, 3);
-        let adv = if override_map.contains_key(&order) {
-            "hit_override"
-        } else {
-            "hit_auto"
-        };
+        let adv = if override_map.contains_key(&order) { "hit_override" } else { "hit_auto" };
         push(&mut movements, order, "3B", end, scored, adv);
     }
     if let Some(order) = runner_on_2b {
         let (end, scored) = effective_end(order, 2);
-        let adv = if override_map.contains_key(&order) {
-            "hit_override"
-        } else {
-            "hit_auto"
-        };
+        let adv = if override_map.contains_key(&order) { "hit_override" } else { "hit_auto" };
         push(&mut movements, order, "2B", end, scored, adv);
     }
     if let Some(order) = runner_on_1b {
         let (end, scored) = effective_end(order, 1);
-        let adv = if override_map.contains_key(&order) {
-            "hit_override"
-        } else {
-            "hit_auto"
-        };
+        let adv = if override_map.contains_key(&order) { "hit_override" } else { "hit_auto" };
         push(&mut movements, order, "1B", end, scored, adv);
     }
     // Batter
     {
         let raw = bases;
-        let (end, scored) = if raw > 3 {
-            ("HOME", true)
-        } else {
-            (base_str(raw), false)
-        };
+        let (end, scored) = if raw > 3 { ("HOME", true) } else { (base_str(raw), false) };
         push(&mut movements, batter_order, "BAT", end, scored, "hit_auto");
     }
 

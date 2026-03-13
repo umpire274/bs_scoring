@@ -1,7 +1,5 @@
 use crate::commands::types::EngineCommand;
-use crate::models::events::{
-    DomainEvent, OutRecordedData, PersistedEvent, StatusChangedData, StrikeoutKind,
-};
+use crate::models::events::{DomainEvent, OutRecordedData, PersistedEvent, StatusChangedData, StrikeoutKind};
 use crate::models::game_state::GameState;
 use crate::models::types::{GameStatus, Pitch};
 use crate::ui::events::UiEvent;
@@ -64,40 +62,28 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
         // ✅ NEW: pitch command (0.6.7 baseline)
         EngineCommand::Pitch(pitch) => apply_pitch(state, pitch),
 
-        EngineCommand::Single {
-            zone,
-            runner_overrides,
-        } => apply_hit_command(
+        EngineCommand::Single { zone, runner_overrides } => apply_hit_command(
             state,
             crate::models::plate_appearance::PlateAppearanceOutcome::Single { zone },
             "H",
             &runner_overrides,
         ),
 
-        EngineCommand::Double {
-            zone,
-            runner_overrides,
-        } => apply_hit_command(
+        EngineCommand::Double { zone, runner_overrides } => apply_hit_command(
             state,
             crate::models::plate_appearance::PlateAppearanceOutcome::Double { zone },
             "2H",
             &runner_overrides,
         ),
 
-        EngineCommand::Triple {
-            zone,
-            runner_overrides,
-        } => apply_hit_command(
+        EngineCommand::Triple { zone, runner_overrides } => apply_hit_command(
             state,
             crate::models::plate_appearance::PlateAppearanceOutcome::Triple { zone },
             "3H",
             &runner_overrides,
         ),
 
-        EngineCommand::HomeRun {
-            zone,
-            runner_overrides,
-        } => apply_hit_command(
+        EngineCommand::HomeRun { zone, runner_overrides } => apply_hit_command(
             state,
             crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { zone },
             "HR",
@@ -240,17 +226,13 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
         {
             use crate::db::runner_movements::RunnerMovementInsert;
             let half_str = match state.half {
-                crate::models::types::HalfInning::Top => "Top",
+                crate::models::types::HalfInning::Top    => "Top",
                 crate::models::types::HalfInning::Bottom => "Bottom",
             };
-            let mk = |runner_id: Option<i64>,
-                      border: u8,
-                      start: &'static str,
-                      end: &'static str,
-                      scored: bool| {
+            let mk = |runner_id: Option<i64>, border: u8, start: &'static str, end: &'static str, scored: bool| {
                 RunnerMovementInsert {
-                    game_id: 0,   // filled in by engine loop
-                    pa_seq: None, // linked to PA by engine after PA insert
+                    game_id: 0,          // filled in by engine loop
+                    pa_seq: None,        // linked to PA by engine after PA insert
                     game_event_id: None,
                     inning: state.inning,
                     half_inning: half_str.to_string(),
@@ -478,9 +460,9 @@ fn apply_steal(
     // Validate: the runner must currently be on the expected source base.
     let expected_source: Option<u8> = match dest {
         RunnerDest::Second => Some(1),
-        RunnerDest::Third => Some(2),
-        RunnerDest::Score => Some(3),
-        RunnerDest::First => None, // stealing first is not a valid play
+        RunnerDest::Third  => Some(2),
+        RunnerDest::Score  => Some(3),
+        RunnerDest::First  => None, // stealing first is not a valid play
     };
 
     let Some(expected) = expected_source else {
@@ -518,13 +500,16 @@ fn apply_steal(
     };
     let end_base: &'static str = match dest {
         RunnerDest::Second => "2B",
-        RunnerDest::Third => "3B",
-        RunnerDest::Score => "HOME",
-        RunnerDest::First => "1B",
+        RunnerDest::Third  => "3B",
+        RunnerDest::Score  => "HOME",
+        RunnerDest::First  => "1B",
     };
     let scored = dest == RunnerDest::Score;
 
-    let log_msg = format!("[{order}] {first_name} {last_name} ruba la {}", end_base,);
+    let log_msg = format!(
+        "[{order}] {first_name} {last_name} ruba la {}",
+        end_base,
+    );
 
     // Move the runner in state.
     match expected {
@@ -535,11 +520,13 @@ fn apply_steal(
     }
     match dest {
         RunnerDest::Second => state.on_2b = Some(order),
-        RunnerDest::Third => state.on_3b = Some(order),
-        RunnerDest::Score => match state.half {
-            crate::models::types::HalfInning::Top => state.score.away += 1,
-            crate::models::types::HalfInning::Bottom => state.score.home += 1,
-        },
+        RunnerDest::Third  => state.on_3b = Some(order),
+        RunnerDest::Score  => {
+            match state.half {
+                crate::models::types::HalfInning::Top    => state.score.away += 1,
+                crate::models::types::HalfInning::Bottom => state.score.home += 1,
+            }
+        }
         RunnerDest::First => {}
     }
 
@@ -547,19 +534,15 @@ fn apply_steal(
     // The engine loop will use game_event_id = None + pa_seq = None to signal
     // this is a standalone movement; the DB row id is assigned at insert time.
     let rm = RunnerMovementInsert {
-        game_id: 0,          // filled in by engine loop
-        pa_seq: None,        // not part of a PA
-        game_event_id: None, // standalone runner movement
+        game_id: 0,           // filled in by engine loop
+        pa_seq: None,         // not part of a PA
+        game_event_id: None,  // standalone runner movement
         inning: state.inning,
         half_inning: match state.half {
-            crate::models::types::HalfInning::Top => "Top".to_string(),
+            crate::models::types::HalfInning::Top    => "Top".to_string(),
             crate::models::types::HalfInning::Bottom => "Bottom".to_string(),
         },
-        runner_id: if runner_id != 0 {
-            Some(runner_id)
-        } else {
-            None
-        },
+        runner_id: if runner_id != 0 { Some(runner_id) } else { None },
         batter_order: order,
         start_base,
         end_base,
@@ -615,18 +598,17 @@ fn validate_runner_overrides(
 
     for ro in overrides {
         let dest_base: Option<u8> = match ro.dest {
-            RunnerDest::First => Some(1),
+            RunnerDest::First  => Some(1),
             RunnerDest::Second => Some(2),
-            RunnerDest::Third => Some(3),
-            RunnerDest::Score => None, // multiple runners can score
+            RunnerDest::Third  => Some(3),
+            RunnerDest::Score  => None, // multiple runners can score
         };
         if let Some(b) = dest_base
-            && !claimed.insert(b)
-        {
-            return Err(format!(
-                "Two runners cannot end up on the same base ({}B)",
-                b
-            ));
+            && !claimed.insert(b) {
+                return Err(format!(
+                    "Two runners cannot end up on the same base ({}B)",
+                    b
+                ));
         }
     }
 
@@ -636,13 +618,11 @@ fn validate_runner_overrides(
 
     let check_base = |base_occupant: Option<u8>, base_no: u8| -> Result<(), String> {
         if let Some(occupant) = base_occupant
-            && claimed.contains(&base_no)
-            && !moved_orders.contains(&occupant)
-        {
-            return Err(format!(
-                "Runner {} on {}B would be overwritten — add an explicit override for them",
-                occupant, base_no
-            ));
+            && claimed.contains(&base_no) && !moved_orders.contains(&occupant) {
+                return Err(format!(
+                    "Runner {} on {}B would be overwritten — add an explicit override for them",
+                    occupant, base_no
+                ));
         }
         Ok(())
     };

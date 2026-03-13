@@ -55,18 +55,10 @@ pub fn parse_engine_commands(line: &str) -> Vec<EngineCommand> {
         //  a runner override in the same PA.)
         if let Some(order) = batter_order {
             let hit_cmd = match &hit_cmd {
-                EngineCommand::Single {
-                    runner_overrides, ..
-                }
-                | EngineCommand::Double {
-                    runner_overrides, ..
-                }
-                | EngineCommand::Triple {
-                    runner_overrides, ..
-                }
-                | EngineCommand::HomeRun {
-                    runner_overrides, ..
-                } => {
+                EngineCommand::Single { runner_overrides, .. }
+                | EngineCommand::Double { runner_overrides, .. }
+                | EngineCommand::Triple { runner_overrides, .. }
+                | EngineCommand::HomeRun { runner_overrides, .. } => {
                     if runner_overrides.iter().any(|r| r.order == order) {
                         return vec![EngineCommand::Unknown(line.to_string())];
                     }
@@ -235,8 +227,7 @@ fn parse_non_hit_command(raw: &str) -> EngineCommand {
             tokens[0].parse::<u8>(),
             tokens[1].eq_ignore_ascii_case("st"),
             RunnerDest::parse(tokens[2]),
-        ) && (1..=9).contains(&order)
-        {
+        ) && (1..=9).contains(&order) {
             return EngineCommand::StealBase { order, dest };
         }
         return EngineCommand::Unknown(raw.to_string());
@@ -344,34 +335,26 @@ mod tests {
     #[test]
     fn test_bare_single() {
         let cmd = single(parse_engine_commands("h"));
-        assert!(
-            matches!(cmd, EngineCommand::Single { zone: None, runner_overrides } if runner_overrides.is_empty())
-        );
+        assert!(matches!(cmd, EngineCommand::Single { zone: None, runner_overrides } if runner_overrides.is_empty()));
     }
 
     #[test]
     fn test_single_with_zone() {
         let cmd = single(parse_engine_commands("h lf"));
-        assert!(
-            matches!(cmd, EngineCommand::Single { zone: Some(_), runner_overrides } if runner_overrides.is_empty())
-        );
+        assert!(matches!(cmd, EngineCommand::Single { zone: Some(_), runner_overrides } if runner_overrides.is_empty()));
     }
 
     #[test]
     fn test_order_prefix_single() {
         let cmd = single(parse_engine_commands("6 h"));
-        assert!(
-            matches!(cmd, EngineCommand::Single { zone: None, runner_overrides } if runner_overrides.is_empty())
-        );
+        assert!(matches!(cmd, EngineCommand::Single { zone: None, runner_overrides } if runner_overrides.is_empty()));
     }
 
     #[test]
     fn test_single_with_runner_override() {
         let cmd = single(parse_engine_commands("6 h, 5 2b"));
         match cmd {
-            EngineCommand::Single {
-                runner_overrides, ..
-            } => {
+            EngineCommand::Single { runner_overrides, .. } => {
                 assert_eq!(runner_overrides.len(), 1);
                 assert_eq!(runner_overrides[0].order, 5);
                 assert_eq!(runner_overrides[0].dest, RunnerDest::Second);
@@ -384,9 +367,7 @@ mod tests {
     fn test_single_runner_scores() {
         let cmd = single(parse_engine_commands("6 h, 3 sc"));
         match cmd {
-            EngineCommand::Single {
-                runner_overrides, ..
-            } => {
+            EngineCommand::Single { runner_overrides, .. } => {
                 assert_eq!(runner_overrides[0].dest, RunnerDest::Score);
             }
             _ => panic!("expected Single"),
@@ -397,9 +378,7 @@ mod tests {
     fn test_multiple_overrides() {
         let cmd = single(parse_engine_commands("6 h, 5 2b, 3 sc"));
         match cmd {
-            EngineCommand::Single {
-                runner_overrides, ..
-            } => {
+            EngineCommand::Single { runner_overrides, .. } => {
                 assert_eq!(runner_overrides.len(), 2);
             }
             _ => panic!("expected Single"),
@@ -410,9 +389,7 @@ mod tests {
     fn test_double_with_override() {
         let cmd = single(parse_engine_commands("4 2h, 2 sc"));
         match cmd {
-            EngineCommand::Double {
-                runner_overrides, ..
-            } => {
+            EngineCommand::Double { runner_overrides, .. } => {
                 assert_eq!(runner_overrides[0].order, 2);
                 assert_eq!(runner_overrides[0].dest, RunnerDest::Score);
             }
@@ -426,30 +403,11 @@ mod tests {
         // 6 h, 7 sc, 5 sc, 3 3b  → r7 e r5 segnano, r3 va in 3a, #6 in 1a
         let cmd = single(parse_engine_commands("6 h, 7 sc, 5 sc, 3 3b"));
         match cmd {
-            EngineCommand::Single {
-                runner_overrides, ..
-            } => {
-                assert_eq!(
-                    runner_overrides.len(),
-                    3,
-                    "expected 3 overrides, got {}",
-                    runner_overrides.len()
-                );
-                assert!(
-                    runner_overrides
-                        .iter()
-                        .any(|r| r.order == 7 && r.dest == RunnerDest::Score)
-                );
-                assert!(
-                    runner_overrides
-                        .iter()
-                        .any(|r| r.order == 5 && r.dest == RunnerDest::Score)
-                );
-                assert!(
-                    runner_overrides
-                        .iter()
-                        .any(|r| r.order == 3 && r.dest == RunnerDest::Third)
-                );
+            EngineCommand::Single { runner_overrides, .. } => {
+                assert_eq!(runner_overrides.len(), 3, "expected 3 overrides, got {}", runner_overrides.len());
+                assert!(runner_overrides.iter().any(|r| r.order == 7 && r.dest == RunnerDest::Score));
+                assert!(runner_overrides.iter().any(|r| r.order == 5 && r.dest == RunnerDest::Score));
+                assert!(runner_overrides.iter().any(|r| r.order == 3 && r.dest == RunnerDest::Third));
             }
             _ => panic!("expected Single"),
         }
@@ -466,25 +424,11 @@ mod tests {
         // "9 h, 8 2b, 7sc, 6sc" — caso reale con basi piene
         let cmd = single(parse_engine_commands("9 h, 8 2b, 7sc, 6sc"));
         match cmd {
-            EngineCommand::Single {
-                runner_overrides, ..
-            } => {
+            EngineCommand::Single { runner_overrides, .. } => {
                 assert_eq!(runner_overrides.len(), 3);
-                assert!(
-                    runner_overrides
-                        .iter()
-                        .any(|r| r.order == 8 && r.dest == RunnerDest::Second)
-                );
-                assert!(
-                    runner_overrides
-                        .iter()
-                        .any(|r| r.order == 7 && r.dest == RunnerDest::Score)
-                );
-                assert!(
-                    runner_overrides
-                        .iter()
-                        .any(|r| r.order == 6 && r.dest == RunnerDest::Score)
-                );
+                assert!(runner_overrides.iter().any(|r| r.order == 8 && r.dest == RunnerDest::Second));
+                assert!(runner_overrides.iter().any(|r| r.order == 7 && r.dest == RunnerDest::Score));
+                assert!(runner_overrides.iter().any(|r| r.order == 6 && r.dest == RunnerDest::Score));
             }
             _ => panic!("expected Single"),
         }
@@ -492,48 +436,12 @@ mod tests {
 
     #[test]
     fn test_compact_format_variants() {
-        assert_eq!(
-            parse_runner_override_token("7sc"),
-            Some(RunnerOverride {
-                order: 7,
-                dest: RunnerDest::Score
-            })
-        );
-        assert_eq!(
-            parse_runner_override_token("7 sc"),
-            Some(RunnerOverride {
-                order: 7,
-                dest: RunnerDest::Score
-            })
-        );
-        assert_eq!(
-            parse_runner_override_token("52b"),
-            Some(RunnerOverride {
-                order: 5,
-                dest: RunnerDest::Second
-            })
-        );
-        assert_eq!(
-            parse_runner_override_token("5 2b"),
-            Some(RunnerOverride {
-                order: 5,
-                dest: RunnerDest::Second
-            })
-        );
-        assert_eq!(
-            parse_runner_override_token("33b"),
-            Some(RunnerOverride {
-                order: 3,
-                dest: RunnerDest::Third
-            })
-        );
-        assert_eq!(
-            parse_runner_override_token("3 3b"),
-            Some(RunnerOverride {
-                order: 3,
-                dest: RunnerDest::Third
-            })
-        );
+        assert_eq!(parse_runner_override_token("7sc"),  Some(RunnerOverride { order: 7, dest: RunnerDest::Score }));
+        assert_eq!(parse_runner_override_token("7 sc"), Some(RunnerOverride { order: 7, dest: RunnerDest::Score }));
+        assert_eq!(parse_runner_override_token("52b"),  Some(RunnerOverride { order: 5, dest: RunnerDest::Second }));
+        assert_eq!(parse_runner_override_token("5 2b"), Some(RunnerOverride { order: 5, dest: RunnerDest::Second }));
+        assert_eq!(parse_runner_override_token("33b"),  Some(RunnerOverride { order: 3, dest: RunnerDest::Third }));
+        assert_eq!(parse_runner_override_token("3 3b"), Some(RunnerOverride { order: 3, dest: RunnerDest::Third }));
     }
 
     #[test]
@@ -570,10 +478,7 @@ mod tests {
         assert_eq!(cmds.len(), 1);
         assert!(matches!(
             cmds[0],
-            EngineCommand::StealBase {
-                order: 6,
-                dest: RunnerDest::Second
-            }
+            EngineCommand::StealBase { order: 6, dest: RunnerDest::Second }
         ));
     }
 
@@ -583,10 +488,7 @@ mod tests {
         assert_eq!(cmds.len(), 1);
         assert!(matches!(
             cmds[0],
-            EngineCommand::StealBase {
-                order: 3,
-                dest: RunnerDest::Third
-            }
+            EngineCommand::StealBase { order: 3, dest: RunnerDest::Third }
         ));
     }
 
@@ -596,10 +498,7 @@ mod tests {
         assert_eq!(cmds.len(), 1);
         assert!(matches!(
             cmds[0],
-            EngineCommand::StealBase {
-                order: 7,
-                dest: RunnerDest::Score
-            }
+            EngineCommand::StealBase { order: 7, dest: RunnerDest::Score }
         ));
     }
 
@@ -608,16 +507,10 @@ mod tests {
         // "k, 6 st 2b" — strike then steal, two commands
         let cmds = parse_engine_commands("k, 6 st 2b");
         assert_eq!(cmds.len(), 2);
-        assert!(matches!(
-            cmds[0],
-            EngineCommand::Pitch(crate::models::types::Pitch::CalledStrike)
-        ));
+        assert!(matches!(cmds[0], EngineCommand::Pitch(crate::models::types::Pitch::CalledStrike)));
         assert!(matches!(
             cmds[1],
-            EngineCommand::StealBase {
-                order: 6,
-                dest: RunnerDest::Second
-            }
+            EngineCommand::StealBase { order: 6, dest: RunnerDest::Second }
         ));
     }
 
@@ -628,10 +521,7 @@ mod tests {
         // Parses as StealBase{dest: First} — engine will reject it, not the parser
         assert!(matches!(
             cmds[0],
-            EngineCommand::StealBase {
-                order: 6,
-                dest: RunnerDest::First
-            }
+            EngineCommand::StealBase { order: 6, dest: RunnerDest::First }
         ));
     }
 

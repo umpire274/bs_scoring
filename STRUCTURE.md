@@ -152,13 +152,13 @@ bs_scoring/
 Prior to v0.9.0, `models/play_ball.rs` contained everything related to live
 game state. It has been split into focused modules:
 
-| Module | Contents |
-|--------|----------|
-| `models/game_state.rs` | `GameState`, `BatterOrder`, `PitchStats` |
-| `models/runner.rs` | `RunnerDest`, `RunnerOverride` |
-| `models/session.rs` | `PlayBallGameContext`, `PlayBallGate`, `LineupSide` |
+| Module                    | Contents                                                                                 |
+|---------------------------|------------------------------------------------------------------------------------------|
+| `models/game_state.rs`    | `GameState`, `BatterOrder`, `PitchStats`                                                 |
+| `models/runner.rs`        | `RunnerDest`, `RunnerOverride`                                                           |
+| `models/session.rs`       | `PlayBallGameContext`, `PlayBallGate`, `LineupSide`                                      |
 | `models/scoring/types.rs` | Full scoring notation types (`HitType`, `OutType`, etc.) — used only by `core/parser.rs` |
-| `models/play_ball.rs` | Compatibility shim — re-exports from the above modules |
+| `models/play_ball.rs`     | Compatibility shim — re-exports from the above modules                                   |
 
 Similarly, `core/play_ball.rs` (DB queries) has been moved to `db/game_queries.rs`
 and kept as a deprecated re-export shim.
@@ -203,9 +203,9 @@ Input: "k, 6 st 2b"
 
 ### Two advancement paths
 
-| Path | Function | Used for |
-|------|----------|----------|
-| With overrides | `apply_hit_with_overrides()` | Live scoring |
+| Path           | Function                       | Used for                              |
+|----------------|--------------------------------|---------------------------------------|
+| With overrides | `apply_hit_with_overrides()`   | Live scoring                          |
 | Replay from DB | `apply_plate_appearance_row()` | Resume — uses `runner_overrides_json` |
 
 ### Override validation
@@ -222,20 +222,21 @@ Both conditions return an explicit error message to the scorer.
 
 Current: **v16**.
 
-| Migration | Change |
-|-----------|--------|
-| v14 | `plate_appearances_compact` → `plate_appearances` with `batter_order` |
-| v15 | Add `runner_overrides_json TEXT NOT NULL DEFAULT '[]'` to `plate_appearances` |
-| v16 | Rebuild `runner_movements`: drop legacy `at_bat_id` FK, add `pa_seq`, `game_event_id`, `inning`, `half_inning`, `game_id` |
+| Migration | Change                                                                                                                    |
+|-----------|---------------------------------------------------------------------------------------------------------------------------|
+| v14       | `plate_appearances_compact` → `plate_appearances` with `batter_order`                                                     |
+| v15       | Add `runner_overrides_json TEXT NOT NULL DEFAULT '[]'` to `plate_appearances`                                             |
+| v16       | Rebuild `runner_movements`: drop legacy `at_bat_id` FK, add `pa_seq`, `game_event_id`, `inning`, `half_inning`, `game_id` |
 
 ### `game_events` vs `runner_movements` responsibility
 
-| Table | What goes here |
-|---|---|
-| `game_events` | Administrative/informational: game start, status changes, side changes, at-bat tracking, pitch recording, strikeouts, outs, walks |
-| `runner_movements` | Every physical base movement: hit advancement (auto or override), walk forced advancement, stolen base |
+| Table              | What goes here                                                                                                                    |
+|--------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `game_events`      | Administrative/informational: game start, status changes, side changes, at-bat tracking, pitch recording, strikeouts, outs, walks |
+| `runner_movements` | Every physical base movement: hit advancement (auto or override), walk forced advancement, stolen base                            |
 
-`runner_movements` rows are linked to a PA via `pa_seq` (for hit/walk) or standalone via `pa_seq = NULL` (for steal and future events like wild pitch).
+`runner_movements` rows are linked to a PA via `pa_seq` (for hit/walk) or standalone via `pa_seq = NULL` (for steal and
+future events like wild pitch).
 
 ### Replay order
 
@@ -243,7 +244,8 @@ Resume reconstructs state from three sources in order:
 
 1. `game_events` → log display only (admin events shown in scorelog)
 2. `plate_appearances` → PA state (batting order, outs, score from hits/walks/outs)
-3. `runner_movements` (standalone, `pa_seq IS NULL`) → interleaved with PAs by inning/half to restore base state for non-PA events (steals)
+3. `runner_movements` (standalone, `pa_seq IS NULL`) → interleaved with PAs by inning/half to restore base state for
+   non-PA events (steals)
 
 ---
 
@@ -273,19 +275,19 @@ Resume reconstructs state from three sources in order:
 
 ## 📈 Version history (major milestones)
 
-| Version | Highlights |
-|---------|------------|
+| Version | Highlights                                                                                                                                                      |
+|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | v0.9.2  | `runner_movements` rebuilt (migration v16); steal/hit/walk movements persisted per-runner; steal replay fixed; `game_events` scope clarified to admin/info only |
-| v0.9.1  | Steal command (`<order> st <dest>`); Unicode panic fix; runner collision validation |
-| v0.9.0  | Module split (game_state, runner, session, scoring); runner override persistence (migration v15); DB queries moved to db/game_queries |
-| v0.8.0  | Runner overrides by batting order; `Option<BatterOrder>` on bases |
-| v0.7.7  | Refactor pass: dead types removed, strum removed, migration gap fixed |
-| v0.7.x  | Compact PA persistence, deterministic resume, TUI scoreboard |
-| v0.6.x  | Pitch-by-pitch tracking, pitch count, strike/ball logic |
-| v0.4.x  | Pre-game lineup editing, GameStatus enum |
-| v0.3.x  | Player management, CSV/JSON import-export |
-| v0.2.x  | SQLite persistence, menu system, schema migrations |
-| v0.1.0  | Initial CLI scoring |
+| v0.9.1  | Steal command (`<order> st <dest>`); Unicode panic fix; runner collision validation                                                                             |
+| v0.9.0  | Module split (game_state, runner, session, scoring); runner override persistence (migration v15); DB queries moved to db/game_queries                           |
+| v0.8.0  | Runner overrides by batting order; `Option<BatterOrder>` on bases                                                                                               |
+| v0.7.7  | Refactor pass: dead types removed, strum removed, migration gap fixed                                                                                           |
+| v0.7.x  | Compact PA persistence, deterministic resume, TUI scoreboard                                                                                                    |
+| v0.6.x  | Pitch-by-pitch tracking, pitch count, strike/ball logic                                                                                                         |
+| v0.4.x  | Pre-game lineup editing, GameStatus enum                                                                                                                        |
+| v0.3.x  | Player management, CSV/JSON import-export                                                                                                                       |
+| v0.2.x  | SQLite persistence, menu system, schema migrations                                                                                                              |
+| v0.1.0  | Initial CLI scoring                                                                                                                                             |
 
 ---
 
