@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
+## [0.9.3] - 2026-03-13
+
+### Added
+
+- **Scrollable Help panel**: the Help pane now supports independent scrolling
+  (`help_scroll: u16` field in `TuiUi`).
+- **Panel focus system**: `enum Focus { Log, Help }` added to `TuiUi`. `Tab`
+  cycles focus between the Log and Help panels. All scroll keys (↑/↓,
+  PgUp/PgDn, Home/End) act on the currently focused panel.
+- **Shortcuts bar**: a fixed one-line bar between the main panels and the
+  Command box shows the active focus and available navigation keys:
+  ` - focus on:{Log|Help} - Tab:change focus ↑↓:scroll  PgUp/Dn:page  Home/End:top/bot`.
+- **Focus indicator**: the title of the active panel shows `►`
+  (e.g. `Log ►` or `Help ►`).
+- Help content updated: added steal/walk/out to "Other commands"; removed
+  "Navigation" section (now covered by the shortcuts bar).
+
+### Changed
+
+- `render_help` now accepts `scroll: u16` and `focused: bool` parameters.
+- `render()` layout changed from 2 vertical zones to 3
+  (`Min(1)` panels + `Length(1)` shortcuts bar + `Length(3)` command box).
+- `clamp_scroll_to_viewport` updated to clamp both `scroll` and `help_scroll`.
+
+---
+
 ## [0.9.2] - 2026-03-13
 
 ### Changed (architecture)
@@ -74,9 +100,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed — module refactor (no functional changes)
 
 - `models/play_ball.rs` split into three focused modules:
-  - `models/game_state.rs` — `GameState`, `BatterOrder`, `PitchStats`
-  - `models/runner.rs` — `RunnerDest`, `RunnerOverride`
-  - `models/session.rs` — `PlayBallGameContext`, `PlayBallGate`, `LineupSide`
+    - `models/game_state.rs` — `GameState`, `BatterOrder`, `PitchStats`
+    - `models/runner.rs` — `RunnerDest`, `RunnerOverride`
+    - `models/session.rs` — `PlayBallGameContext`, `PlayBallGate`, `LineupSide`
 - `models/play_ball.rs` kept as compatibility re-export shim
 - Full-scoring domain types (`HitType`, `OutType`, `Walk`, `AdvancedPlay`,
   `PlateAppearanceResult`, `Base`, `ScoringError`) moved from `models/types.rs`
@@ -105,13 +131,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.0] - 2026-03-12
 
 ### Added
+
 - **Runner override syntax** — lo scorer può ora specificare esplicitamente dove
   finisce ogni corridore dopo un hit, usando il batting order come identificatore:
-  - `h` → singola, avanzamento automatico (comportamento precedente invariato)
-  - `6 h, 5 2b` → il #6 batte singola; il corridore #5 rimane in 2a
-  - `6 h, 5 2b, 3 sc` → singola; #5 → 2a; #3 segna
-  - `4 2h, 2 sc` → doppia; il corridore #2 segna (anziché fermarsi in 4a)
-  - Destinazioni valide: `1b`, `2b`, `3b`, `sc` / `score` / `home`
+    - `h` → singola, avanzamento automatico (comportamento precedente invariato)
+    - `6 h, 5 2b` → il #6 batte singola; il corridore #5 rimane in 2a
+    - `6 h, 5 2b, 3 sc` → singola; #5 → 2a; #3 segna
+    - `4 2h, 2 sc` → doppia; il corridore #2 segna (anziché fermarsi in 4a)
+    - Destinazioni valide: `1b`, `2b`, `3b`, `sc` / `score` / `home`
 - `RunnerDest` e `RunnerOverride` aggiunti a `models/play_ball.rs`
 - `apply_hit_with_overrides()` nel reducer sostituisce l'avanzamento automatico
   fisso; qualsiasi corridore senza override esplicito continua ad avanzare
@@ -127,6 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rapido (es. `9 h, 8 2b, 7sc, 6sc` con basi piene è ora valido)
 
 ### Changed
+
 - `EngineCommand::Single/Double/Triple/HomeRun` hanno ora un campo
   `runner_overrides: Vec<RunnerOverride>` (breaking — solo interno)
 - La UI (`tui.rs`) converte `Option<BatterOrder>` → `bool` per il diamond;
@@ -166,8 +194,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Migration v13 added as a no-op placeholder** — closes the gap between v12
   and v14 in the migration chain, preventing confusion when auditing schema
   history.
-
-
 
 ### Added
 

@@ -40,8 +40,8 @@ Commands are case-insensitive.
 
 ## 2) Game start
 
-| Command    | Description                                                                  |
-|------------|------------------------------------------------------------------------------|
+| Command    | Description                                                                 |
+|------------|-----------------------------------------------------------------------------|
 | `playball` | Starts the game and loads the first at-bat (Away lineup, batting order #1). |
 
 `playball` is only allowed when the game has no previous events.
@@ -74,12 +74,12 @@ Rules:
 
 ### 4.1 Basic syntax
 
-| Command | Meaning      |
-|---------|--------------|
-| `h`     | Single (1B)  |
-| `2h`    | Double (2B)  |
-| `3h`    | Triple (3B)  |
-| `hr`    | Home Run     |
+| Command | Meaning     |
+|---------|-------------|
+| `h`     | Single (1B) |
+| `2h`    | Double (2B) |
+| `3h`    | Triple (3B) |
+| `hr`    | Home Run    |
 
 An optional field zone can follow the hit command:
 
@@ -91,20 +91,20 @@ hr cf      → home run to center field
 
 ### 4.2 Field zones
 
-| Code  | Area                        |
-|-------|-----------------------------|
-| `ll`  | Left line (down the line)   |
-| `lf`  | Left field                  |
-| `lc`  | Left-center                 |
-| `cf`  | Center field                |
-| `rc`  | Right-center                |
-| `rf`  | Right field                 |
-| `rl`  | Right line (down the line)  |
-| `gll` | Ground ball — left line     |
-| `ls`  | Left side infield           |
-| `mi`  | Middle infield              |
-| `rs`  | Right side infield          |
-| `grl` | Ground ball — right line    |
+| Code  | Area                       |
+|-------|----------------------------|
+| `ll`  | Left line (down the line)  |
+| `lf`  | Left field                 |
+| `lc`  | Left-center                |
+| `cf`  | Center field               |
+| `rc`  | Right-center               |
+| `rf`  | Right field                |
+| `rl`  | Right line (down the line) |
+| `gll` | Ground ball — left line    |
+| `ls`  | Left side infield          |
+| `mi`  | Middle infield             |
+| `rs`  | Right side infield         |
+| `grl` | Ground ball — right line   |
 
 Zone codes are case-insensitive (`LF`, `lf`, `Lf` are all valid).
 
@@ -126,12 +126,12 @@ from the game state regardless.
 
 By default, runners advance automatically based on the number of bases hit:
 
-| Hit  | Automatic runner advancement     |
-|------|----------------------------------|
-| `h`  | All runners advance +1 base      |
-| `2h` | All runners advance +2 bases     |
-| `3h` | All runners advance +3 bases     |
-| `hr` | All runners score                |
+| Hit  | Automatic runner advancement |
+|------|------------------------------|
+| `h`  | All runners advance +1 base  |
+| `2h` | All runners advance +2 bases |
+| `3h` | All runners advance +3 bases |
+| `hr` | All runners score            |
 
 To override where a specific runner ends up, add **runner tokens** after the hit command,
 comma-separated. Runner tokens are identified by **batting order** (the order slot they
@@ -141,12 +141,12 @@ Syntax: `<batting_order> <destination>` or `<batting_order><destination>` (compa
 
 Valid destinations:
 
-| Destination           | Meaning                  |
-|-----------------------|--------------------------|
-| `1b`                  | Stays / goes to 1st base |
-| `2b`                  | Stays / goes to 2nd base |
-| `3b`                  | Advances to 3rd base     |
-| `sc` / `score`/ `home`| Runner scores (run++)    |
+| Destination            | Meaning                  |
+|------------------------|--------------------------|
+| `1b`                   | Stays / goes to 1st base |
+| `2b`                   | Stays / goes to 2nd base |
+| `3b`                   | Advances to 3rd base     |
+| `sc` / `score`/ `home` | Runner scores (run++)    |
 
 #### Examples
 
@@ -184,11 +184,11 @@ be covered when the out commands are introduced.
 <order> st <destination>
 ```
 
-| Field         | Values                                  |
-|---------------|-----------------------------------------|
-| `<order>`     | Batting order of the runner (1–9)       |
-| `st`          | Steal keyword (case-insensitive)        |
-| `<destination>`| `2b`, `3b`, `sc` / `score` / `home`   |
+| Field           | Values                              |
+|-----------------|-------------------------------------|
+| `<order>`       | Batting order of the runner (1–9)   |
+| `st`            | Steal keyword (case-insensitive)    |
+| `<destination>` | `2b`, `3b`, `sc` / `score` / `home` |
 
 The runner must currently occupy the **expected source base**:
 
@@ -227,14 +227,14 @@ b, 6 st 2b           → ball recorded, then runner #6 steals 2nd
 
 These commands update the game status and **exit the engine**.
 
-| Command   | New Status       | Description                    |
-|-----------|------------------|--------------------------------|
-| `regular` | Regulation Game  | Ends game as a regulation game |
-| `post`    | Postponed Game   | Marks game as postponed        |
-| `cancel`  | Cancelled Game   | Marks game as cancelled        |
-| `susp`    | Suspended Game   | Suspends the game              |
-| `forf`    | Forfeited Game   | Marks game as forfeited        |
-| `protest` | Protested Game   | Marks game as protested        |
+| Command   | New Status      | Description                    |
+|-----------|-----------------|--------------------------------|
+| `regular` | Regulation Game | Ends game as a regulation game |
+| `post`    | Postponed Game  | Marks game as postponed        |
+| `cancel`  | Cancelled Game  | Marks game as cancelled        |
+| `susp`    | Suspended Game  | Suspends the game              |
+| `forf`    | Forfeited Game  | Marks game as forfeited        |
+| `protest` | Protested Game  | Marks game as protested        |
 
 ---
 
