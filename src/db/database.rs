@@ -153,18 +153,23 @@ impl Database {
 
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS runner_movements (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            at_bat_id INTEGER NOT NULL,
-            runner_id INTEGER NOT NULL,
-            start_base TEXT NOT NULL CHECK(start_base IN ('1B', '2B', '3B', 'HOME')),
-            end_base TEXT CHECK(end_base IN ('1B', '2B', '3B', 'HOME', 'OUT')),
-            advancement_type TEXT NOT NULL,
-            is_out BOOLEAN DEFAULT 0,
-            out_type TEXT,
-            scored BOOLEAN DEFAULT 0,
-            is_earned BOOLEAN DEFAULT 1,
-            FOREIGN KEY (at_bat_id) REFERENCES at_bats(id),
-            FOREIGN KEY (runner_id) REFERENCES players(id)
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id          INTEGER NOT NULL,
+            pa_seq           INTEGER,
+            game_event_id    INTEGER,
+            inning           INTEGER NOT NULL,
+            half_inning      TEXT    NOT NULL CHECK(half_inning IN ('Top','Bottom')),
+            runner_id        INTEGER,
+            batter_order     INTEGER NOT NULL,
+            start_base       TEXT    NOT NULL CHECK(start_base IN ('BAT','1B','2B','3B')),
+            end_base         TEXT    NOT NULL CHECK(end_base IN ('1B','2B','3B','HOME','OUT')),
+            advancement_type TEXT    NOT NULL,
+            is_out           INTEGER NOT NULL DEFAULT 0,
+            scored           INTEGER NOT NULL DEFAULT 0,
+            is_earned        INTEGER NOT NULL DEFAULT 1,
+            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id)       REFERENCES games(id),
+            FOREIGN KEY (game_event_id) REFERENCES game_events(id)
         )",
             [],
         )?;
@@ -220,7 +225,7 @@ impl Database {
         )?;
 
         self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_runner_movements_at_bat ON runner_movements(at_bat_id)",
+            "CREATE INDEX IF NOT EXISTS idx_rm_game_seq ON runner_movements(game_id, inning, half_inning, pa_seq, game_event_id)",
             [],
         )?;
 

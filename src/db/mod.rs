@@ -7,4 +7,5 @@ pub mod league;
 pub mod migrations;
 pub mod plate_appearances;
 pub mod player;
+pub mod runner_movements;
 pub mod team;

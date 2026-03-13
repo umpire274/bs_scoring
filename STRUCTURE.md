@@ -1,4 +1,4 @@
-# 🎯 BS Scoring v0.9.1 – Project Structure
+# 🎯 BS Scoring v0.9.2 – Project Structure
 
 ## 📂 Directory layout
 
@@ -55,12 +55,14 @@ bs_scoring/
     │
     ├── db/                     # SQLite persistence layer
     │   ├── database.rs         # Connection management
-    │   ├── migrations.rs       # Schema versioning (v1–v15)                [v0.9.0]
+    │   ├── migrations.rs       # Schema versioning (v1–v16)                [v0.9.2]
     │   ├── game_queries.rs     # list_playable_games, gate_check_lineups,  [v0.9.0]
     │   │                       #   set_game_status
     │   ├── plate_appearances.rs# plate_appearances CRUD                    [v0.9.0]
-    │   │                       #   incl. runner_overrides_json
-    │   ├── game_events.rs      # game_events log CRUD
+    │   │                       #   append_plate_appearance returns seq i64  [v0.9.2]
+    │   ├── runner_movements.rs # runner_movements CRUD                     [v0.9.2]
+    │   │                       #   append_runner_movement, list_runner_movements
+    │   ├── game_events.rs      # game_events log CRUD (admin/info only)    [v0.9.2]
     │   ├── at_bat_draft.rs     # In-progress PA draft (resume support)
     │   ├── league.rs           # League CRUD
     │   ├── team.rs             # Team CRUD
@@ -218,12 +220,30 @@ Both conditions return an explicit error message to the scorer.
 
 ### DB schema version
 
-Current: **v15**.
+Current: **v16**.
 
 | Migration | Change |
 |-----------|--------|
 | v14 | `plate_appearances_compact` → `plate_appearances` with `batter_order` |
 | v15 | Add `runner_overrides_json TEXT NOT NULL DEFAULT '[]'` to `plate_appearances` |
+| v16 | Rebuild `runner_movements`: drop legacy `at_bat_id` FK, add `pa_seq`, `game_event_id`, `inning`, `half_inning`, `game_id` |
+
+### `game_events` vs `runner_movements` responsibility
+
+| Table | What goes here |
+|---|---|
+| `game_events` | Administrative/informational: game start, status changes, side changes, at-bat tracking, pitch recording, strikeouts, outs, walks |
+| `runner_movements` | Every physical base movement: hit advancement (auto or override), walk forced advancement, stolen base |
+
+`runner_movements` rows are linked to a PA via `pa_seq` (for hit/walk) or standalone via `pa_seq = NULL` (for steal and future events like wild pitch).
+
+### Replay order
+
+Resume reconstructs state from three sources in order:
+
+1. `game_events` → log display only (admin events shown in scorelog)
+2. `plate_appearances` → PA state (batting order, outs, score from hits/walks/outs)
+3. `runner_movements` (standalone, `pa_seq IS NULL`) → interleaved with PAs by inning/half to restore base state for non-PA events (steals)
 
 ---
 
@@ -255,6 +275,7 @@ Current: **v15**.
 
 | Version | Highlights |
 |---------|------------|
+| v0.9.2  | `runner_movements` rebuilt (migration v16); steal/hit/walk movements persisted per-runner; steal replay fixed; `game_events` scope clarified to admin/info only |
 | v0.9.1  | Steal command (`<order> st <dest>`); Unicode panic fix; runner collision validation |
 | v0.9.0  | Module split (game_state, runner, session, scoring); runner override persistence (migration v15); DB queries moved to db/game_queries |
 | v0.8.0  | Runner overrides by batting order; `Option<BatterOrder>` on bases |

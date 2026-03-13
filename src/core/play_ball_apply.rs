@@ -15,6 +15,8 @@ pub struct ApplyResult {
     pub applied: Vec<DomainEvent>,
     /// Optional: compact 1-row-per-batter record persisted at end of PA.
     pub plate_appearance: Option<crate::models::plate_appearance::PlateAppearance>,
+    /// Runner movements to persist in `runner_movements` table.
+    pub runner_movements: Vec<crate::db::runner_movements::RunnerMovementInsert>,
     pub exit: bool,
     pub status_change: Option<GameStatus>,
     pub needs_next_at_bat: bool,
@@ -55,6 +57,7 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
                 exit: true,
                 status_change: Some(status),
                 needs_next_at_bat: false,
+                ..empty_result()
             }
         }
 
@@ -177,6 +180,7 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
 
     let mut needs_next_at_bat = false;
     let mut plate_appearance: Option<crate::models::plate_appearance::PlateAppearance> = None;
+    let mut walk_movements: Vec<crate::db::runner_movements::RunnerMovementInsert> = vec![];
 
     // This pitch counts as one more pitch in the PA
     let pitches_in_pa = state.pitch_count.sequence.len() as u32 + 1;
@@ -226,9 +230,56 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
             runner_jersey_no,
             runner_first_name,
             runner_last_name,
+            batter_order,
         });
 
         applied.push(DomainEvent::CountReset);
+
+        // Build runner_movements rows for all forced advancements.
+        // State has NOT been mutated yet so we can read current bases.
+        {
+            use crate::db::runner_movements::RunnerMovementInsert;
+            let half_str = match state.half {
+                crate::models::types::HalfInning::Top => "Top",
+                crate::models::types::HalfInning::Bottom => "Bottom",
+            };
+            let mk = |runner_id: Option<i64>,
+                      border: u8,
+                      start: &'static str,
+                      end: &'static str,
+                      scored: bool| {
+                RunnerMovementInsert {
+                    game_id: 0,   // filled in by engine loop
+                    pa_seq: None, // linked to PA by engine after PA insert
+                    game_event_id: None,
+                    inning: state.inning,
+                    half_inning: half_str.to_string(),
+                    runner_id,
+                    batter_order: border,
+                    start_base: start,
+                    end_base: end,
+                    advancement_type: "walk",
+                    is_out: false,
+                    scored,
+                    is_earned: true,
+                }
+            };
+            // Bases loaded: runner on 3B scores
+            if state.on_1b.is_some() && state.on_2b.is_some() && state.on_3b.is_some() {
+                let r3 = state.on_3b.unwrap_or(0);
+                walk_movements.push(mk(None, r3, "3B", "HOME", true));
+            }
+            if state.on_1b.is_some() && state.on_2b.is_some() {
+                let r2 = state.on_2b.unwrap_or(0);
+                walk_movements.push(mk(None, r2, "2B", "3B", false));
+            }
+            if state.on_1b.is_some() {
+                let r1 = state.on_1b.unwrap_or(0);
+                walk_movements.push(mk(None, r1, "1B", "2B", false));
+            }
+            // Batter to 1B
+            walk_movements.push(mk(Some(batter_id), batter_order, "BAT", "1B", false));
+        }
 
         events_ui.push(UiEvent::Line("BB: batter to 1B".to_string()));
         needs_next_at_bat = true;
@@ -276,6 +327,7 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
         persisted: vec![],
         applied,
         plate_appearance,
+        runner_movements: walk_movements,
         exit: false,
         status_change: None,
         needs_next_at_bat,
@@ -397,6 +449,7 @@ fn apply_hit_command(
         exit: false,
         status_change: None,
         needs_next_at_bat: true,
+        ..empty_result()
     }
 }
 
@@ -419,10 +472,10 @@ fn apply_steal(
     order: u8,
     dest: crate::models::runner::RunnerDest,
 ) -> ApplyResult {
+    use crate::db::runner_movements::RunnerMovementInsert;
     use crate::models::runner::RunnerDest;
 
     // Validate: the runner must currently be on the expected source base.
-    // A steal to 2B requires the runner to be on 1B, etc.
     let expected_source: Option<u8> = match dest {
         RunnerDest::Second => Some(1),
         RunnerDest::Third => Some(2),
@@ -439,7 +492,6 @@ fn apply_steal(
         };
     };
 
-    // Check the runner is actually on the expected source base.
     let on_expected = match expected {
         1 => state.on_1b == Some(order),
         2 => state.on_2b == Some(order),
@@ -457,22 +509,22 @@ fn apply_steal(
         };
     }
 
-    // Look up runner identity for the log message.
-    // We find which player sits in this batting slot from the current game state.
-    // If we can't resolve (edge case), we fall back to order number only.
     let (runner_id, first_name, last_name) = resolve_runner_identity(state, order);
 
-    let dest_label = match dest {
+    let start_base: &'static str = match expected {
+        1 => "1B",
+        2 => "2B",
+        _ => "3B",
+    };
+    let end_base: &'static str = match dest {
         RunnerDest::Second => "2B",
         RunnerDest::Third => "3B",
-        RunnerDest::Score => "HP",
+        RunnerDest::Score => "HOME",
         RunnerDest::First => "1B",
     };
+    let scored = dest == RunnerDest::Score;
 
-    let log_msg = format!(
-        "[{}] {} {} ruba la {}",
-        order, first_name, last_name, dest_label,
-    );
+    let log_msg = format!("[{order}] {first_name} {last_name} ruba la {}", end_base,);
 
     // Move the runner in state.
     match expected {
@@ -484,37 +536,43 @@ fn apply_steal(
     match dest {
         RunnerDest::Second => state.on_2b = Some(order),
         RunnerDest::Third => state.on_3b = Some(order),
-        RunnerDest::Score => {
-            // Runner scores — increment the batting team's run tally.
-            match state.half {
-                crate::models::types::HalfInning::Top => state.score.away += 1,
-                crate::models::types::HalfInning::Bottom => state.score.home += 1,
-            }
-        }
+        RunnerDest::Score => match state.half {
+            crate::models::types::HalfInning::Top => state.score.away += 1,
+            crate::models::types::HalfInning::Bottom => state.score.home += 1,
+        },
         RunnerDest::First => {}
     }
 
-    let event = DomainEvent::StolenBase {
-        order,
-        runner_id,
-        runner_first_name: first_name.clone(),
-        runner_last_name: last_name.clone(),
-        dest,
+    // Steal is persisted as a runner_movement (not a game_event).
+    // The engine loop will use game_event_id = None + pa_seq = None to signal
+    // this is a standalone movement; the DB row id is assigned at insert time.
+    let rm = RunnerMovementInsert {
+        game_id: 0,          // filled in by engine loop
+        pa_seq: None,        // not part of a PA
+        game_event_id: None, // standalone runner movement
+        inning: state.inning,
+        half_inning: match state.half {
+            crate::models::types::HalfInning::Top => "Top".to_string(),
+            crate::models::types::HalfInning::Bottom => "Bottom".to_string(),
+        },
+        runner_id: if runner_id != 0 {
+            Some(runner_id)
+        } else {
+            None
+        },
+        batter_order: order,
+        start_base,
+        end_base,
+        advancement_type: "steal",
+        is_out: false,
+        scored,
+        is_earned: true,
     };
 
     ApplyResult {
-        events: vec![UiEvent::Line(log_msg.clone())],
-        persisted: vec![PersistedEvent {
-            inning: state.inning,
-            half: state.half,
-            event,
-            description: log_msg,
-        }],
-        applied: vec![],
-        plate_appearance: None,
-        exit: false,
-        status_change: None,
-        needs_next_at_bat: false,
+        events: vec![UiEvent::Line(log_msg)],
+        runner_movements: vec![rm],
+        ..empty_result()
     }
 }
 
