@@ -5,7 +5,7 @@ pub mod events;
 pub mod factory;
 pub mod tui;
 
-use crate::models::play_ball::GameState;
+use crate::models::game_state::GameState;
 use crate::ui::events::UiEvent;
 pub use app::App;
 pub use context::PlayBallUiContext;

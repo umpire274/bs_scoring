@@ -1,5 +1,5 @@
-use crate::core::play_ball::{gate_check_lineups, list_playable_games, set_game_status};
-use crate::models::play_ball::{LineupSide, PlayBallGameContext, PlayBallGate};
+use crate::db::game_queries::{gate_check_lineups, list_playable_games, set_game_status};
+use crate::models::session::{LineupSide, PlayBallGameContext, PlayBallGate};
 use rusqlite::params;
 
 use crate::Database;

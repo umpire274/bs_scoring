@@ -1,6 +1,5 @@
 use crate::commands::engine_parser::parse_engine_commands;
 use crate::commands::types::EngineCommand;
-use crate::core::play_ball::set_game_status;
 use crate::core::play_ball_apply::apply_engine_command;
 use crate::core::play_ball_reducer::{
     apply_domain_event, apply_live_plate_appearance, apply_plate_appearance_row,
@@ -9,12 +8,13 @@ use crate::db::at_bat_draft::{
     AtBatDraftRow, clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft,
 };
 use crate::db::game_events::{GameEventRow, append_game_event, list_game_events};
+use crate::db::game_queries::set_game_status;
 use crate::db::plate_appearances::{
     PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
 };
 use crate::models::events::{DomainEvent, SideChangeData};
+use crate::models::game_state::{BatterOrder, GameState};
 use crate::models::plate_appearance::PlateAppearanceStep;
-use crate::models::play_ball::{BatterOrder, GameState};
 use crate::ui::Ui;
 use crate::ui::events::UiEvent;
 use crate::{HalfInning, Pitch, Position};
@@ -882,9 +882,9 @@ fn handle_three_outs_and_change_side(
     // ⚠️ IMPORTANT: bases should clear on side change.
     // Se NON hai un DomainEvent dedicato, almeno azzera lo stato runtime:
     // (idealmente: aggiungi clearing dentro reducer su SideChange)
-    state.on_1b = false;
-    state.on_2b = false;
-    state.on_3b = false;
+    state.on_1b = None;
+    state.on_2b = None;
+    state.on_3b = None;
 
     true
 }
@@ -1005,13 +1005,13 @@ fn runs_scored_from_pa(state_before: &GameState, pa: &PlateAppearanceRow) -> u32
     if pa.outcome_type.as_str() == "home_run" {
         runs += 1; // batter
 
-        if state_before.on_1b {
+        if state_before.on_1b.is_some() {
             runs += 1;
         }
-        if state_before.on_2b {
+        if state_before.on_2b.is_some() {
             runs += 1;
         }
-        if state_before.on_3b {
+        if state_before.on_3b.is_some() {
             runs += 1;
         }
     }
@@ -1121,9 +1121,9 @@ fn load_and_apply_draft(
 
     if prev_inning != draft_inning || prev_half != draft_half {
         state.outs = 0;
-        state.on_1b = false;
-        state.on_2b = false;
-        state.on_3b = false;
+        state.on_1b = None;
+        state.on_2b = None;
+        state.on_3b = None;
     }
 
     state.current_batter_id = draft.batter_id;

@@ -1,5 +1,6 @@
 use crate::models::field_zone::FieldZone;
-use crate::models::play_ball::BatterOrder;
+use crate::models::game_state::BatterOrder;
+use crate::models::runner::RunnerOverride;
 use crate::models::types::{HalfInning, Pitch};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -20,6 +21,10 @@ pub struct PlateAppearance {
     pub pitches_sequence: Vec<PlateAppearanceStep>,
     pub outcome: PlateAppearanceOutcome,
     pub outs: u8,
+    /// Explicit runner destinations entered by the scorer (0.8.0+).
+    /// Empty vec means full automatic advancement.
+    #[serde(default)]
+    pub runner_overrides: Vec<RunnerOverride>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

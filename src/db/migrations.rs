@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 14;
+pub const CURRENT_SCHEMA_VERSION: i64 = 15;
 
 /// Migration structure
 pub struct Migration {
@@ -84,6 +84,11 @@ pub fn get_migrations() -> Vec<Migration> {
             version: 14,
             description: "Restructure plate_appearances_compact into plate_appearances with batter_order and improved indexing",
             up: migration_v14,
+        },
+        Migration {
+            version: 15,
+            description: "Add runner_overrides_json column to plate_appearances for replay-safe override persistence",
+            up: migration_v15,
         },
     ]
 }
@@ -790,5 +795,19 @@ fn migration_v14(conn: &Connection) -> Result<()> {
         )?;
     }
 
+    Ok(())
+}
+
+fn migration_v15(conn: &Connection) -> Result<()> {
+    // Add runner_overrides_json to plate_appearances.
+    // Stores the Vec<RunnerOverride> as a JSON array so that replaying a PA
+    // after resume reconstructs the exact same base state as when it was scored.
+    // Default '[]' means no overrides — automatic advancement — for all legacy rows.
+    if !check_column_exists(conn, "plate_appearances", "runner_overrides_json")? {
+        conn.execute(
+            "ALTER TABLE plate_appearances ADD COLUMN runner_overrides_json TEXT NOT NULL DEFAULT '[]'",
+            [],
+        )?;
+    }
     Ok(())
 }

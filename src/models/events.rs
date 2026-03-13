@@ -116,3 +116,17 @@ impl DomainEvent {
         }
     }
 }
+
+// ─── Persisted event ─────────────────────────────────────────────────────────
+
+/// A domain event bundled with its context, ready to be written to `game_events`.
+///
+/// Produced by `apply_engine_command()` and consumed by the engine loop,
+/// which calls `append_game_event()` for each one.
+#[derive(Debug, Clone)]
+pub struct PersistedEvent {
+    pub inning: u32,
+    pub half: HalfInning,
+    pub event: DomainEvent,
+    pub description: String,
+}
