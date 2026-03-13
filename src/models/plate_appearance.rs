@@ -1,5 +1,6 @@
 use crate::models::field_zone::FieldZone;
-use crate::models::play_ball::{BatterOrder, RunnerOverride};
+use crate::models::game_state::BatterOrder;
+use crate::models::runner::RunnerOverride;
 use crate::models::types::{HalfInning, Pitch};
 use serde::{Deserialize, Serialize};
 use std::fmt;

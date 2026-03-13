@@ -1,6 +1,6 @@
 use crate::Pitch;
 use crate::models::field_zone::FieldZone;
-use crate::models::play_ball::RunnerOverride;
+use crate::models::runner::RunnerOverride;
 use crate::models::types::GameStatus;
 
 #[derive(Debug, Clone)]

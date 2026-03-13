@@ -1,6 +1,5 @@
 use crate::commands::engine_parser::parse_engine_commands;
 use crate::commands::types::EngineCommand;
-use crate::core::play_ball::set_game_status;
 use crate::core::play_ball_apply::apply_engine_command;
 use crate::core::play_ball_reducer::{
     apply_domain_event, apply_live_plate_appearance, apply_plate_appearance_row,
@@ -9,12 +8,13 @@ use crate::db::at_bat_draft::{
     AtBatDraftRow, clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft,
 };
 use crate::db::game_events::{GameEventRow, append_game_event, list_game_events};
+use crate::db::game_queries::set_game_status;
 use crate::db::plate_appearances::{
     PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
 };
 use crate::models::events::{DomainEvent, SideChangeData};
+use crate::models::game_state::{BatterOrder, GameState};
 use crate::models::plate_appearance::PlateAppearanceStep;
-use crate::models::play_ball::{BatterOrder, GameState};
 use crate::ui::Ui;
 use crate::ui::events::UiEvent;
 use crate::{HalfInning, Pitch, Position};

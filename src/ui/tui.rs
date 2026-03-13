@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::models::play_ball::GameState;
+use crate::models::game_state::GameState;
 use crate::ui::events::UiEvent;
 use crate::ui::{PlayBallUiContext, Ui};
 use crossterm::event::KeyEventKind;

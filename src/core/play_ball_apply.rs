@@ -1,16 +1,10 @@
 use crate::commands::types::EngineCommand;
-use crate::models::events::{DomainEvent, OutRecordedData, StatusChangedData, StrikeoutKind};
-use crate::models::play_ball::GameState;
-use crate::models::types::{GameStatus, HalfInning, Pitch};
+use crate::models::events::{
+    DomainEvent, OutRecordedData, PersistedEvent, StatusChangedData, StrikeoutKind,
+};
+use crate::models::game_state::GameState;
+use crate::models::types::{GameStatus, Pitch};
 use crate::ui::events::UiEvent;
-
-#[derive(Debug, Clone)]
-pub struct PersistedEvent {
-    pub inning: u32,
-    pub half: HalfInning,
-    pub event: DomainEvent,
-    pub description: String,
-}
 
 #[derive(Default)]
 pub struct ApplyResult {
@@ -290,7 +284,7 @@ fn apply_hit_command(
     state: &mut GameState,
     outcome: crate::models::plate_appearance::PlateAppearanceOutcome,
     label: &str,
-    runner_overrides: &[crate::models::play_ball::RunnerOverride],
+    runner_overrides: &[crate::models::runner::RunnerOverride],
 ) -> ApplyResult {
     let Some(batter_id) = state.current_batter_id else {
         return ApplyResult {

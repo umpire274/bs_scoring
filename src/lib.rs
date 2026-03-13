@@ -3,13 +3,6 @@
 //! A comprehensive baseball and softball scoring library with SQLite persistence,
 //! official scoring symbols support, and cross-platform compatibility.
 //!
-//! # Features
-//!
-//! - **Database Layer**: SQLite-backed persistence for leagues, teams, players, and games
-//! - **Scoring System**: Full support for official baseball scoring notation
-//! - **Cross-Platform**: Windows, macOS, and Linux support with platform-specific data paths
-//! - **Type Safety**: Strongly-typed models for all baseball entities
-//!
 //! # Example
 //!
 //! ```no_run
@@ -30,7 +23,7 @@ pub mod models;
 pub mod ui;
 pub mod utils;
 
-// Re-export commonly used items for convenience
+// ─── DB / infrastructure ─────────────────────────────────────────────────────
 pub use db::config::{get_app_data_dir, get_db_path, get_db_path_display, setup_db};
 pub use db::database::Database;
 pub use db::league::League;
@@ -38,23 +31,27 @@ pub use db::migrations::{get_schema_version, migrations_needed, run_migrations};
 pub use db::player::Player;
 pub use db::team::Team;
 
+// ─── Menu / CLI ───────────────────────────────────────────────────────────────
 pub use core::menu::{
     DBMenuChoice, GameMenuChoice, LeagueMenuChoice, MainMenuChoice, Menu, PlayerMenuChoice,
     TeamMenuChoice,
 };
 pub use core::parser::CommandParser;
 
-// Primitive domain types — used throughout the engine and DB layers
-pub use models::types::{
-    AdvancedPlay, Base, Error, HalfInning, HitType, OutType, Pitch, PitchCount,
-    PlateAppearanceResult, Position, Walk,
-};
+// ─── Primitive domain types (engine + DB layers) ─────────────────────────────
+pub use models::types::{GameStatus, HalfInning, Pitch, PitchCount, Position, Score};
 
-// The live PA model (compact, 1-row-per-batter)
+// ─── Live game model ─────────────────────────────────────────────────────────
+pub use models::game_state::{BatterOrder, GameState, PitchStats};
 pub use models::plate_appearance::PlateAppearance;
+pub use models::runner::{RunnerDest, RunnerOverride};
+pub use models::session::{LineupSide, PlayBallGameContext, PlayBallGate};
+
+// ─── Full scoring notation (parser / future engine) ──────────────────────────
+pub use models::scoring::{AdvancedPlay, Base, HitType, OutType, PlateAppearanceResult, Walk};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Library name
+/// Library name  
 pub const NAME: &str = env!("CARGO_PKG_NAME");

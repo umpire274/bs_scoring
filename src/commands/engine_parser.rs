@@ -1,7 +1,8 @@
 use crate::Pitch;
 use crate::commands::types::EngineCommand;
 use crate::models::field_zone::FieldZone;
-use crate::models::play_ball::{BatterOrder, RunnerDest, RunnerOverride};
+use crate::models::game_state::BatterOrder;
+use crate::models::runner::{RunnerDest, RunnerOverride};
 use crate::models::types::GameStatus;
 
 /// Parse a raw input line into a list of engine commands.
@@ -35,10 +36,16 @@ pub fn parse_engine_commands(line: &str) -> Vec<EngineCommand> {
     // Try to parse the first token as a hit command (possibly with batting-order prefix).
     // If it matches, gather runner overrides from the remaining tokens.
     if let Some((hit_cmd_no_overrides, batter_order)) = parse_batter_token(tokens[0]) {
-        let runner_overrides: Vec<RunnerOverride> = tokens[1..]
-            .iter()
-            .filter_map(|t| parse_runner_override_token(t))
-            .collect();
+        // All subsequent tokens must be valid runner overrides.
+        // If any token fails to parse, reject the whole command — silently
+        // dropping an invalid token (e.g. "6 h, 5 xx") would cause incorrect scoring.
+        let mut runner_overrides: Vec<RunnerOverride> = Vec::new();
+        for token in &tokens[1..] {
+            match parse_runner_override_token(token) {
+                Some(ro) => runner_overrides.push(ro),
+                None => return vec![EngineCommand::Unknown(line.to_string())],
+            }
+        }
 
         // Rebuild the hit command with overrides.
         let hit_cmd = attach_overrides(hit_cmd_no_overrides, runner_overrides);
@@ -513,5 +520,21 @@ mod tests {
         assert_eq!(RunnerDest::parse("home"), Some(RunnerDest::Score));
         assert_eq!(RunnerDest::parse("3b"), Some(RunnerDest::Third));
         assert_eq!(RunnerDest::parse("xyz"), None);
+    }
+
+    #[test]
+    fn test_invalid_override_token_rejected() {
+        // "5 xx" is not a valid runner override — whole command must become Unknown
+        let cmds = parse_engine_commands("6 h, 5 xx");
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], EngineCommand::Unknown(_)));
+    }
+
+    #[test]
+    fn test_invalid_override_typo_rejected() {
+        // "h, b" — "b" looks like a ball command but is not a valid runner override
+        let cmds = parse_engine_commands("h, b");
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], EngineCommand::Unknown(_)));
     }
 }

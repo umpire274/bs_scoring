@@ -1,5 +1,5 @@
-use crate::models::types;
-use crate::models::types::*;
+use crate::models::scoring::types::*;
+use crate::models::types::{Pitch, Position};
 use std::error::Error;
 
 pub struct CommandParser;
@@ -205,13 +205,9 @@ impl CommandParser {
         if input.starts_with('E') && input.len() >= 2 {
             let pos_str = &input[1..];
             if let Ok(pos_num) = pos_str.parse::<u8>()
-                && let Some(position) = Position::from_number(pos_num)
+                && let Some(_position) = Position::from_number(pos_num)
             {
                 return Ok(PlateAppearanceResult::Error {
-                    error: types::Error {
-                        position,
-                        description: input.clone(),
-                    },
                     reached_base: Base::First,
                 });
             }

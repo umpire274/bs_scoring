@@ -1,8 +1,9 @@
 use crate::db::plate_appearances::PlateAppearanceRow;
 use crate::engine::play_ball::{bump_order, parse_pa_sequence};
 use crate::models::events::{DomainEvent, StrikeoutKind};
+use crate::models::game_state::{BatterOrder, GameState};
 use crate::models::plate_appearance::PlateAppearanceStep;
-use crate::models::play_ball::{BatterOrder, GameState, RunnerDest, RunnerOverride};
+use crate::models::runner::{RunnerDest, RunnerOverride};
 use crate::models::types::{HalfInning, Pitch};
 
 /// Apply a persisted DomainEvent to the in-memory GameState.
@@ -602,7 +603,7 @@ pub fn apply_plate_appearance_row(state: &mut GameState, row: &PlateAppearanceRo
         pitches_sequence: seq,
         outcome,
         outs: row.outs as u8,
-        runner_overrides: vec![], // legacy rows have no override data
+        runner_overrides: row.runner_overrides(),
     };
 
     apply_plate_appearance(state, &pa);

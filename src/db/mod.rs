@@ -2,6 +2,7 @@ pub mod at_bat_draft;
 pub mod config;
 pub mod database;
 pub mod game_events;
+pub mod game_queries;
 pub mod league;
 pub mod migrations;
 pub mod plate_appearances;

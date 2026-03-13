@@ -1,7 +1,8 @@
 use rusqlite::{Connection, Result, params};
 
+use crate::models::game_state::BatterOrder;
 use crate::models::plate_appearance::{HitOutcomeData, PlateAppearance};
-use crate::models::play_ball::BatterOrder;
+use crate::models::runner::RunnerOverride;
 
 #[derive(Debug, Clone)]
 pub struct PlateAppearanceRow {
@@ -18,6 +19,17 @@ pub struct PlateAppearanceRow {
     pub outcome_type: String,
     pub outcome_data: Option<String>,
     pub outs: i64,
+    /// JSON-serialised `Vec<RunnerOverride>`. Empty array for legacy rows and
+    /// any PA that used automatic (non-overridden) advancement.
+    pub runner_overrides_json: String,
+}
+
+impl PlateAppearanceRow {
+    /// Deserialise `runner_overrides_json` into a `Vec<RunnerOverride>`.
+    /// Returns an empty vec on parse failure (safe fallback = automatic advancement).
+    pub fn runner_overrides(&self) -> Vec<RunnerOverride> {
+        serde_json::from_str(&self.runner_overrides_json).unwrap_or_default()
+    }
 }
 
 fn serialize_hit_outcome_data(zone: &Option<crate::models::field_zone::FieldZone>) -> String {
@@ -40,22 +52,18 @@ pub fn append_plate_appearance(
         crate::models::plate_appearance::PlateAppearanceOutcome::Single { zone } => {
             ("single".to_string(), Some(serialize_hit_outcome_data(zone)))
         }
-
         crate::models::plate_appearance::PlateAppearanceOutcome::Double { zone } => {
             ("double".to_string(), Some(serialize_hit_outcome_data(zone)))
         }
-
         crate::models::plate_appearance::PlateAppearanceOutcome::Triple { zone } => {
             ("triple".to_string(), Some(serialize_hit_outcome_data(zone)))
         }
-
         crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { zone } => (
             "home_run".to_string(),
             Some(serialize_hit_outcome_data(zone)),
         ),
     };
 
-    // per-game sequence
     let seq: i64 = conn.query_row(
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM plate_appearances WHERE game_id = ?1",
         params![game_pk],
@@ -65,6 +73,9 @@ pub fn append_plate_appearance(
     let pitches_sequence =
         serde_json::to_string(&pa.pitches_sequence).unwrap_or_else(|_| "[]".to_string());
 
+    let runner_overrides_json =
+        serde_json::to_string(&pa.runner_overrides).unwrap_or_else(|_| "[]".to_string());
+
     conn.execute(
         r#"
         INSERT INTO plate_appearances (
@@ -72,8 +83,8 @@ pub fn append_plate_appearance(
             batter_id, batter_order,
             pitcher_id, pitches, pitches_sequence,
             outcome_type, outcome_data,
-            outs
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            outs, runner_overrides_json
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
         "#,
         params![
             game_pk,
@@ -91,6 +102,7 @@ pub fn append_plate_appearance(
             outcome_type,
             outcome_data,
             pa.outs as i64,
+            runner_overrides_json,
         ],
     )?;
 
@@ -104,7 +116,8 @@ pub fn list_plate_appearances(conn: &Connection, game_pk: i64) -> Result<Vec<Pla
                batter_id, CAST(batter_order AS INTEGER),
                pitcher_id, pitches, pitches_sequence,
                outcome_type, outcome_data,
-               outs
+               outs,
+               COALESCE(runner_overrides_json, '[]')
         FROM plate_appearances
         WHERE game_id = ?1
         ORDER BY seq ASC
@@ -128,6 +141,7 @@ pub fn list_plate_appearances(conn: &Connection, game_pk: i64) -> Result<Vec<Pla
             outcome_type: r.get(10)?,
             outcome_data: r.get(11)?,
             outs: r.get(12)?,
+            runner_overrides_json: r.get(13)?,
         });
     }
     Ok(out)

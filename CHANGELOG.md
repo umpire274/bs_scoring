@@ -5,17 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-03-13
+
+### Changed — module refactor (no functional changes)
+
+- `models/play_ball.rs` split into three focused modules:
+  - `models/game_state.rs` — `GameState`, `BatterOrder`, `PitchStats`
+  - `models/runner.rs` — `RunnerDest`, `RunnerOverride`
+  - `models/session.rs` — `PlayBallGameContext`, `PlayBallGate`, `LineupSide`
+- `models/play_ball.rs` kept as compatibility re-export shim
+- Full-scoring domain types (`HitType`, `OutType`, `Walk`, `AdvancedPlay`,
+  `PlateAppearanceResult`, `Base`, `ScoringError`) moved from `models/types.rs`
+  to new `models/scoring/types.rs`; `core/parser.rs` updated accordingly
+- `models/events.rs` gains `PersistedEvent` (previously defined inline in
+  `core/play_ball_apply.rs`)
+- `core/play_ball.rs` functions (`list_playable_games`, `gate_check_lineups`,
+  `set_game_status`) moved to `db/game_queries.rs`; `core/play_ball.rs`
+  kept as deprecated re-export shim
+- `OutcomeSymbol` removed from `models/play_ball.rs` (was unused)
+- `lib.rs` re-exports updated to reflect new module layout
+
+### Fixed
+
+- **Runner override replay correctness** (migration v15): `runner_overrides_json`
+  column added to `plate_appearances`; `append_plate_appearance` now persists
+  override data and `apply_plate_appearance_row` deserialises it on resume.
+  Previously, any hit scored with explicit runner destinations would be replayed
+  using automatic advancement after a game was reopened, producing a different
+  base/score state than what was originally recorded.
+- **Silent invalid override rejection**: hit commands with an unrecognisable
+  trailing token (e.g. `6 h, 5 xx`) now return `Unknown` instead of silently
+  executing a plain hit. Previously, `filter_map` dropped invalid tokens without
+  any error, causing silent data loss.
+
 ## [0.8.0] - 2026-03-12
 
 ### Added
-
 - **Runner override syntax** — lo scorer può ora specificare esplicitamente dove
   finisce ogni corridore dopo un hit, usando il batting order come identificatore:
-    - `h` → singola, avanzamento automatico (comportamento precedente invariato)
-    - `6 h, 5 2b` → il #6 batte singola; il corridore #5 rimane in 2a
-    - `6 h, 5 2b, 3 sc` → singola; #5 → 2a; #3 segna
-    - `4 2h, 2 sc` → doppia; il corridore #2 segna (anziché fermarsi in 4a)
-    - Destinazioni valide: `1b`, `2b`, `3b`, `sc` / `score` / `home`
+  - `h` → singola, avanzamento automatico (comportamento precedente invariato)
+  - `6 h, 5 2b` → il #6 batte singola; il corridore #5 rimane in 2a
+  - `6 h, 5 2b, 3 sc` → singola; #5 → 2a; #3 segna
+  - `4 2h, 2 sc` → doppia; il corridore #2 segna (anziché fermarsi in 4a)
+  - Destinazioni valide: `1b`, `2b`, `3b`, `sc` / `score` / `home`
 - `RunnerDest` e `RunnerOverride` aggiunti a `models/play_ball.rs`
 - `apply_hit_with_overrides()` nel reducer sostituisce l'avanzamento automatico
   fisso; qualsiasi corridore senza override esplicito continua ad avanzare
@@ -31,7 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rapido (es. `9 h, 8 2b, 7sc, 6sc` con basi piene è ora valido)
 
 ### Changed
-
 - `EngineCommand::Single/Double/Triple/HomeRun` hanno ora un campo
   `runner_overrides: Vec<RunnerOverride>` (breaking — solo interno)
 - La UI (`tui.rs`) converte `Option<BatterOrder>` → `bool` per il diamond;
@@ -71,6 +102,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Migration v13 added as a no-op placeholder** — closes the gap between v12
   and v14 in the migration chain, preventing confusion when auditing schema
   history.
+
+
 
 ### Added
 

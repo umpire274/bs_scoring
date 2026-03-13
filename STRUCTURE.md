@@ -146,10 +146,10 @@ Input: "6 h, 5 2b"
 
 ### Two advancement paths
 
-| Path           | Function                     | Used for                   |
-|----------------|------------------------------|----------------------------|
-| With overrides | `apply_hit_with_overrides()` | Live scoring (v0.8.0+)     |
-| Automatic only | `apply_hit_advancement()`    | PA replay from legacy rows |
+| Path | Function | Used for |
+|------|----------|----------|
+| With overrides | `apply_hit_with_overrides()` | Live scoring (v0.8.0+) |
+| Automatic only | `apply_hit_advancement()` | PA replay from legacy rows |
 
 ### Compact plate appearance (resume model)
 
@@ -166,40 +166,40 @@ Current: **v14** (migration chain v1–v13 + v14; v13 is a documented no-op).
 
 ## 📦 Dependencies
 
-| Crate        | Purpose                                |
-|--------------|----------------------------------------|
-| `rusqlite`   | SQLite bindings                        |
-| `serde`      | Serialization framework                |
-| `serde_json` | JSON for PA sequences and outcome data |
-| `ratatui`    | Terminal UI                            |
-| `crossterm`  | Cross-platform terminal control        |
-| `chrono`     | Date handling                          |
-| `uuid`       | Game ID generation                     |
+| Crate          | Purpose                                  |
+|----------------|------------------------------------------|
+| `rusqlite`     | SQLite bindings                          |
+| `serde`        | Serialization framework                  |
+| `serde_json`   | JSON for PA sequences and outcome data   |
+| `ratatui`      | Terminal UI                              |
+| `crossterm`    | Cross-platform terminal control          |
+| `chrono`       | Date handling                            |
+| `uuid`         | Game ID generation                       |
 
 ---
 
 ## 🗄️ Database locations
 
-| Platform | Path                                          |
-|----------|-----------------------------------------------|
-| Windows  | `%LOCALAPPDATA%\bs_scorer\baseball_scorer.db` |
-| macOS    | `$HOME/.bs_scorer/baseball_scorer.db`         |
-| Linux    | `$HOME/.bs_scorer/baseball_scorer.db`         |
+| Platform | Path                                               |
+|----------|----------------------------------------------------|
+| Windows  | `%LOCALAPPDATA%\bs_scorer\baseball_scorer.db`      |
+| macOS    | `$HOME/.bs_scorer/baseball_scorer.db`              |
+| Linux    | `$HOME/.bs_scorer/baseball_scorer.db`              |
 
 ---
 
 ## 📈 Version history (major milestones)
 
-| Version | Highlights                                                            |
-|---------|-----------------------------------------------------------------------|
-| v0.8.0  | Runner overrides by batting order; `Option<BatterOrder>` on bases     |
+| Version | Highlights |
+|---------|-----------|
+| v0.8.0  | Runner overrides by batting order; `Option<BatterOrder>` on bases |
 | v0.7.7  | Refactor pass: dead types removed, strum removed, migration gap fixed |
-| v0.7.x  | Compact PA persistence, deterministic resume, TUI scoreboard          |
-| v0.6.x  | Pitch-by-pitch tracking, pitch count, strike/ball logic               |
-| v0.4.x  | Pre-game lineup editing, GameStatus enum                              |
-| v0.3.x  | Player management, CSV/JSON import-export                             |
-| v0.2.x  | SQLite persistence, menu system, schema migrations                    |
-| v0.1.0  | Initial CLI scoring                                                   |
+| v0.7.x  | Compact PA persistence, deterministic resume, TUI scoreboard |
+| v0.6.x  | Pitch-by-pitch tracking, pitch count, strike/ball logic |
+| v0.4.x  | Pre-game lineup editing, GameStatus enum |
+| v0.3.x  | Player management, CSV/JSON import-export |
+| v0.2.x  | SQLite persistence, menu system, schema migrations |
+| v0.1.0  | Initial CLI scoring |
 
 ---
 
