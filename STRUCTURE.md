@@ -1,4 +1,4 @@
-# 🎯 BS Scoring v0.8.0 – Project Structure
+# 🎯 BS Scoring v0.9.1 – Project Structure
 
 ## 📂 Directory layout
 
@@ -19,21 +19,34 @@ bs_scoring/
     │
     ├── models/                 # Pure data types — no I/O, no DB
     │   ├── types.rs            # HalfInning, Pitch, GameStatus, Score, Position, …
-    │   ├── play_ball.rs        # GameState, BatterOrder, RunnerDest, RunnerOverride
+    │   ├── game_state.rs       # GameState, BatterOrder, PitchStats        [v0.9.0]
+    │   ├── runner.rs           # RunnerDest, RunnerOverride                 [v0.9.0]
+    │   ├── session.rs          # PlayBallGameContext, PlayBallGate,         [v0.9.0]
+    │   │                       #   LineupSide
+    │   ├── play_ball.rs        # ⚠ Compatibility shim — re-exports from    [v0.9.0]
+    │   │                       #   game_state, runner, session
     │   ├── plate_appearance.rs # PlateAppearance, PlateAppearanceOutcome, …
-    │   ├── events.rs           # DomainEvent, UiEvent, PersistedEvent
+    │   ├── events.rs           # DomainEvent, PersistedEvent               [v0.9.0]
     │   ├── field_zone.rs       # FieldZone (LF, CF, RF, …)
-    │   └── player_traits.rs    # PitchHand, BatSide
+    │   ├── player_traits.rs    # PitchHand, BatSide
+    │   └── scoring/            # Full scoring notation types               [v0.9.0]
+    │       ├── mod.rs
+    │       └── types.rs        # HitType, OutType, Walk, AdvancedPlay,
+    │                           #   PlateAppearanceResult, Base, ScoringError
+    │                           #   (used by core/parser.rs; not by live engine)
     │
     ├── commands/               # Input parsing
-    │   ├── types.rs            # EngineCommand enum
-    │   └── engine_parser.rs    # parse_engine_commands() — handles "6 h, 5 2b" syntax
+    │   ├── types.rs            # EngineCommand enum (incl. StealBase)      [v0.9.1]
+    │   └── engine_parser.rs    # parse_engine_commands()
+    │                           #   handles "6 h, 5 2b" and "6 st 2b" syntax
     │
     ├── core/                   # Game logic
     │   ├── menu.rs             # COBOL-style menu system
     │   ├── parser.rs           # Scoring notation parser (legacy / reference)
-    │   ├── play_ball.rs        # Play Ball menu entry point
-    │   ├── play_ball_apply.rs  # EngineCommand → ApplyResult (stateless transform)
+    │   ├── play_ball.rs        # ⚠ Deprecated shim — re-exports from      [v0.9.0]
+    │   │                       #   db/game_queries
+    │   ├── play_ball_apply.rs  # EngineCommand → ApplyResult
+    │   │                       #   apply_steal() lives here                [v0.9.1]
     │   └── play_ball_reducer.rs# DomainEvent / PA → GameState mutations
     │                           #   apply_hit_with_overrides() lives here
     │
@@ -42,8 +55,11 @@ bs_scoring/
     │
     ├── db/                     # SQLite persistence layer
     │   ├── database.rs         # Connection management
-    │   ├── migrations.rs       # Schema versioning (v1–v14)
-    │   ├── plate_appearances.rs# plate_appearances_compact CRUD
+    │   ├── migrations.rs       # Schema versioning (v1–v15)                [v0.9.0]
+    │   ├── game_queries.rs     # list_playable_games, gate_check_lineups,  [v0.9.0]
+    │   │                       #   set_game_status
+    │   ├── plate_appearances.rs# plate_appearances CRUD                    [v0.9.0]
+    │   │                       #   incl. runner_overrides_json
     │   ├── game_events.rs      # game_events log CRUD
     │   ├── at_bat_draft.rs     # In-progress PA draft (resume support)
     │   ├── league.rs           # League CRUD
@@ -92,43 +108,67 @@ bs_scoring/
 └──────┬─────────────────┬──────────────────┬─────────────┘
        │                 │                  │
        ▼                 ▼                  ▼
-┌────────────┐  ┌─────────────────┐  ┌────────────────┐
-│ commands/  │  │     core/       │  │      db/       │
-│            │  │                 │  │                │
-│ engine_    │  │ play_ball_      │  │ plate_         │
-│ parser.rs  │  │ apply.rs        │  │ appearances.rs │
-│            │  │                 │  │ game_events.rs │
-│ "6 h, 5 2b"│  │ play_ball_      │  │ at_bat_draft.rs│
-│  → Single{ │  │ reducer.rs      │  │                │
-│  overrides}│  │                 │  │ SQLite (v14)   │
-└────────────┘  │ apply_hit_with_ │  └────────────────┘
-                │ overrides()     │
-                └────────┬────────┘
+┌────────────┐  ┌─────────────────┐  ┌─────────────────────┐
+│ commands/  │  │     core/       │  │        db/          │
+│            │  │                 │  │                     │
+│ engine_    │  │ play_ball_      │  │ plate_appearances.rs│
+│ parser.rs  │  │ apply.rs        │  │ game_events.rs      │
+│            │  │                 │  │ game_queries.rs     │
+│ "6 h, 5 2b"│  │ play_ball_      │  │ at_bat_draft.rs     │
+│ "6 st 2b"  │  │ reducer.rs      │  │                     │
+│            │  │                 │  │ SQLite (v15)        │
+└────────────┘  └────────┬────────┘  └─────────────────────┘
                          │
                          ▼
-               ┌──────────────────┐
-               │   models/        │
-               │                  │
-               │ GameState        │
-               │ on_1b/2b/3b:     │
-               │ Option<BatterOrd>│
-               │                  │
-               │ RunnerOverride   │
-               │ PlateAppearance  │
-               └──────────────────┘
+               ┌──────────────────────┐
+               │       models/        │
+               │                      │
+               │ game_state.rs        │
+               │   GameState          │
+               │   on_1b/2b/3b:       │
+               │   Option<BatterOrder>│
+               │                      │
+               │ runner.rs            │
+               │   RunnerDest         │
+               │   RunnerOverride     │
+               │                      │
+               │ session.rs           │
+               │   PlayBallGameContext│
+               │   PlayBallGate       │
+               │                      │
+               │ plate_appearance.rs  │
+               │ events.rs            │
+               └──────────────────────┘
 ```
 
 ---
 
 ## 🔑 Key design decisions
 
+### Model split (v0.9.0)
+
+Prior to v0.9.0, `models/play_ball.rs` contained everything related to live
+game state. It has been split into focused modules:
+
+| Module | Contents |
+|--------|----------|
+| `models/game_state.rs` | `GameState`, `BatterOrder`, `PitchStats` |
+| `models/runner.rs` | `RunnerDest`, `RunnerOverride` |
+| `models/session.rs` | `PlayBallGameContext`, `PlayBallGate`, `LineupSide` |
+| `models/scoring/types.rs` | Full scoring notation types (`HitType`, `OutType`, etc.) — used only by `core/parser.rs` |
+| `models/play_ball.rs` | Compatibility shim — re-exports from the above modules |
+
+Similarly, `core/play_ball.rs` (DB queries) has been moved to `db/game_queries.rs`
+and kept as a deprecated re-export shim.
+
 ### Runner identity on bases (`Option<BatterOrder>`)
 
-From v0.8.0, `GameState.on_1b/on_2b/on_3b` are `Option<BatterOrder>` instead of `bool`.
-The engine now knows *who* is on each base (by batting-order slot), not just *whether*
-a base is occupied. This is what enables explicit runner overrides.
+`GameState.on_1b/on_2b/on_3b` are `Option<BatterOrder>` (since v0.8.0).
+The engine knows *who* is on each base by batting-order slot, not just
+*whether* a base is occupied. This enables explicit runner overrides and
+steal command validation.
 
-The UI still displays bases as occupied/empty (the diamond shows `◆` / `◇`).
+The UI still displays bases as occupied/empty (`◆` / `◇`).
 
 ### Runner override flow
 
@@ -137,6 +177,7 @@ Input: "6 h, 5 2b"
   └─ parse_engine_commands()
        └─ Single { zone: None, runner_overrides: [{ order: 5, dest: Second }] }
             └─ apply_hit_command()
+                 ├─ validate_runner_overrides()   ← collision check before state change
                  └─ PlateAppearance { ..., runner_overrides: [...] }
                       └─ apply_live_plate_appearance()
                            └─ apply_hit_with_overrides(state, batter=6, bases=1, overrides)
@@ -144,54 +185,78 @@ Input: "6 h, 5 2b"
                                 • batter #6 → automatic: goes to 1B
 ```
 
+### Steal flow (v0.9.1)
+
+```
+Input: "k, 6 st 2b"
+  └─ parse_engine_commands()
+       ├─ Pitch(CalledStrike)
+       └─ StealBase { order: 6, dest: Second }
+            └─ apply_steal()
+                 ├─ validate: on_1b == Some(6)?   ← error if runner not on source base
+                 ├─ state.on_1b = None
+                 ├─ state.on_2b = Some(6)
+                 └─ persisted: DomainEvent::StolenBase { order: 6, dest: Second, … }
+```
+
 ### Two advancement paths
 
 | Path | Function | Used for |
 |------|----------|----------|
-| With overrides | `apply_hit_with_overrides()` | Live scoring (v0.8.0+) |
-| Automatic only | `apply_hit_advancement()` | PA replay from legacy rows |
+| With overrides | `apply_hit_with_overrides()` | Live scoring |
+| Replay from DB | `apply_plate_appearance_row()` | Resume — uses `runner_overrides_json` |
 
-### Compact plate appearance (resume model)
+### Override validation
 
-Every completed PA is persisted as a single row in `plate_appearances_compact`.
-On resume, the game state is rebuilt by replaying these rows in order —
-no pitch-by-pitch event log needed. Runner overrides are serialized into
-the PA row so replay is faithful to the original scoring.
+Before any state mutation, `validate_runner_overrides()` checks:
+
+1. No two overrides (or batter destination) claim the same base.
+2. No override targets a base occupied by a runner *not* listed in the
+   overrides — they would otherwise be silently evicted.
+
+Both conditions return an explicit error message to the scorer.
 
 ### DB schema version
 
-Current: **v14** (migration chain v1–v13 + v14; v13 is a documented no-op).
+Current: **v15**.
+
+| Migration | Change |
+|-----------|--------|
+| v14 | `plate_appearances_compact` → `plate_appearances` with `batter_order` |
+| v15 | Add `runner_overrides_json TEXT NOT NULL DEFAULT '[]'` to `plate_appearances` |
 
 ---
 
 ## 📦 Dependencies
 
-| Crate          | Purpose                                  |
-|----------------|------------------------------------------|
-| `rusqlite`     | SQLite bindings                          |
-| `serde`        | Serialization framework                  |
-| `serde_json`   | JSON for PA sequences and outcome data   |
-| `ratatui`      | Terminal UI                              |
-| `crossterm`    | Cross-platform terminal control          |
-| `chrono`       | Date handling                            |
-| `uuid`         | Game ID generation                       |
+| Crate        | Purpose                                |
+|--------------|----------------------------------------|
+| `rusqlite`   | SQLite bindings                        |
+| `serde`      | Serialization framework                |
+| `serde_json` | JSON for PA sequences and outcome data |
+| `ratatui`    | Terminal UI                            |
+| `crossterm`  | Cross-platform terminal control        |
+| `chrono`     | Date handling                          |
+| `uuid`       | Game ID generation                     |
 
 ---
 
 ## 🗄️ Database locations
 
-| Platform | Path                                               |
-|----------|----------------------------------------------------|
-| Windows  | `%LOCALAPPDATA%\bs_scorer\baseball_scorer.db`      |
-| macOS    | `$HOME/.bs_scorer/baseball_scorer.db`              |
-| Linux    | `$HOME/.bs_scorer/baseball_scorer.db`              |
+| Platform | Path                                          |
+|----------|-----------------------------------------------|
+| Windows  | `%LOCALAPPDATA%\bs_scorer\baseball_scorer.db` |
+| macOS    | `$HOME/.bs_scorer/baseball_scorer.db`         |
+| Linux    | `$HOME/.bs_scorer/baseball_scorer.db`         |
 
 ---
 
 ## 📈 Version history (major milestones)
 
 | Version | Highlights |
-|---------|-----------|
+|---------|------------|
+| v0.9.1  | Steal command (`<order> st <dest>`); Unicode panic fix; runner collision validation |
+| v0.9.0  | Module split (game_state, runner, session, scoring); runner override persistence (migration v15); DB queries moved to db/game_queries |
 | v0.8.0  | Runner overrides by batting order; `Option<BatterOrder>` on bases |
 | v0.7.7  | Refactor pass: dead types removed, strum removed, migration gap fixed |
 | v0.7.x  | Compact PA persistence, deterministic resume, TUI scoreboard |

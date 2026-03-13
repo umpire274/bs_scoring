@@ -3,6 +3,33 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+
+## [0.9.1] - 2026-03-13
+
+### Added
+
+- **Steal command** (`<order> st <base>`): scorer can record a successful stolen
+  base mid-inning, standalone or combined with a pitch command
+  (e.g. `k, 6 st 2b`). Valid destinations: `2b`, `3b`, `sc`/`score`/`home`.
+  Stealing home increments the batting team's score.
+- `EngineCommand::StealBase { order, dest }` variant
+- `DomainEvent::StolenBase { order, runner_id, runner_first_name,
+  runner_last_name, dest }` — persisted to `game_events` for replay on resume
+- Validation: runner must be on the expected source base; `st 1b` and
+  out-of-range order (0, >9) are rejected as `Unknown`
+
+### Fixed
+
+- **Unicode panic in compact override tokens**: `parse_runner_override_token`
+  used byte-index slicing (`&compact[..1]`) which panics on non-ASCII input
+  (e.g. `h, é2b`). Now uses `char_indices` to split at the first char boundary
+  safely — non-ASCII leading chars return `None` without panicking.
+- **Silent runner overwrite on conflicting destinations**: `apply_hit_command`
+  now calls `validate_runner_overrides` before touching state. Returns an error
+  if two overrides claim the same base, or if an override destination is already
+  occupied by a runner not listed in the overrides (who would otherwise be
+  silently evicted).
+
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.9.0] - 2026-03-13
