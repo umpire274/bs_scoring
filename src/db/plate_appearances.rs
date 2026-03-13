@@ -41,7 +41,7 @@ pub fn append_plate_appearance(
     conn: &Connection,
     game_pk: i64,
     pa: &PlateAppearance,
-) -> Result<()> {
+) -> Result<i64> {
     let (outcome_type, outcome_data) = match &pa.outcome {
         crate::models::plate_appearance::PlateAppearanceOutcome::Walk => ("walk".to_string(), None),
         crate::models::plate_appearance::PlateAppearanceOutcome::Out => ("out".to_string(), None),
@@ -106,7 +106,7 @@ pub fn append_plate_appearance(
         ],
     )?;
 
-    Ok(())
+    Ok(seq)
 }
 
 pub fn list_plate_appearances(conn: &Connection, game_pk: i64) -> Result<Vec<PlateAppearanceRow>> {

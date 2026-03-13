@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
+## [0.9.2] - 2026-03-13
+
+### Changed (architecture)
+
+- **`runner_movements` table rebuilt** (migration v16): replaced legacy `at_bat_id`
+  FK (pointing to unused `at_bats` table) with `pa_seq` (FK to
+  `plate_appearances.seq`, NULL for non-PA events) and `game_event_id` (FK to
+  `game_events.id`, NULL for PA movements). Added `inning`, `half_inning`,
+  `game_id` columns. New `advancement_type` values: `hit_auto`, `hit_override`,
+  `walk`, `steal`.
+- **`game_events` scope clarified**: only administrative/informational events
+  (game start, status changes, side changes, at-bat tracking, pitch recording,
+  strikeouts, outs, walks). Runner base movements are no longer stored here.
+- **Steal persistence moved to `runner_movements`**: `DomainEvent::StolenBase`
+  removed; steals are now written as a `runner_movements` row
+  (`advancement_type = "steal"`, `pa_seq = NULL`).
+- **Hit advancements persisted in `runner_movements`**: every runner that moves
+  on a hit (automatic or override) generates one row — `hit_auto` or
+  `hit_override`.
+- **Walk advancements persisted in `runner_movements`**: every forced advancement
+  on a BB (batter to 1B, and any runners pushed up) generates one row per runner.
+- **`append_plate_appearance` returns `i64`** (the `seq` of the inserted row)
+  so the engine can link runner movements to the correct PA.
+- **`apply_live_plate_appearance` returns `Vec<RunnerMovementInsert>`** — hit
+  movements are computed from a pre-mutation base snapshot and returned for the
+  engine to persist.
+- **`apply_hit_with_overrides` returns `Vec<RunnerMovementInsert>`** — replay
+  path discards the value with `let _ =`.
+
+### Fixed
+
+- **Steal replay on resume**: `replay_plate_appearances_and_log` now loads and
+  interleaves standalone `runner_movements` rows (steals) in the correct
+  inning/half order, applying them to the rebuilt `GameState`. Previously,
+  steals appeared in the log (via `game_events`) but were NOT applied to base
+  state on resume.
+
 ## [0.9.1] - 2026-03-13
 
 ### Added

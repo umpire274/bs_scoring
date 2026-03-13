@@ -40,6 +40,10 @@ pub fn run_play_ball_engine(
     // Track whether we already have any events (if yes, PLAYBALL is not allowed).
     let mut has_events = false;
 
+    // Track the seq of the last committed PA so standalone movements (steals)
+    // can be linked to it in the DB.
+    let mut last_pa_seq: Option<i64> = None;
+
     // --------- Replay persisted events + deterministic rebuild (resume) ----------
     // --------- Resume ----------
     match list_game_events(conn, game_pk) {
@@ -47,13 +51,28 @@ pub fn run_play_ball_engine(
             has_events = !rows.is_empty();
             replay_admin_logs(ui, &rows);
 
-            // 1) deterministic rebuild from plate appearances
+            // Load steal movements for replay — now stored with pa_seq = last PA seq.
+            let standalone_movements =
+                match crate::db::runner_movements::list_runner_movements(conn, game_pk) {
+                    Ok(rms) => rms
+                        .into_iter()
+                        .filter(|r| r.advancement_type == "steal")
+                        .collect::<Vec<_>>(),
+                    Err(e) => {
+                        ui.emit(UiEvent::Error(format!(
+                            "Failed to load runner movements: {e}"
+                        )));
+                        vec![]
+                    }
+                };
+
+            // 1) deterministic rebuild from plate appearances + interlaced standalone movements
             match list_plate_appearances(conn, game_pk) {
                 Ok(pas) => {
                     if !pas.is_empty() {
                         has_events = true;
                     }
-                    replay_plate_appearances_and_log(ui, &mut state, &pas);
+                    replay_plate_appearances_and_log(ui, &mut state, &pas, &standalone_movements);
                 }
                 Err(e) => ui.emit(UiEvent::Error(format!(
                     "Failed to load plate appearances: {e}"
@@ -219,7 +238,7 @@ pub fn run_play_ball_engine(
             }
 
             // ---------------- Default path (apply -> emit -> persist -> reduce -> status -> exit) ----------------
-            let result = apply_engine_command(&mut state, cmd);
+            let mut result = apply_engine_command(&mut state, cmd);
 
             for ev in result.events {
                 ui.emit(ev);
@@ -272,21 +291,60 @@ pub fn run_play_ball_engine(
 
             // If a PA was completed, persist a single compact record
             if let Some(pa) = &result.plate_appearance {
-                if let Err(e) = append_plate_appearance(conn, game_pk, pa) {
-                    ui.emit(UiEvent::Error(format!(
-                        "Failed to append plate appearance: {e}"
-                    )));
-                } else {
-                    // Apply the compact PA immediately to live state.
-                    // IMPORTANT: this already advances the batting-order cursor.
-                    apply_live_plate_appearance(&mut state, pa);
+                match append_plate_appearance(conn, game_pk, pa) {
+                    Err(e) => {
+                        ui.emit(UiEvent::Error(format!(
+                            "Failed to append plate appearance: {e}"
+                        )));
+                    }
+                    Ok(pa_seq) => {
+                        // Apply the compact PA immediately to live state.
+                        // This returns hit runner movements (empty for non-hit outcomes).
+                        let hit_movements = apply_live_plate_appearance(&mut state, pa);
 
-                    // PA is over, clear the draft now.
-                    let _ = clear_at_bat_draft(conn, game_pk);
+                        // Walk movements were computed before state mutation in apply_pitch
+                        // and are stored in result.runner_movements.
+                        // Hit movements come from apply_live_plate_appearance.
+                        // They are mutually exclusive per PA.
+                        let pa_movements: Vec<_> = if !hit_movements.is_empty() {
+                            hit_movements
+                        } else {
+                            result.runner_movements.drain(..).collect()
+                        };
 
-                    has_events = true;
-                    pa_applied_live = true;
+                        for mut rm in pa_movements {
+                            rm.game_id = game_pk;
+                            rm.pa_seq = Some(pa_seq);
+                            if let Err(e) =
+                                crate::db::runner_movements::append_runner_movement(conn, &rm)
+                            {
+                                ui.emit(UiEvent::Error(format!(
+                                    "Failed to persist runner movement: {e}"
+                                )));
+                            }
+                        }
+
+                        // PA is over, clear the draft now.
+                        let _ = clear_at_bat_draft(conn, game_pk);
+                        last_pa_seq = Some(pa_seq);
+                        has_events = true;
+                        pa_applied_live = true;
+                    }
                 }
+            }
+
+            // Persist standalone runner movements (steal and future non-PA events).
+            // Walk/hit movements were already drained into the PA block above.
+            // Link the steal to the last completed PA so replay can order it correctly.
+            for mut rm in result.runner_movements {
+                rm.game_id = game_pk;
+                rm.pa_seq = last_pa_seq; // links steal to the PA after which it occurred
+                if let Err(e) = crate::db::runner_movements::append_runner_movement(conn, &rm) {
+                    ui.emit(UiEvent::Error(format!(
+                        "Failed to persist runner movement: {e}"
+                    )));
+                }
+                has_events = true;
             }
 
             let should_start_next_at_bat = result.needs_next_at_bat || pa_applied_live;
@@ -999,56 +1057,104 @@ fn outs_label(outs: i64) -> String {
     }
 }
 
-fn runs_scored_from_pa(state_before: &GameState, pa: &PlateAppearanceRow) -> u32 {
-    let mut runs = 0;
-
-    if pa.outcome_type.as_str() == "home_run" {
-        runs += 1; // batter
-
-        if state_before.on_1b.is_some() {
-            runs += 1;
-        }
-        if state_before.on_2b.is_some() {
-            runs += 1;
-        }
-        if state_before.on_3b.is_some() {
-            runs += 1;
-        }
-    }
-
-    runs
-}
-
 fn replay_plate_appearances_and_log(
     ui: &mut dyn Ui,
     state: &mut GameState,
     pas: &[PlateAppearanceRow],
+    standalone_movements: &[crate::db::runner_movements::RunnerMovementRow],
 ) {
+    use crate::db::runner_movements::RunnerMovementRow;
+
     let mut last_inning: Option<i64> = None;
     let mut last_half: Option<String> = None;
     let mut last_outs: Option<i64> = None;
 
+    // Index of next standalone movement to apply
+    let mut sm_idx = 0;
+
+    let apply_steal_state = |state: &mut GameState, rm: &RunnerMovementRow| {
+        if rm.advancement_type.as_str() != "steal" {
+            return;
+        }
+        let order = rm.batter_order;
+        match rm.start_base.as_str() {
+            "1B" => {
+                if state.on_1b == Some(order) {
+                    state.on_1b = None;
+                }
+            }
+            "2B" => {
+                if state.on_2b == Some(order) {
+                    state.on_2b = None;
+                }
+            }
+            "3B" => {
+                if state.on_3b == Some(order) {
+                    state.on_3b = None;
+                }
+            }
+            _ => {}
+        }
+        match rm.end_base.as_str() {
+            "1B" => state.on_1b = Some(order),
+            "2B" => state.on_2b = Some(order),
+            "3B" => state.on_3b = Some(order),
+            "HOME" => {
+                if rm.half_inning == "Top" {
+                    state.score.away = state.score.away.saturating_add(1);
+                } else {
+                    state.score.home = state.score.home.saturating_add(1);
+                }
+            }
+            _ => {}
+        }
+    };
+
+    // Helper: apply a standalone movement (steal) to state and log it.
+    // pending_steal_logs: messaggi di steal da emettere prima della prossima riga PA
+    let mut pending_steal_logs: Vec<String> = vec![];
+
     for pa in pas {
-        // snapshot stato prima della PA
-        let state_before = state.clone();
+        // snapshot punteggio prima della PA (per calcolo delta runs nel log)
+        let score_before_away = state.score.away;
+        let score_before_home = state.score.home;
 
         // applica PA (ricostruisce lo stato)
         apply_plate_appearance_row(state, pa);
 
-        // ricostruzione sequenza
+        // Applica steal linkati a questa PA allo stato; accumula i log
+        while sm_idx < standalone_movements.len() {
+            let rm = &standalone_movements[sm_idx];
+            if rm.pa_seq == Some(pa.seq) {
+                apply_steal_state(state, rm);
+                pending_steal_logs.push(format!(
+                    "  [resume] [{}] ruba {}",
+                    rm.batter_order, rm.end_base
+                ));
+                sm_idx += 1;
+            } else {
+                break;
+            }
+        }
+
+        // ricostruzione sequenza per il log
         let seq = parse_pa_sequence(&pa.pitches_sequence);
         let seq_text = format_pitch_sequence(&seq);
         let outcome_sym = outcome_symbol_from_row(pa);
 
-        // calcolo punti segnati
-        let runs = runs_scored_from_pa(&state_before, pa);
+        // calcolo punti segnati: delta reale dello score (PA + eventuali steal nello stesso half)
+        let runs = if pa.half_inning == "Top" {
+            state.score.away.saturating_sub(score_before_away) as u32
+        } else {
+            state.score.home.saturating_sub(score_before_home) as u32
+        };
         let run_text = if runs > 0 {
             format!(" (+{})", runs)
         } else {
             String::new()
         };
 
-        // label battitore (temporanea: poi la sostituiremo col vero batting_order string)
+        // label battitore
         let batter_label = replay_batter_label(pa);
 
         // mostro inning/half solo al primo PA del half inning
@@ -1083,9 +1189,29 @@ fn replay_plate_appearances_and_log(
             prefix, seq_text, outcome_sym, run_text
         )));
 
+        // Emetti i log degli steal avvenuti durante questa PA (dopo la riga PA)
+        for msg in pending_steal_logs.drain(..) {
+            ui.emit(UiEvent::Line(msg));
+        }
+
         last_inning = Some(pa.inning);
         last_half = Some(pa.half_inning.clone());
         last_outs = Some(pa.outs);
+    }
+
+    // Emetti i log di steal pendenti (steal avvenuto come ultima azione prima del resume)
+    for msg in pending_steal_logs.drain(..) {
+        ui.emit(UiEvent::Line(msg));
+    }
+    // Apply any remaining standalone movements after all PAs (e.g. steal with no PA after)
+    while sm_idx < standalone_movements.len() {
+        let rm = &standalone_movements[sm_idx];
+        apply_steal_state(state, rm);
+        ui.emit(UiEvent::Line(format!(
+            "  [resume] [{}] ruba {}",
+            rm.batter_order, rm.end_base
+        )));
+        sm_idx += 1;
     }
 }
 

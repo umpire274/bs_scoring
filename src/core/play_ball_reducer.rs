@@ -152,31 +152,8 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
             state.outs = data.outs_after;
         }
 
-        DomainEvent::RunnerToFirst { .. } => {
-            apply_walk_advancement(state);
-        }
-
-        DomainEvent::StolenBase { order, dest, .. } => {
-            use crate::models::runner::RunnerDest;
-            // Clear source base.
-            let src = match dest {
-                RunnerDest::Second => state.on_1b.take(),
-                RunnerDest::Third => state.on_2b.take(),
-                RunnerDest::Score => state.on_3b.take(),
-                RunnerDest::First => None,
-            };
-            // If the stored order matches what we found (sanity check), place on dest.
-            if src == Some(*order) {
-                match dest {
-                    RunnerDest::Second => state.on_2b = Some(*order),
-                    RunnerDest::Third => state.on_3b = Some(*order),
-                    RunnerDest::Score => match state.half {
-                        HalfInning::Top => state.score.away += 1,
-                        HalfInning::Bottom => state.score.home += 1,
-                    },
-                    RunnerDest::First => {}
-                }
-            }
+        DomainEvent::RunnerToFirst { batter_order, .. } => {
+            apply_walk_advancement(state, *batter_order);
         }
     }
 }
@@ -247,7 +224,15 @@ pub fn apply_hit_with_overrides(
     batter_order: BatterOrder,
     bases: u8,
     overrides: &[RunnerOverride],
-) {
+) -> Vec<crate::db::runner_movements::RunnerMovementInsert> {
+    use crate::db::runner_movements::RunnerMovementInsert;
+
+    let half_str = match state.half {
+        HalfInning::Top => "Top",
+        HalfInning::Bottom => "Bottom",
+    };
+    let inning = state.inning;
+
     let mut runs_scored: u32 = 0;
 
     // Snapshot current base occupants before clearing
@@ -334,6 +319,97 @@ pub fn apply_hit_with_overrides(
         HalfInning::Top => state.score.away_hits += 1,
         HalfInning::Bottom => state.score.home_hits += 1,
     }
+
+    // Build RunnerMovementInsert rows from snapshot + resolved destinations.
+    let base_str = |b: u8| -> &'static str {
+        match b {
+            1 => "1B",
+            2 => "2B",
+            3 => "3B",
+            _ => "HOME",
+        }
+    };
+    let effective_end = |order: BatterOrder, start_base_n: u8| -> (&'static str, bool) {
+        let raw_dest = start_base_n + bases;
+        match override_map.get(&order) {
+            Some(RunnerDest::First) => ("1B", false),
+            Some(RunnerDest::Second) => ("2B", false),
+            Some(RunnerDest::Third) => ("3B", false),
+            Some(RunnerDest::Score) => ("HOME", true),
+            None => {
+                if raw_dest > 3 {
+                    ("HOME", true)
+                } else {
+                    (base_str(raw_dest), false)
+                }
+            }
+        }
+    };
+
+    let mut movements: Vec<RunnerMovementInsert> = vec![];
+
+    let push_rm = |movements: &mut Vec<RunnerMovementInsert>,
+                   border: BatterOrder,
+                   start: &'static str,
+                   end: &'static str,
+                   scored: bool,
+                   adv_type: &'static str| {
+        movements.push(RunnerMovementInsert {
+            game_id: 0,   // filled by engine
+            pa_seq: None, // filled by engine after PA insert
+            game_event_id: None,
+            inning,
+            half_inning: half_str.to_string(),
+            runner_id: None, // no player_id in reducer; batter_order is the identity
+            batter_order: border,
+            start_base: start,
+            end_base: end,
+            advancement_type: adv_type,
+            is_out: false,
+            scored,
+            is_earned: true,
+        });
+    };
+
+    if let Some(order) = runner_on_3b {
+        let (end, scored) = effective_end(order, 3);
+        let adv = if override_map.contains_key(&order) {
+            "hit_override"
+        } else {
+            "hit_auto"
+        };
+        push_rm(&mut movements, order, "3B", end, scored, adv);
+    }
+    if let Some(order) = runner_on_2b {
+        let (end, scored) = effective_end(order, 2);
+        let adv = if override_map.contains_key(&order) {
+            "hit_override"
+        } else {
+            "hit_auto"
+        };
+        push_rm(&mut movements, order, "2B", end, scored, adv);
+    }
+    if let Some(order) = runner_on_1b {
+        let (end, scored) = effective_end(order, 1);
+        let adv = if override_map.contains_key(&order) {
+            "hit_override"
+        } else {
+            "hit_auto"
+        };
+        push_rm(&mut movements, order, "1B", end, scored, adv);
+    }
+    // Batter
+    {
+        let raw_end = bases;
+        let (end, scored) = if raw_end > 3 {
+            ("HOME", true)
+        } else {
+            (base_str(raw_end), false)
+        };
+        push_rm(&mut movements, batter_order, "BAT", end, scored, "hit_auto");
+    }
+
+    movements
 }
 
 /// Legacy automatic-only hit advancement (used by PA replay where we don't have override data).
@@ -402,7 +478,7 @@ pub fn apply_hit_advancement(state: &mut GameState, bases: u8) {
 
 // ─── Walk advancement ─────────────────────────────────────────────────────────
 
-fn apply_walk_advancement(state: &mut GameState) {
+fn apply_walk_advancement(state: &mut GameState, batter_order: BatterOrder) {
     // Bases loaded: runner from 3B scores
     if state.on_1b.is_some() && state.on_2b.is_some() && state.on_3b.is_some() {
         // Runner on 3B scores
@@ -433,8 +509,7 @@ fn apply_walk_advancement(state: &mut GameState) {
         state.on_2b = state.on_1b;
     }
 
-    // Batter takes first — use current batter order if available, else a placeholder
-    let batter_order = state.current_batter_order.unwrap_or(0);
+    // Batter takes first
     state.on_1b = Some(batter_order);
 }
 
@@ -501,7 +576,7 @@ fn apply_plate_appearance_core(
     match &pa.outcome {
         crate::models::plate_appearance::PlateAppearanceOutcome::Walk => {
             if apply_walk_base_advancement {
-                apply_walk_advancement(state);
+                apply_walk_advancement(state, pa.batter_order);
             }
         }
 
@@ -511,22 +586,22 @@ fn apply_plate_appearance_core(
         }
 
         crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. } => {
-            apply_hit_with_overrides(state, pa.batter_order, 1, &pa.runner_overrides);
+            let _ = apply_hit_with_overrides(state, pa.batter_order, 1, &pa.runner_overrides);
             state.outs = pa.outs;
         }
 
         crate::models::plate_appearance::PlateAppearanceOutcome::Double { .. } => {
-            apply_hit_with_overrides(state, pa.batter_order, 2, &pa.runner_overrides);
+            let _ = apply_hit_with_overrides(state, pa.batter_order, 2, &pa.runner_overrides);
             state.outs = pa.outs;
         }
 
         crate::models::plate_appearance::PlateAppearanceOutcome::Triple { .. } => {
-            apply_hit_with_overrides(state, pa.batter_order, 3, &pa.runner_overrides);
+            let _ = apply_hit_with_overrides(state, pa.batter_order, 3, &pa.runner_overrides);
             state.outs = pa.outs;
         }
 
         crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. } => {
-            apply_hit_with_overrides(state, pa.batter_order, 4, &pa.runner_overrides);
+            let _ = apply_hit_with_overrides(state, pa.batter_order, 4, &pa.runner_overrides);
             state.outs = pa.outs;
         }
     }
@@ -556,7 +631,19 @@ pub fn apply_plate_appearance(
 pub fn apply_live_plate_appearance(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
-) {
+) -> Vec<crate::db::runner_movements::RunnerMovementInsert> {
+    use crate::db::runner_movements::RunnerMovementInsert;
+
+    // Snapshot bases before state mutation so we can build movement rows.
+    let runner_on_1b = state.on_1b;
+    let runner_on_2b = state.on_2b;
+    let runner_on_3b = state.on_3b;
+    let inning = state.inning;
+    let half_str = match state.half {
+        HalfInning::Top => "Top",
+        HalfInning::Bottom => "Bottom",
+    };
+
     let add_terminal_live_pitch = matches!(
         &pa.outcome,
         crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. }
@@ -565,7 +652,179 @@ pub fn apply_live_plate_appearance(
             | crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. }
     );
 
-    apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
+    // For hits: apply_hit_with_overrides is called inside apply_plate_appearance_core
+    // and now returns movements — but we can't intercept it there without bigger
+    // refactor. Instead, call it directly here for hit outcomes and skip the core path.
+    let movements: Vec<RunnerMovementInsert> = match &pa.outcome {
+        crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. } => {
+            apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
+            // Rebuild movements from snapshot (state already mutated by core)
+            build_hit_movements_from_snapshot(
+                runner_on_1b,
+                runner_on_2b,
+                runner_on_3b,
+                pa.batter_order,
+                1,
+                &pa.runner_overrides,
+                inning,
+                half_str,
+            )
+        }
+        crate::models::plate_appearance::PlateAppearanceOutcome::Double { .. } => {
+            apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
+            build_hit_movements_from_snapshot(
+                runner_on_1b,
+                runner_on_2b,
+                runner_on_3b,
+                pa.batter_order,
+                2,
+                &pa.runner_overrides,
+                inning,
+                half_str,
+            )
+        }
+        crate::models::plate_appearance::PlateAppearanceOutcome::Triple { .. } => {
+            apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
+            build_hit_movements_from_snapshot(
+                runner_on_1b,
+                runner_on_2b,
+                runner_on_3b,
+                pa.batter_order,
+                3,
+                &pa.runner_overrides,
+                inning,
+                half_str,
+            )
+        }
+        crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. } => {
+            apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
+            build_hit_movements_from_snapshot(
+                runner_on_1b,
+                runner_on_2b,
+                runner_on_3b,
+                pa.batter_order,
+                4,
+                &pa.runner_overrides,
+                inning,
+                half_str,
+            )
+        }
+        _ => {
+            apply_plate_appearance_core(state, pa, false, false, false);
+            vec![]
+        }
+    };
+
+    movements
+}
+
+/// Build RunnerMovementInsert rows from a pre-mutation base snapshot.
+/// Called only from apply_live_plate_appearance so we don't duplicate logic.
+#[allow(clippy::too_many_arguments)]
+fn build_hit_movements_from_snapshot(
+    runner_on_1b: Option<u8>,
+    runner_on_2b: Option<u8>,
+    runner_on_3b: Option<u8>,
+    batter_order: u8,
+    bases: u8,
+    overrides: &[RunnerOverride],
+    inning: u32,
+    half_str: &str,
+) -> Vec<crate::db::runner_movements::RunnerMovementInsert> {
+    use crate::db::runner_movements::RunnerMovementInsert;
+
+    let override_map: std::collections::HashMap<u8, RunnerDest> =
+        overrides.iter().map(|r| (r.order, r.dest)).collect();
+
+    let base_str = |b: u8| -> &'static str {
+        match b {
+            1 => "1B",
+            2 => "2B",
+            3 => "3B",
+            _ => "HOME",
+        }
+    };
+
+    let effective_end = |order: u8, start_base_n: u8| -> (&'static str, bool) {
+        let raw = start_base_n + bases;
+        match override_map.get(&order) {
+            Some(RunnerDest::First) => ("1B", false),
+            Some(RunnerDest::Second) => ("2B", false),
+            Some(RunnerDest::Third) => ("3B", false),
+            Some(RunnerDest::Score) => ("HOME", true),
+            None => {
+                if raw > 3 {
+                    ("HOME", true)
+                } else {
+                    (base_str(raw), false)
+                }
+            }
+        }
+    };
+
+    let mut movements = vec![];
+    let push = |movements: &mut Vec<RunnerMovementInsert>,
+                border: u8,
+                start: &'static str,
+                end: &'static str,
+                scored: bool,
+                adv: &'static str| {
+        movements.push(RunnerMovementInsert {
+            game_id: 0,
+            pa_seq: None,
+            game_event_id: None,
+            inning,
+            half_inning: half_str.to_string(),
+            runner_id: None,
+            batter_order: border,
+            start_base: start,
+            end_base: end,
+            advancement_type: adv,
+            is_out: false,
+            scored,
+            is_earned: true,
+        });
+    };
+
+    if let Some(order) = runner_on_3b {
+        let (end, scored) = effective_end(order, 3);
+        let adv = if override_map.contains_key(&order) {
+            "hit_override"
+        } else {
+            "hit_auto"
+        };
+        push(&mut movements, order, "3B", end, scored, adv);
+    }
+    if let Some(order) = runner_on_2b {
+        let (end, scored) = effective_end(order, 2);
+        let adv = if override_map.contains_key(&order) {
+            "hit_override"
+        } else {
+            "hit_auto"
+        };
+        push(&mut movements, order, "2B", end, scored, adv);
+    }
+    if let Some(order) = runner_on_1b {
+        let (end, scored) = effective_end(order, 1);
+        let adv = if override_map.contains_key(&order) {
+            "hit_override"
+        } else {
+            "hit_auto"
+        };
+        push(&mut movements, order, "1B", end, scored, adv);
+    }
+    // Batter
+    {
+        let raw = bases;
+        let (end, scored) = if raw > 3 {
+            ("HOME", true)
+        } else {
+            (base_str(raw), false)
+        };
+        push(&mut movements, batter_order, "BAT", end, scored, "hit_auto");
+    }
+
+    movements
 }
 
 fn parse_hit_outcome_data(raw: Option<&str>) -> crate::models::plate_appearance::HitOutcomeData {

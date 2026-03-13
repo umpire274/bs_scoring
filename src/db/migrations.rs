@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 15;
+pub const CURRENT_SCHEMA_VERSION: i64 = 16;
 
 /// Migration structure
 pub struct Migration {
@@ -89,6 +89,11 @@ pub fn get_migrations() -> Vec<Migration> {
             version: 15,
             description: "Add runner_overrides_json column to plate_appearances for replay-safe override persistence",
             up: migration_v15,
+        },
+        Migration {
+            version: 16,
+            description: "Rebuild runner_movements: replace at_bat_id FK with pa_seq + game_event_id, add inning/half columns",
+            up: migration_v16,
         },
     ]
 }
@@ -192,11 +197,6 @@ fn migration_v2(conn: &Connection) -> Result<()> {
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_pitches_at_bat ON pitches(at_bat_id)",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_runner_movements_at_bat ON runner_movements(at_bat_id)",
         [],
     )?;
 
@@ -811,5 +811,56 @@ fn migration_v15(conn: &Connection) -> Result<()> {
             [],
         )?;
     }
+    Ok(())
+}
+
+fn migration_v16(conn: &Connection) -> Result<()> {
+    // Rebuild runner_movements dropping the legacy at_bat_id FK (points to the
+    // now-unused at_bats table) and replacing it with:
+    //   pa_seq        — sequence number of the plate_appearance this movement
+    //                   belongs to (NULL for out-of-PA events like steals).
+    //                   References plate_appearances.seq (not the PK), so no FK
+    //                   declaration — relationship enforced by application logic.
+    //   game_event_id — id of the game_events row for non-PA movements (NULL for PA hits/walks)
+    //   inning / half_inning — direct denormalised columns for fast replay ordering
+    //
+    // advancement_type values:
+    //   'hit_auto'   — automatic advancement on a hit
+    //   'hit_override' — explicit override advancement on a hit
+    //   'walk'       — forced advancement on a walk / BB
+    //   'steal'      — successful stolen base
+    //   (future: 'wild_pitch', 'passed_ball', 'caught_stealing', 'pickoff', 'error')
+    conn.execute_batch(
+        "
+        BEGIN IMMEDIATE;
+
+        DROP TABLE IF EXISTS runner_movements;
+
+        CREATE TABLE runner_movements (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id          INTEGER NOT NULL,
+            pa_seq           INTEGER,            -- plate_appearances.seq for this game (NULL for non-PA events)
+            game_event_id    INTEGER,            -- game_events.id for non-PA movements (NULL for PA movements)
+            inning           INTEGER NOT NULL,
+            half_inning      TEXT    NOT NULL CHECK(half_inning IN ('Top','Bottom')),
+            runner_id        INTEGER,            -- players.id (NULL/0 when identity not resolved)
+            batter_order     INTEGER NOT NULL,   -- batting order slot (1-9)
+            start_base       TEXT    NOT NULL CHECK(start_base IN ('BAT','1B','2B','3B')),
+            end_base         TEXT    NOT NULL CHECK(end_base IN ('1B','2B','3B','HOME','OUT')),
+            advancement_type TEXT    NOT NULL,
+            is_out           INTEGER NOT NULL DEFAULT 0,
+            scored           INTEGER NOT NULL DEFAULT 0,
+            is_earned        INTEGER NOT NULL DEFAULT 1,
+            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id)       REFERENCES games(id),
+            FOREIGN KEY (game_event_id) REFERENCES game_events(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_rm_game_seq
+            ON runner_movements(game_id, inning, half_inning, pa_seq, game_event_id);
+
+        COMMIT;
+        ",
+    )?;
     Ok(())
 }
