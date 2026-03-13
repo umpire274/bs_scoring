@@ -151,11 +151,14 @@ impl TuiUi {
 
         let outer = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(1),
-                Constraint::Length(1),
-                Constraint::Length(3),
-            ].as_ref())
+            .constraints(
+                [
+                    Constraint::Min(1),
+                    Constraint::Length(1),
+                    Constraint::Length(3),
+                ]
+                .as_ref(),
+            )
             .split(Rect::from(size));
 
         let top = Layout::default()
@@ -163,7 +166,7 @@ impl TuiUi {
             .constraints([Constraint::Min(20), Constraint::Length(50)].as_ref())
             .split(outer[0]);
 
-        let log_area   = top[0];
+        let log_area = top[0];
         let right_pane = top[1];
 
         let viewport_h = log_area.height.saturating_sub(2);
@@ -629,10 +632,12 @@ impl TuiUi {
 
     fn render_shortcuts(f: &mut Frame, area: Rect, focus: Focus) {
         let focus_label = match focus {
-            Focus::Log  => "Log",
+            Focus::Log => "Log",
             Focus::Help => "Help",
         };
-        let bar = format!(" - focus on:{focus_label} - Tab:change focus ↑↓:scroll  PgUp/Dn:page  Home/End:top/bot");
+        let bar = format!(
+            " - focus on:{focus_label} - Tab:change focus ↑↓:scroll  PgUp/Dn:page  Home/End:top/bot"
+        );
         let p = Paragraph::new(bar).style(Style::default());
         f.render_widget(p, area);
     }
@@ -655,11 +660,14 @@ impl TuiUi {
             // Vertical split: main panels | shortcuts bar (1 line) | command box
             let outer = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(1),
-                    Constraint::Length(1),
-                    Constraint::Length(3),
-                ].as_ref())
+                .constraints(
+                    [
+                        Constraint::Min(1),
+                        Constraint::Length(1),
+                        Constraint::Length(3),
+                    ]
+                    .as_ref(),
+                )
                 .split(size);
 
             let top = Layout::default()
@@ -667,10 +675,10 @@ impl TuiUi {
                 .constraints([Constraint::Min(20), Constraint::Length(50)].as_ref())
                 .split(outer[0]);
 
-            let log_area       = top[0];
-            let right_pane     = top[1];
+            let log_area = top[0];
+            let right_pane = top[1];
             let shortcuts_area = outer[1];
-            let command_area   = outer[2];
+            let command_area = outer[2];
 
             let right = Layout::default()
                 .direction(Direction::Vertical)
@@ -678,14 +686,18 @@ impl TuiUi {
                 .split(right_pane);
 
             let scoreboard_area = right[0];
-            let help_area       = right[1];
+            let help_area = right[1];
 
             let mut text = Text::default();
             for line in &log {
                 text.lines.push(Line::from(line.as_str()));
             }
 
-            let log_title = if focus == Focus::Log { "Log ►" } else { "Log" };
+            let log_title = if focus == Focus::Log {
+                "Log ►"
+            } else {
+                "Log"
+            };
             let log_widget = Paragraph::new(text)
                 .block(Block::default().borders(Borders::ALL).title(log_title))
                 .wrap(Wrap { trim: false })
@@ -782,32 +794,32 @@ impl Ui for TuiUi {
                         }
                         KeyCode::Tab => {
                             self.focus = match self.focus {
-                                Focus::Log  => Focus::Help,
+                                Focus::Log => Focus::Help,
                                 Focus::Help => Focus::Log,
                             };
                         }
                         KeyCode::Up => match self.focus {
-                            Focus::Log  => self.scroll_up(1),
+                            Focus::Log => self.scroll_up(1),
                             Focus::Help => self.help_scroll = self.help_scroll.saturating_sub(1),
                         },
                         KeyCode::Down => match self.focus {
-                            Focus::Log  => self.scroll_down(1),
+                            Focus::Log => self.scroll_down(1),
                             Focus::Help => self.help_scroll = self.help_scroll.saturating_add(1),
                         },
                         KeyCode::PageUp => match self.focus {
-                            Focus::Log  => self.scroll_up(10),
+                            Focus::Log => self.scroll_up(10),
                             Focus::Help => self.help_scroll = self.help_scroll.saturating_sub(10),
                         },
                         KeyCode::PageDown => match self.focus {
-                            Focus::Log  => self.scroll_down(10),
+                            Focus::Log => self.scroll_down(10),
                             Focus::Help => self.help_scroll = self.help_scroll.saturating_add(10),
                         },
                         KeyCode::Home => match self.focus {
-                            Focus::Log  => self.scroll = 0,
+                            Focus::Log => self.scroll = 0,
                             Focus::Help => self.help_scroll = 0,
                         },
                         KeyCode::End => match self.focus {
-                            Focus::Log  => self.scroll_to_bottom(),
+                            Focus::Log => self.scroll_to_bottom(),
                             Focus::Help => self.help_scroll = u16::MAX,
                         },
                         _ => {}

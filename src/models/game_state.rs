@@ -100,9 +100,7 @@ impl GameState {
 
     /// Returns true if the given batting-order slot is currently on any base.
     pub fn is_on_base(&self, order: BatterOrder) -> bool {
-        self.on_1b == Some(order)
-            || self.on_2b == Some(order)
-            || self.on_3b == Some(order)
+        self.on_1b == Some(order) || self.on_2b == Some(order) || self.on_3b == Some(order)
     }
 
     /// Returns which base (1/2/3) this batting-order slot occupies, or `None`.

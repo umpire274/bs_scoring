@@ -33,19 +33,49 @@ pub enum HitType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum OutType {
-    Strikeout { swinging: bool, looking: bool },
-    Flyout { positions: Vec<Position> },
-    Groundout { positions: Vec<Position> },
-    Lineout { positions: Vec<Position> },
-    Popup { positions: Vec<Position> },
-    Foulout { positions: Vec<Position> },
-    Bunt { positions: Vec<Position> },
-    DoublePlay { positions: Vec<Position> },
-    TriplePlay { positions: Vec<Position> },
-    Forceout { positions: Vec<Position> },
-    TagOut { position: Position, base: Base },
-    CaughtStealing { catcher_to: Position, base: Base },
-    PickedOff { positions: Vec<Position>, base: Base },
+    Strikeout {
+        swinging: bool,
+        looking: bool,
+    },
+    Flyout {
+        positions: Vec<Position>,
+    },
+    Groundout {
+        positions: Vec<Position>,
+    },
+    Lineout {
+        positions: Vec<Position>,
+    },
+    Popup {
+        positions: Vec<Position>,
+    },
+    Foulout {
+        positions: Vec<Position>,
+    },
+    Bunt {
+        positions: Vec<Position>,
+    },
+    DoublePlay {
+        positions: Vec<Position>,
+    },
+    TriplePlay {
+        positions: Vec<Position>,
+    },
+    Forceout {
+        positions: Vec<Position>,
+    },
+    TagOut {
+        position: Position,
+        base: Base,
+    },
+    CaughtStealing {
+        catcher_to: Position,
+        base: Base,
+    },
+    PickedOff {
+        positions: Vec<Position>,
+        base: Base,
+    },
     IntentionalWalk,
 }
 

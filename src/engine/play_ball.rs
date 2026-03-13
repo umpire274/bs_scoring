@@ -52,13 +52,19 @@ pub fn run_play_ball_engine(
             replay_admin_logs(ui, &rows);
 
             // Load steal movements for replay — now stored with pa_seq = last PA seq.
-            let standalone_movements = match crate::db::runner_movements::list_runner_movements(conn, game_pk) {
-                Ok(rms) => rms.into_iter().filter(|r| r.advancement_type == "steal").collect::<Vec<_>>(),
-                Err(e) => {
-                    ui.emit(UiEvent::Error(format!("Failed to load runner movements: {e}")));
-                    vec![]
-                }
-            };
+            let standalone_movements =
+                match crate::db::runner_movements::list_runner_movements(conn, game_pk) {
+                    Ok(rms) => rms
+                        .into_iter()
+                        .filter(|r| r.advancement_type == "steal")
+                        .collect::<Vec<_>>(),
+                    Err(e) => {
+                        ui.emit(UiEvent::Error(format!(
+                            "Failed to load runner movements: {e}"
+                        )));
+                        vec![]
+                    }
+                };
 
             // 1) deterministic rebuild from plate appearances + interlaced standalone movements
             match list_plate_appearances(conn, game_pk) {
@@ -309,8 +315,12 @@ pub fn run_play_ball_engine(
                         for mut rm in pa_movements {
                             rm.game_id = game_pk;
                             rm.pa_seq = Some(pa_seq);
-                            if let Err(e) = crate::db::runner_movements::append_runner_movement(conn, &rm) {
-                                ui.emit(UiEvent::Error(format!("Failed to persist runner movement: {e}")));
+                            if let Err(e) =
+                                crate::db::runner_movements::append_runner_movement(conn, &rm)
+                            {
+                                ui.emit(UiEvent::Error(format!(
+                                    "Failed to persist runner movement: {e}"
+                                )));
                             }
                         }
 
@@ -330,7 +340,9 @@ pub fn run_play_ball_engine(
                 rm.game_id = game_pk;
                 rm.pa_seq = last_pa_seq; // links steal to the PA after which it occurred
                 if let Err(e) = crate::db::runner_movements::append_runner_movement(conn, &rm) {
-                    ui.emit(UiEvent::Error(format!("Failed to persist runner movement: {e}")));
+                    ui.emit(UiEvent::Error(format!(
+                        "Failed to persist runner movement: {e}"
+                    )));
                 }
                 has_events = true;
             }
@@ -1061,12 +1073,26 @@ fn replay_plate_appearances_and_log(
     let mut sm_idx = 0;
 
     let apply_steal_state = |state: &mut GameState, rm: &RunnerMovementRow| {
-        if rm.advancement_type.as_str() != "steal" { return; }
+        if rm.advancement_type.as_str() != "steal" {
+            return;
+        }
         let order = rm.batter_order;
         match rm.start_base.as_str() {
-            "1B" => { if state.on_1b == Some(order) { state.on_1b = None; } }
-            "2B" => { if state.on_2b == Some(order) { state.on_2b = None; } }
-            "3B" => { if state.on_3b == Some(order) { state.on_3b = None; } }
+            "1B" => {
+                if state.on_1b == Some(order) {
+                    state.on_1b = None;
+                }
+            }
+            "2B" => {
+                if state.on_2b == Some(order) {
+                    state.on_2b = None;
+                }
+            }
+            "3B" => {
+                if state.on_3b == Some(order) {
+                    state.on_3b = None;
+                }
+            }
             _ => {}
         }
         match rm.end_base.as_str() {
@@ -1102,7 +1128,8 @@ fn replay_plate_appearances_and_log(
             if rm.pa_seq == Some(pa.seq) {
                 apply_steal_state(state, rm);
                 pending_steal_logs.push(format!(
-                    "  [resume] [{}] ruba {}", rm.batter_order, rm.end_base
+                    "  [resume] [{}] ruba {}",
+                    rm.batter_order, rm.end_base
                 ));
                 sm_idx += 1;
             } else {
@@ -1181,7 +1208,8 @@ fn replay_plate_appearances_and_log(
         let rm = &standalone_movements[sm_idx];
         apply_steal_state(state, rm);
         ui.emit(UiEvent::Line(format!(
-            "  [resume] [{}] ruba {}", rm.batter_order, rm.end_base
+            "  [resume] [{}] ruba {}",
+            rm.batter_order, rm.end_base
         )));
         sm_idx += 1;
     }

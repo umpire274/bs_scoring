@@ -53,10 +53,7 @@ pub struct RunnerMovementInsert {
 }
 
 /// Insert a single runner movement row. Returns the new row id.
-pub fn append_runner_movement(
-    conn: &Connection,
-    m: &RunnerMovementInsert,
-) -> Result<i64> {
+pub fn append_runner_movement(conn: &Connection, m: &RunnerMovementInsert) -> Result<i64> {
     conn.execute(
         r#"
         INSERT INTO runner_movements (
@@ -89,10 +86,7 @@ pub fn append_runner_movement(
 // ─── Read helpers ─────────────────────────────────────────────────────────────
 
 /// Load all runner movements for a game, ordered for replay.
-pub fn list_runner_movements(
-    conn: &Connection,
-    game_pk: i64,
-) -> Result<Vec<RunnerMovementRow>> {
+pub fn list_runner_movements(conn: &Connection, game_pk: i64) -> Result<Vec<RunnerMovementRow>> {
     let mut stmt = conn.prepare(
         r#"
         SELECT id, game_id, pa_seq, game_event_id,
@@ -113,20 +107,20 @@ pub fn list_runner_movements(
     let rows = stmt
         .query_map(params![game_pk], |r| {
             Ok(RunnerMovementRow {
-                id:               r.get(0)?,
-                game_id:          r.get(1)?,
-                pa_seq:           r.get(2)?,
-                game_event_id:    r.get(3)?,
-                inning:           r.get(4)?,
-                half_inning:      r.get(5)?,
-                runner_id:        r.get(6)?,
-                batter_order:     r.get(7)?,
-                start_base:       r.get(8)?,
-                end_base:         r.get(9)?,
+                id: r.get(0)?,
+                game_id: r.get(1)?,
+                pa_seq: r.get(2)?,
+                game_event_id: r.get(3)?,
+                inning: r.get(4)?,
+                half_inning: r.get(5)?,
+                runner_id: r.get(6)?,
+                batter_order: r.get(7)?,
+                start_base: r.get(8)?,
+                end_base: r.get(9)?,
                 advancement_type: r.get(10)?,
-                is_out:           r.get::<_, i64>(11)? != 0,
-                scored:           r.get::<_, i64>(12)? != 0,
-                is_earned:        r.get::<_, i64>(13)? != 0,
+                is_out: r.get::<_, i64>(11)? != 0,
+                scored: r.get::<_, i64>(12)? != 0,
+                is_earned: r.get::<_, i64>(13)? != 0,
             })
         })?
         .filter_map(Result::ok)
