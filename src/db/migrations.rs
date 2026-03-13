@@ -788,6 +788,8 @@ fn migration_v14(conn: &Connection) -> Result<()> {
         ",
     )?;
 
+    conn.execute("DROP TABLE IF EXISTS plate_appearances_compact;", [])?;
+
     if !check_column_exists(conn, "runner_movements", "batter_order")? {
         conn.execute(
             "ALTER TABLE runner_movements ADD COLUMN batter_order INTEGER NOT NULL DEFAULT 0",

@@ -173,12 +173,20 @@ fn parse_runner_override_token(raw: &str) -> Option<RunnerOverride> {
     let (order_str, dest_str): (&str, &str) = match parts.as_slice() {
         [order, dest] => (order, dest),
         [compact] => {
-            // Compact format: first character is the batting order (1-9),
-            // the rest is the destination string (e.g. "7sc" → "7" + "sc", "52b" → "5" + "2b")
+            // Compact format: batting order is the leading ASCII digit (1-9),
+            // the rest is the destination string (e.g. "7sc" → "7" + "sc").
+            // Use char_indices to find the first char boundary — avoids a panic
+            // on any non-ASCII input (e.g. Unicode pasted by mistake).
             if compact.is_empty() {
                 return None;
             }
-            (&compact[..1], &compact[1..])
+            let mut chars = compact.char_indices();
+            let (_, first_char) = chars.next()?;
+            if !first_char.is_ascii_digit() {
+                return None;
+            }
+            let split_at = first_char.len_utf8(); // always 1 for ASCII digits
+            (&compact[..split_at], &compact[split_at..])
         }
         _ => return None,
     };
@@ -218,13 +226,29 @@ fn attach_overrides(cmd: EngineCommand, overrides: Vec<RunnerOverride>) -> Engin
 // ─── Non-hit commands ─────────────────────────────────────────────────────────
 
 fn parse_non_hit_command(raw: &str) -> EngineCommand {
+    let tokens: Vec<&str> = raw.split_whitespace().collect();
+
+    // ── Steal: `<order> st <base>` ────────────────────────────────────────────
+    // Three-token form handled before the generic 2-token path below.
+    if tokens.len() == 3 {
+        if let (Ok(order), true, Some(dest)) = (
+            tokens[0].parse::<u8>(),
+            tokens[1].eq_ignore_ascii_case("st"),
+            RunnerDest::parse(tokens[2]),
+        ) && (1..=9).contains(&order)
+        {
+            return EngineCommand::StealBase { order, dest };
+        }
+        return EngineCommand::Unknown(raw.to_string());
+    }
+
     let mut parts = raw.split_whitespace();
     let Some(cmd) = parts.next() else {
         return EngineCommand::Unknown(raw.to_string());
     };
     let arg = parts.next();
 
-    // Reject unexpected extra tokens
+    // Reject unexpected extra tokens (already handled 3-token case above)
     if parts.next().is_some() {
         return EngineCommand::Unknown(raw.to_string());
     }
@@ -534,6 +558,101 @@ mod tests {
     fn test_invalid_override_typo_rejected() {
         // "h, b" — "b" looks like a ball command but is not a valid runner override
         let cmds = parse_engine_commands("h, b");
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], EngineCommand::Unknown(_)));
+    }
+
+    // ─── Steal tests ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_steal_second() {
+        let cmds = parse_engine_commands("6 st 2b");
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(
+            cmds[0],
+            EngineCommand::StealBase {
+                order: 6,
+                dest: RunnerDest::Second
+            }
+        ));
+    }
+
+    #[test]
+    fn test_steal_third() {
+        let cmds = parse_engine_commands("3 st 3b");
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(
+            cmds[0],
+            EngineCommand::StealBase {
+                order: 3,
+                dest: RunnerDest::Third
+            }
+        ));
+    }
+
+    #[test]
+    fn test_steal_home() {
+        let cmds = parse_engine_commands("7 st sc");
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(
+            cmds[0],
+            EngineCommand::StealBase {
+                order: 7,
+                dest: RunnerDest::Score
+            }
+        ));
+    }
+
+    #[test]
+    fn test_steal_combined_with_pitch() {
+        // "k, 6 st 2b" — strike then steal, two commands
+        let cmds = parse_engine_commands("k, 6 st 2b");
+        assert_eq!(cmds.len(), 2);
+        assert!(matches!(
+            cmds[0],
+            EngineCommand::Pitch(crate::models::types::Pitch::CalledStrike)
+        ));
+        assert!(matches!(
+            cmds[1],
+            EngineCommand::StealBase {
+                order: 6,
+                dest: RunnerDest::Second
+            }
+        ));
+    }
+
+    #[test]
+    fn test_steal_invalid_dest() {
+        // "6 st 1b" is not a valid steal destination
+        let cmds = parse_engine_commands("6 st 1b");
+        // Parses as StealBase{dest: First} — engine will reject it, not the parser
+        assert!(matches!(
+            cmds[0],
+            EngineCommand::StealBase {
+                order: 6,
+                dest: RunnerDest::First
+            }
+        ));
+    }
+
+    #[test]
+    fn test_steal_bad_order() {
+        // order 0 is out of range 1-9
+        let cmds = parse_engine_commands("0 st 2b");
+        assert!(matches!(cmds[0], EngineCommand::Unknown(_)));
+    }
+
+    #[test]
+    fn test_steal_bad_dest_token() {
+        // "6 st xx" — unrecognised dest
+        let cmds = parse_engine_commands("6 st xx");
+        assert!(matches!(cmds[0], EngineCommand::Unknown(_)));
+    }
+
+    #[test]
+    fn test_compact_override_unicode_no_panic() {
+        // Non-ASCII leading char in compact token must not panic — return Unknown
+        let cmds = parse_engine_commands("h, é2b");
         assert_eq!(cmds.len(), 1);
         assert!(matches!(cmds[0], EngineCommand::Unknown(_)));
     }

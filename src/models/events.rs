@@ -72,6 +72,19 @@ pub enum DomainEvent {
         runner_first_name: String,
         runner_last_name: String,
     },
+
+    /// A runner successfully steals a base (safe outcome only).
+    /// Caught stealing is handled separately as an Out event.
+    StolenBase {
+        /// Batting order slot of the runner.
+        order: u8,
+        /// Runner's player ID (for log display).
+        runner_id: i64,
+        runner_first_name: String,
+        runner_last_name: String,
+        /// The base the runner stole (destination).
+        dest: crate::models::runner::RunnerDest,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,6 +126,7 @@ impl DomainEvent {
             DomainEvent::Strikeout { .. } => "strikeout",
             DomainEvent::OutRecorded(_) => "out_recorded",
             DomainEvent::RunnerToFirst { .. } => "runner_to_first",
+            DomainEvent::StolenBase { .. } => "stolen_base",
         }
     }
 }

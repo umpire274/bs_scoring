@@ -155,6 +155,29 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
         DomainEvent::RunnerToFirst { .. } => {
             apply_walk_advancement(state);
         }
+
+        DomainEvent::StolenBase { order, dest, .. } => {
+            use crate::models::runner::RunnerDest;
+            // Clear source base.
+            let src = match dest {
+                RunnerDest::Second => state.on_1b.take(),
+                RunnerDest::Third => state.on_2b.take(),
+                RunnerDest::Score => state.on_3b.take(),
+                RunnerDest::First => None,
+            };
+            // If the stored order matches what we found (sanity check), place on dest.
+            if src == Some(*order) {
+                match dest {
+                    RunnerDest::Second => state.on_2b = Some(*order),
+                    RunnerDest::Third => state.on_3b = Some(*order),
+                    RunnerDest::Score => match state.half {
+                        HalfInning::Top => state.score.away += 1,
+                        HalfInning::Bottom => state.score.home += 1,
+                    },
+                    RunnerDest::First => {}
+                }
+            }
+        }
     }
 }
 

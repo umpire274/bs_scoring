@@ -105,6 +105,8 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
             events: vec![UiEvent::Error(format!("Unknown command: {s}"))],
             ..empty_result()
         },
+
+        EngineCommand::StealBase { order, dest } => apply_steal(state, order, dest),
     }
 }
 
@@ -339,6 +341,17 @@ fn apply_hit_command(
     let mut final_sequence = build_pa_sequence(state);
     final_sequence.push(final_step);
 
+    // Validate runner overrides before touching state:
+    // 1. No two overrides may target the same destination base.
+    // 2. No override may target a base already occupied by a runner who is
+    //    NOT being moved (i.e. not present in the overrides list).
+    if let Err(msg) = validate_runner_overrides(state, batter_order, runner_overrides) {
+        return ApplyResult {
+            events: vec![UiEvent::Error(msg)],
+            ..empty_result()
+        };
+    }
+
     let pitches_in_pa = final_sequence.len() as u32;
 
     let plate_appearance = crate::models::plate_appearance::PlateAppearance {
@@ -397,4 +410,188 @@ fn build_pa_sequence(
         .cloned()
         .map(crate::models::plate_appearance::PlateAppearanceStep::Pitch)
         .collect()
+}
+
+// ─── Steal ────────────────────────────────────────────────────────────────────
+
+fn apply_steal(
+    state: &mut GameState,
+    order: u8,
+    dest: crate::models::runner::RunnerDest,
+) -> ApplyResult {
+    use crate::models::runner::RunnerDest;
+
+    // Validate: the runner must currently be on the expected source base.
+    // A steal to 2B requires the runner to be on 1B, etc.
+    let expected_source: Option<u8> = match dest {
+        RunnerDest::Second => Some(1),
+        RunnerDest::Third => Some(2),
+        RunnerDest::Score => Some(3),
+        RunnerDest::First => None, // stealing first is not a valid play
+    };
+
+    let Some(expected) = expected_source else {
+        return ApplyResult {
+            events: vec![UiEvent::Error(format!(
+                "Steal to 1B is not valid (order {order})"
+            ))],
+            ..empty_result()
+        };
+    };
+
+    // Check the runner is actually on the expected source base.
+    let on_expected = match expected {
+        1 => state.on_1b == Some(order),
+        2 => state.on_2b == Some(order),
+        3 => state.on_3b == Some(order),
+        _ => false,
+    };
+
+    if !on_expected {
+        return ApplyResult {
+            events: vec![UiEvent::Error(format!(
+                "Runner {order} is not on {}B — cannot steal {}",
+                expected, dest,
+            ))],
+            ..empty_result()
+        };
+    }
+
+    // Look up runner identity for the log message.
+    // We find which player sits in this batting slot from the current game state.
+    // If we can't resolve (edge case), we fall back to order number only.
+    let (runner_id, first_name, last_name) = resolve_runner_identity(state, order);
+
+    let dest_label = match dest {
+        RunnerDest::Second => "2B",
+        RunnerDest::Third => "3B",
+        RunnerDest::Score => "HP",
+        RunnerDest::First => "1B",
+    };
+
+    let log_msg = format!(
+        "[{}] {} {} ruba la {}",
+        order, first_name, last_name, dest_label,
+    );
+
+    // Move the runner in state.
+    match expected {
+        1 => state.on_1b = None,
+        2 => state.on_2b = None,
+        3 => state.on_3b = None,
+        _ => {}
+    }
+    match dest {
+        RunnerDest::Second => state.on_2b = Some(order),
+        RunnerDest::Third => state.on_3b = Some(order),
+        RunnerDest::Score => {
+            // Runner scores — increment the batting team's run tally.
+            match state.half {
+                crate::models::types::HalfInning::Top => state.score.away += 1,
+                crate::models::types::HalfInning::Bottom => state.score.home += 1,
+            }
+        }
+        RunnerDest::First => {}
+    }
+
+    let event = DomainEvent::StolenBase {
+        order,
+        runner_id,
+        runner_first_name: first_name.clone(),
+        runner_last_name: last_name.clone(),
+        dest,
+    };
+
+    ApplyResult {
+        events: vec![UiEvent::Line(log_msg.clone())],
+        persisted: vec![PersistedEvent {
+            inning: state.inning,
+            half: state.half,
+            event,
+            description: log_msg,
+        }],
+        applied: vec![],
+        plate_appearance: None,
+        exit: false,
+        status_change: None,
+        needs_next_at_bat: false,
+    }
+}
+
+/// Resolve (runner_id, first_name, last_name) from batting order slot.
+/// Checks current batter first, then falls back to placeholder.
+fn resolve_runner_identity(state: &GameState, order: u8) -> (i64, String, String) {
+    // If the current batter happens to be this runner (unusual but possible
+    // in edge cases), use their data.
+    if state.current_batter_order == Some(order) {
+        return (
+            state.current_batter_id.unwrap_or(0),
+            state.current_batter_first_name.clone().unwrap_or_default(),
+            state.current_batter_last_name.clone().unwrap_or_default(),
+        );
+    }
+    // In future we'll look up the lineup; for now a lightweight placeholder.
+    (0, format!("#{order}"), String::new())
+}
+
+// ─── Override validation ──────────────────────────────────────────────────────
+
+/// Validate runner overrides before applying a hit, returning an error message
+/// if the overrides would produce an inconsistent state.
+///
+/// Checks performed:
+/// 1. No two overrides (including the batter's implicit destination) target the
+///    same base — this would silently drop one runner.
+/// 2. No override sends a runner to a base already occupied by a runner who is
+///    *not* being moved in this play — that runner would be silently evicted.
+fn validate_runner_overrides(
+    state: &GameState,
+    _batter_order: u8,
+    overrides: &[crate::models::runner::RunnerOverride],
+) -> Result<(), String> {
+    use crate::models::runner::RunnerDest;
+    use std::collections::HashSet;
+
+    // Collect all destination bases claimed by overrides (excluding Score).
+    let mut claimed: HashSet<u8> = HashSet::new();
+
+    for ro in overrides {
+        let dest_base: Option<u8> = match ro.dest {
+            RunnerDest::First => Some(1),
+            RunnerDest::Second => Some(2),
+            RunnerDest::Third => Some(3),
+            RunnerDest::Score => None, // multiple runners can score
+        };
+        if let Some(b) = dest_base
+            && !claimed.insert(b)
+        {
+            return Err(format!(
+                "Two runners cannot end up on the same base ({}B)",
+                b
+            ));
+        }
+    }
+
+    // Check that no override destination is occupied by a runner who is NOT
+    // in the overrides list (i.e. not being moved by this play).
+    let moved_orders: HashSet<u8> = overrides.iter().map(|r| r.order).collect();
+
+    let check_base = |base_occupant: Option<u8>, base_no: u8| -> Result<(), String> {
+        if let Some(occupant) = base_occupant
+            && claimed.contains(&base_no)
+            && !moved_orders.contains(&occupant)
+        {
+            return Err(format!(
+                "Runner {} on {}B would be overwritten — add an explicit override for them",
+                occupant, base_no
+            ));
+        }
+        Ok(())
+    };
+
+    check_base(state.on_1b, 1)?;
+    check_base(state.on_2b, 2)?;
+    check_base(state.on_3b, 3)?;
+
+    Ok(())
 }
