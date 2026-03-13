@@ -1,4 +1,3 @@
-// HalfInning lives in models::types — import from there directly.
 use crate::models::types::{GameStatus, HalfInning, Score};
 use crate::{PitchCount, Position};
 use serde::{Deserialize, Serialize};
@@ -56,6 +55,63 @@ pub struct PitchStats {
 
 pub type BatterOrder = u8;
 
+// ─── Runner advancement overrides ────────────────────────────────────────────
+
+/// Explicit destination for a runner after a hit.
+///
+/// When the scorer specifies where a runner ends up, this overrides the
+/// automatic advancement logic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RunnerDest {
+    /// Runner stays on first base (dest = 1B)
+    First,
+    /// Runner advances to / stays on second base (dest = 2B)
+    Second,
+    /// Runner advances to / stays on third base (dest = 3B)
+    Third,
+    /// Runner scores (dest = home)
+    Score,
+}
+
+impl RunnerDest {
+    /// Parse from a token like "1b", "2b", "3b", "sc", "score".
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "1b" => Some(Self::First),
+            "2b" => Some(Self::Second),
+            "3b" => Some(Self::Third),
+            "sc" | "score" | "home" => Some(Self::Score),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::First => "1B",
+            Self::Second => "2B",
+            Self::Third => "3B",
+            Self::Score => "SC",
+        }
+    }
+}
+
+impl fmt::Display for RunnerDest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// An explicit override for one runner: "batting-order slot N goes to dest D".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunnerOverride {
+    /// Batting order of the runner being overridden (1-9).
+    pub order: BatterOrder,
+    /// Where this runner ends up after the play.
+    pub dest: RunnerDest,
+}
+
+// ─── Game state ──────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone)]
 pub struct GameState {
     pub inning: u32,
@@ -80,13 +136,13 @@ pub struct GameState {
     pub pitcher_stats: HashMap<i64, PitchStats>,
 
     /// Cursor for next batter — resume-safe
-    pub away_next_batting_order: u8, // 1..=9
-    pub home_next_batting_order: u8, // 1..=9
+    pub away_next_batting_order: u8,
+    pub home_next_batting_order: u8,
 
-    /// Bases occupied (simplified boolean flags)
-    pub on_1b: bool,
-    pub on_2b: bool,
-    pub on_3b: bool,
+    /// Who is on each base, identified by batting order (None = base empty).
+    pub on_1b: Option<BatterOrder>,
+    pub on_2b: Option<BatterOrder>,
+    pub on_3b: Option<BatterOrder>,
 }
 
 impl GameState {
@@ -120,9 +176,9 @@ impl GameState {
             away_next_batting_order: 1,
             home_next_batting_order: 1,
 
-            on_1b: false,
-            on_2b: false,
-            on_3b: false,
+            on_1b: None,
+            on_2b: None,
+            on_3b: None,
         }
     }
 
@@ -130,6 +186,25 @@ impl GameState {
         match self.half {
             HalfInning::Top => "↑",
             HalfInning::Bottom => "↓",
+        }
+    }
+
+    /// Returns true if the given batting-order slot is currently on any base.
+    pub fn is_on_base(&self, order: BatterOrder) -> bool {
+        self.on_1b == Some(order) || self.on_2b == Some(order) || self.on_3b == Some(order)
+    }
+
+    /// Returns which base (1/2/3) this batting-order slot currently occupies,
+    /// or `None` if the runner is not on base.
+    pub fn base_of(&self, order: BatterOrder) -> Option<u8> {
+        if self.on_1b == Some(order) {
+            Some(1)
+        } else if self.on_2b == Some(order) {
+            Some(2)
+        } else if self.on_3b == Some(order) {
+            Some(3)
+        } else {
+            None
         }
     }
 }

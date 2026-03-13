@@ -67,28 +67,44 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
         // ✅ NEW: pitch command (0.6.7 baseline)
         EngineCommand::Pitch(pitch) => apply_pitch(state, pitch),
 
-        EngineCommand::Single { zone } => apply_hit_command(
+        EngineCommand::Single {
+            zone,
+            runner_overrides,
+        } => apply_hit_command(
             state,
             crate::models::plate_appearance::PlateAppearanceOutcome::Single { zone },
             "H",
+            &runner_overrides,
         ),
 
-        EngineCommand::Double { zone } => apply_hit_command(
+        EngineCommand::Double {
+            zone,
+            runner_overrides,
+        } => apply_hit_command(
             state,
             crate::models::plate_appearance::PlateAppearanceOutcome::Double { zone },
             "2H",
+            &runner_overrides,
         ),
 
-        EngineCommand::Triple { zone } => apply_hit_command(
+        EngineCommand::Triple {
+            zone,
+            runner_overrides,
+        } => apply_hit_command(
             state,
             crate::models::plate_appearance::PlateAppearanceOutcome::Triple { zone },
             "3H",
+            &runner_overrides,
         ),
 
-        EngineCommand::HomeRun { zone } => apply_hit_command(
+        EngineCommand::HomeRun {
+            zone,
+            runner_overrides,
+        } => apply_hit_command(
             state,
             crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { zone },
             "HR",
+            &runner_overrides,
         ),
 
         EngineCommand::Unknown(s) => ApplyResult {
@@ -189,6 +205,7 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
             pitches_sequence: final_sequence.clone(),
             outcome,
             outs,
+            runner_overrides: vec![], // pitch-by-pitch outcomes have no runner overrides
         }
     };
 
@@ -273,6 +290,7 @@ fn apply_hit_command(
     state: &mut GameState,
     outcome: crate::models::plate_appearance::PlateAppearanceOutcome,
     label: &str,
+    runner_overrides: &[crate::models::play_ball::RunnerOverride],
 ) -> ApplyResult {
     let Some(batter_id) = state.current_batter_id else {
         return ApplyResult {
@@ -339,6 +357,7 @@ fn apply_hit_command(
         pitches_sequence: final_sequence,
         outcome: outcome.clone(),
         outs: state.outs,
+        runner_overrides: runner_overrides.to_vec(),
     };
 
     let zone = match &outcome {

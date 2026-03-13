@@ -406,9 +406,9 @@ impl TuiUi {
                     .unwrap_or_else(|| "-".to_string()),
 
                 count,
-                on_1b: s.on_1b,
-                on_2b: s.on_2b,
-                on_3b: s.on_3b,
+                on_1b: s.on_1b.is_some(),
+                on_2b: s.on_2b.is_some(),
+                on_3b: s.on_3b.is_some(),
             }
         } else {
             ScoreboardViewData {

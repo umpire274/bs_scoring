@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-03-12
+
+### Added
+
+- **Runner override syntax** — lo scorer può ora specificare esplicitamente dove
+  finisce ogni corridore dopo un hit, usando il batting order come identificatore:
+    - `h` → singola, avanzamento automatico (comportamento precedente invariato)
+    - `6 h, 5 2b` → il #6 batte singola; il corridore #5 rimane in 2a
+    - `6 h, 5 2b, 3 sc` → singola; #5 → 2a; #3 segna
+    - `4 2h, 2 sc` → doppia; il corridore #2 segna (anziché fermarsi in 4a)
+    - Destinazioni valide: `1b`, `2b`, `3b`, `sc` / `score` / `home`
+- `RunnerDest` e `RunnerOverride` aggiunti a `models/play_ball.rs`
+- `apply_hit_with_overrides()` nel reducer sostituisce l'avanzamento automatico
+  fisso; qualsiasi corridore senza override esplicito continua ad avanzare
+  automaticamente in base al numero di basi colpite
+- `GameState.on_1b/on_2b/on_3b` cambiati da `bool` a `Option<BatterOrder>` —
+  il campo ora porta l'identità del corridore (batting order), non solo
+  l'occupazione della base
+- `PlateAppearance.runner_overrides` — gli override vengono persistiti nel PA
+  compatto per un replay fedele al momento dell'inserimento dati
+- Test unitari per il parser nella nuova sintassi (`engine_parser.rs`)
+- **Runner override compact format** — i token runner accettano ora sia
+  `7 sc` (con spazio) che `7sc` (senza spazio), per comodità di inserimento
+  rapido (es. `9 h, 8 2b, 7sc, 6sc` con basi piene è ora valido)
+
+### Changed
+
+- `EngineCommand::Single/Double/Triple/HomeRun` hanno ora un campo
+  `runner_overrides: Vec<RunnerOverride>` (breaking — solo interno)
+- La UI (`tui.rs`) converte `Option<BatterOrder>` → `bool` per il diamond;
+  la visualizzazione occupato/libero rimane invariata
+
 ## [0.7.7] - 2026-03-12
 
 ### Changed (Refactoring / Internal)
@@ -39,8 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Migration v13 added as a no-op placeholder** — closes the gap between v12
   and v14 in the migration chain, preventing confusion when auditing schema
   history.
-
-
 
 ### Added
 

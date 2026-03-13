@@ -882,9 +882,9 @@ fn handle_three_outs_and_change_side(
     // ⚠️ IMPORTANT: bases should clear on side change.
     // Se NON hai un DomainEvent dedicato, almeno azzera lo stato runtime:
     // (idealmente: aggiungi clearing dentro reducer su SideChange)
-    state.on_1b = false;
-    state.on_2b = false;
-    state.on_3b = false;
+    state.on_1b = None;
+    state.on_2b = None;
+    state.on_3b = None;
 
     true
 }
@@ -1005,13 +1005,13 @@ fn runs_scored_from_pa(state_before: &GameState, pa: &PlateAppearanceRow) -> u32
     if pa.outcome_type.as_str() == "home_run" {
         runs += 1; // batter
 
-        if state_before.on_1b {
+        if state_before.on_1b.is_some() {
             runs += 1;
         }
-        if state_before.on_2b {
+        if state_before.on_2b.is_some() {
             runs += 1;
         }
-        if state_before.on_3b {
+        if state_before.on_3b.is_some() {
             runs += 1;
         }
     }
@@ -1121,9 +1121,9 @@ fn load_and_apply_draft(
 
     if prev_inning != draft_inning || prev_half != draft_half {
         state.outs = 0;
-        state.on_1b = false;
-        state.on_2b = false;
-        state.on_3b = false;
+        state.on_1b = None;
+        state.on_2b = None;
+        state.on_3b = None;
     }
 
     state.current_batter_id = draft.batter_id;
