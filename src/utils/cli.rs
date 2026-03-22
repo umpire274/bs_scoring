@@ -36,10 +36,41 @@ pub fn read_i32(prompt: &str) -> Option<i32> {
     input.parse().ok()
 }
 
-/// Read an i64
+/// Read an i64 (returns None if empty or invalid — backward compatible)
 pub fn read_i64(prompt: &str) -> Option<i64> {
     let input = read_string(prompt);
     input.parse().ok()
+}
+
+/// Read an i64, retrying until a valid number is entered.
+pub fn read_i64_required(prompt: &str) -> i64 {
+    loop {
+        let input = read_string(prompt);
+        match input.parse::<i64>() {
+            Ok(n) => return n,
+            Err(_) => println!("  ⚠️  Please enter a valid number."),
+        }
+    }
+}
+
+/// Read a string with a default (ENTER returns the default)
+pub fn read_string_with_default(prompt: &str, default: &str) -> String {
+    let input = read_string(prompt);
+    if input.is_empty() {
+        default.to_string()
+    } else {
+        input
+    }
+}
+
+/// Read an optional string with a default (ENTER keeps current value)
+pub fn read_optional_string_with_default(prompt: &str, current: Option<&str>) -> Option<String> {
+    let input = read_string(prompt);
+    if input.is_empty() {
+        current.map(|s| s.to_string())
+    } else {
+        Some(input)
+    }
 }
 
 /// Wait for user to press enter

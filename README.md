@@ -1,32 +1,30 @@
-# ⚾ Baseball Scorer — v0.10.0
+# ⚾ Baseball Scorer — v0.10.1
 
 A comprehensive baseball and softball scoring TUI application with SQLite
 persistence, pitch-by-pitch tracking, runner advancement overrides, steal
-support, and deterministic game resume.
+support, deterministic game resume, and umpire supervisor tools.
 
-## 🆕 What's New in v0.10.0
+## 🆕 What's New in v0.10.1
 
-- ✅ **Unified runner logic** — all hit/walk/steal advancement consolidated into `core/runner_logic.rs`; single source of
-  truth for base movement and DB persistence
-- ✅ **Database optimisation** — WAL journal mode, `synchronous=NORMAL`, 8 MB page cache, foreign key enforcement enabled
-  at connection time
-- ✅ **Migration-only schema** — `init_schema()` no longer duplicates table creation; everything flows through the
-  migration chain (v1→v16)
-- ✅ **Ergonomic model helpers** — `HalfInning::as_str()`, `symbol()`, `from_str_loose()`;
-  `PlateAppearanceOutcome::bases()`, `is_hit()`, `zone()`, `label()`
-- ✅ **Cleaner architecture** — `play_ball_apply.rs` and `play_ball_reducer.rs` delegate to `runner_logic` instead of
-  duplicating ~250 lines of movement-building code
+- ✅ **Umpire Supervisor module** — new top-level menu with umpire registry (CRUD), game crew assignment (configurable
+  2/3/4/6-man crews), post-game evaluation report cards (8 scored categories, 1–10 scale), and career history/statistics
+- ✅ **Umpire ↔ League association** — N:N relationship; each umpire can work in multiple leagues, selectable at creation
+  and editable later
+- ✅ **Game picker for umpire operations** — assign and evaluate functions use the same game selection list as Play
+  Ball (excludes finished/cancelled/forfeited games)
+- ✅ **Schema v18** — three new tables: `umpires`, `game_umpires`, `umpire_evaluations`, plus `umpire_leagues` junction
+  table
 
 ### Recent Versions
 
-| Version | Highlights                                                      |
-|---------|-----------------------------------------------------------------|
-| 0.10.0  | Architecture refactor, DB optimisation, unified runner logic    |
-| 0.9.3   | Scrollable Help panel, Tab focus system, shortcuts bar          |
-| 0.9.2   | `runner_movements` rebuilt (v16); steal replay fixed            |
-| 0.9.1   | Steal command, Unicode panic fix, override collision validation |
-| 0.9.0   | Module split, runner override persistence (v15)                 |
-| 0.8.0   | Runner overrides by batting order                               |
+| Version | Highlights                                                            |
+|---------|-----------------------------------------------------------------------|
+| 0.10.1  | Umpire Supervisor module, crew assignments, evaluations, career stats |
+| 0.10.0  | Architecture refactor, DB optimisation, unified runner logic          |
+| 0.9.3   | Scrollable Help panel, Tab focus system, shortcuts bar                |
+| 0.9.2   | `runner_movements` rebuilt (v16); steal replay fixed                  |
+| 0.9.1   | Steal command, Unicode panic fix, override collision validation       |
+| 0.9.0   | Module split, runner override persistence (v15)                       |
 
 ## 📁 Project Structure
 
@@ -99,6 +97,7 @@ bs_scoring/
     │       ├── team.rs       # Team management
     │       ├── leagues.rs    # League management
     │       ├── statistics.rs # Statistics display
+    │       ├── umpire_supervisor.rs # Umpire Supervisor module
     │       └── db.rs         # Database management utilities
     │
     └── utils/
@@ -133,7 +132,7 @@ cargo run
 
 1. Creates platform-specific database directory
 2. Initialises SQLite database with WAL mode
-3. Runs all migrations (v1→v16) to create schema
+3. Runs all migrations (v1→v18) to create schema
 4. Displays database location and boot status
 
 **Database Locations:**
@@ -155,7 +154,8 @@ cargo run
   3. ⚾ Teams Management
   4. 👥 Player Management
   5. 📊 Statistics
-  6. 💾 Manage DB
+  6. 🧑‍⚖️ Umpire Supervisor
+  7. 💾 Manage DB
 
   0. 🚪 Exit
 ```
@@ -190,24 +190,51 @@ The TUI scoring interface provides:
 
 **Field zones:** `LL LF LC CF RC RF RL GLL LS MI RS GRL`
 
-## 🗄️ Database Schema (v16)
+## 🗄️ Database Schema (v18)
 
 ### Core Tables
 
-| Table               | Purpose                                                |
-|---------------------|--------------------------------------------------------|
-| `meta`              | App metadata and schema version                        |
-| `leagues`           | League/championship information                        |
-| `teams`             | Team data with league association                      |
-| `players`           | Player roster (first/last name, position, handedness)  |
-| `games`             | Game metadata (teams, venue, date, DH flags, status)   |
-| `game_lineups`      | Starting lineups for both teams                        |
-| `plate_appearances` | Compact PA log (1 row per completed PA)                |
-| `runner_movements`  | Per-runner base movements (hit, walk, steal)           |
-| `game_events`       | Administrative event log (start, status, side changes) |
-| `at_bat_draft`      | In-progress at-bat for resume support                  |
-| `at_bats`           | Legacy detailed at-bat table                           |
-| `pitches`           | Legacy pitch tracking table                            |
+| Table                | Purpose                                                   |
+|----------------------|-----------------------------------------------------------|
+| `meta`               | App metadata and schema version                           |
+| `leagues`            | League/championship information                           |
+| `teams`              | Team data with league association                         |
+| `players`            | Player roster (first/last name, position, handedness)     |
+| `games`              | Game metadata (teams, venue, date, DH flags, status)      |
+| `game_lineups`       | Starting lineups for both teams                           |
+| `plate_appearances`  | Compact PA log (1 row per completed PA)                   |
+| `runner_movements`   | Per-runner base movements (hit, walk, steal)              |
+| `game_events`        | Administrative event log (start, status, side changes)    |
+| `at_bat_draft`       | In-progress at-bat for resume support                     |
+| `umpires`            | Umpire registry (name, license, level, contact)           |
+| `game_umpires`       | Umpire crew assignments per game (HP, 1B, 2B, 3B, LF, RF) |
+| `umpire_evaluations` | Post-game umpire report cards (8 categories, 1–10)        |
+| `umpire_leagues`     | N:N umpire ↔ league association                           |
+| `at_bats`            | Legacy detailed at-bat table                              |
+| `pitches`            | Legacy pitch tracking table                               |
+
+## 🧑‍⚖️ Umpire Supervisor
+
+```
+UMPIRE SUPERVISOR
+  1. 👤 Manage Umpires          — CRUD + league association
+  2. 📋 Assign Umpires to Game  — configurable crew (2/3/4/6)
+  3. 📝 Evaluate Game           — report card per umpire
+  4. 📊 Umpire History          — career stats & evaluations
+```
+
+### Evaluation Categories (1–10 scale)
+
+| Category             | Applies to    |
+|----------------------|---------------|
+| Strike zone accuracy | HP only       |
+| Safe/Out accuracy    | All positions |
+| Positioning          | All positions |
+| Timing               | All positions |
+| Game management      | All positions |
+| Professionalism      | All positions |
+| Communication        | All positions |
+| Hustle               | All positions |
 
 ## 💾 Database Management
 
@@ -225,17 +252,18 @@ DATABASE MANAGEMENT
 
 ## 📊 Features by Version
 
-| Version | Key Features                                                             |
-|---------|--------------------------------------------------------------------------|
-| 0.10.0  | Unified runner logic, WAL mode, migration-only schema, model helpers     |
-| 0.9.x   | TUI Help/focus system, steal command, runner_movements v16, module split |
-| 0.8.0   | Runner overrides by batting order, `Option<BatterOrder>` on bases        |
-| 0.7.x   | Compact PA persistence, deterministic resume, TUI scoreboard             |
-| 0.6.x   | Pitch-by-pitch tracking, pitch count, strike/ball logic                  |
-| 0.4.x   | Pre-game lineup editing, DH support, GameStatus enum                     |
-| 0.3.x   | Player management, CSV/JSON import-export                                |
-| 0.2.x   | SQLite persistence, menu system, schema migrations                       |
-| 0.1.0   | Initial CLI scoring                                                      |
+| Version | Key Features                                                              |
+|---------|---------------------------------------------------------------------------|
+| 0.10.1  | Umpire Supervisor: registry, crew assignment, evaluations, career history |
+| 0.10.0  | Unified runner logic, WAL mode, migration-only schema, model helpers      |
+| 0.9.x   | TUI Help/focus system, steal command, runner_movements v16, module split  |
+| 0.8.0   | Runner overrides by batting order, `Option<BatterOrder>` on bases         |
+| 0.7.x   | Compact PA persistence, deterministic resume, TUI scoreboard              |
+| 0.6.x   | Pitch-by-pitch tracking, pitch count, strike/ball logic                   |
+| 0.4.x   | Pre-game lineup editing, DH support, GameStatus enum                      |
+| 0.3.x   | Player management, CSV/JSON import-export                                 |
+| 0.2.x   | SQLite persistence, menu system, schema migrations                        |
+| 0.1.0   | Initial CLI scoring                                                       |
 
 ## 🚀 Roadmap
 
@@ -268,8 +296,8 @@ MIT License — Free to use for your games! ⚾
 
 ---
 
-**Version:** 0.10.0
-**Schema:** v16
+**Version:** 0.10.1
+**Schema:** v18
 **Edition:** Rust 2024
 **Author:** Alessandro Maestri
 

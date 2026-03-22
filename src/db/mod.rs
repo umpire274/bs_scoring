@@ -9,3 +9,4 @@ pub mod plate_appearances;
 pub mod player;
 pub mod runner_movements;
 pub mod team;
+pub mod umpire;

@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-03-23
+
+### Added
+
+- **Umpire Supervisor module** — new top-level menu (voce 6, DB scala a 7) with
+  four sub-functions:
+    - **Manage Umpires (CRUD)**: add, list, edit, delete umpires with fields for
+      first/last name, license number, level/classification, email, phone, notes.
+      Edit shows full umpire list before prompting for ID.
+    - **Assign Umpires to Game**: game selection via same picker used by Play Ball
+      (excludes Regulation/Cancelled/Forfeited). Configurable crew size (2, 3, 4,
+      or 6 umpires) with positions HP, 1B, 2B, 3B, LF, RF. Shows current
+      assignments before editing. `UNIQUE(game_id, position)` prevents
+      double-booking.
+    - **Evaluate Game (Report Card)**: game selection via shared picker.
+      Per-umpire evaluation form with 8 scored categories (1–10 scale): strike
+      zone accuracy (HP only), safe/out accuracy, positioning, timing, game
+      management, professionalism, communication, hustle. Computes average
+      automatically; supervisor can override with manual overall. Free-text fields
+      for strengths, areas to improve, and notes. Evaluation box dynamically sized
+      to fit umpire name and position.
+    - **Umpire History / Statistics**: career overview per umpire — tabular display
+      of all evaluations with per-category scores and career average.
+
+- **Umpire ↔ League association** (N:N):
+    - Migration v18: `umpire_leagues` junction table with
+      `PRIMARY KEY (umpire_id, league_id)`
+    - During umpire creation: displays all registered leagues, user selects one or
+      more by comma-separated IDs (e.g. `1,3`); validates that IDs exist
+    - During umpire edit: shows current leagues, allows re-selection
+    - Umpire list shows associated league names in a dedicated column
+    - `set_umpire_leagues()`, `get_umpire_leagues()`, `add_umpire_league()`,
+      `remove_umpire_league()` DB functions
+
+- **Database schema v17–v18**:
+    - v17: `umpires`, `game_umpires`, `umpire_evaluations` tables with indexes
+    - v18: `umpire_leagues` junction table with indexes
+
+- **`UmpirePosition` enum** — `HP`, `1B`, `2B`, `3B`, `LF`, `RF` with
+  `crew(size)` method returning the appropriate positions for 2/3/4/6-man crews
+
+- **`UmpireSupervisorMenuChoice` enum** — `ManageUmpires`, `AssignToGame`,
+  `EvaluateGame`, `UmpireHistory`, `Back`
+
+- **Utility helpers**: `read_i64_required()` (retry loop),
+  `read_string_with_default()`, `read_optional_string_with_default()`
+
+- **Shared game picker** (`select_game()`): reusable function that lists
+  playable games with the same filter as Play Ball and returns the selected
+  `PlayBallGameContext`
+
+### Changed
+
+- **Main menu** reordered: Umpire Supervisor = voce 6, Manage DB = voce 7
+  (was 6). Prompt updated to `(1-7 or 0)`.
+- `MainMenuChoice` enum gains `UmpireSupervisor` variant
+- `lib.rs` re-exports `UmpireSupervisorMenuChoice`
+
+---
+
 ## [0.10.0] - 2026-03-22
 
 ### Added
