@@ -8,8 +8,18 @@ pub enum MainMenuChoice {
     ManageTeams,
     ManagePlayers,
     Statistics,
+    UmpireSupervisor,
     ManageDB,
     Exit,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum UmpireSupervisorMenuChoice {
+    ManageUmpires,
+    AssignToGame,
+    EvaluateGame,
+    UmpireHistory,
+    Back,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -81,11 +91,12 @@ impl Menu {
             println!("  3. ⚾ Teams Management");
             println!("  4. 👥 Player Management");
             println!("  5. 📊 Statistics");
-            println!("  6. 💾 Manage DB");
+            println!("  6. 🧑‍⚖️ Umpire Supervisor");
+            println!("  7. 💾 Manage DB");
             println!();
             println!("  0. 🚪 Exit");
             println!();
-            print!("Select an option (1-6 or 0): ");
+            print!("Select an option (1-7 or 0): ");
             io::stdout().flush().unwrap();
 
             let choice = utils::cli::read_choice();
@@ -95,7 +106,8 @@ impl Menu {
                 3 => return MainMenuChoice::ManageTeams,
                 4 => return MainMenuChoice::ManagePlayers,
                 5 => return MainMenuChoice::Statistics,
-                6 => return MainMenuChoice::ManageDB,
+                6 => return MainMenuChoice::UmpireSupervisor,
+                7 => return MainMenuChoice::ManageDB,
                 0 => return MainMenuChoice::Exit,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
@@ -237,6 +249,39 @@ impl Menu {
                 5 => return PlayerMenuChoice::ChangeTeam,
                 6 => return PlayerMenuChoice::ImportExport,
                 0 => return PlayerMenuChoice::Back,
+                _ => {
+                    println!("\n❌ Invalid choice. Press ENTER to continue...");
+                    utils::cli::wait_for_enter();
+                }
+            }
+        }
+    }
+
+    /// Display umpire supervisor menu
+    pub fn show_umpire_supervisor_menu() -> UmpireSupervisorMenuChoice {
+        loop {
+            utils::cli::clear_screen();
+            println!("╔════════════════════════════════════════════╗");
+            println!("║       🧑‍⚖️  UMPIRE SUPERVISOR               ║");
+            println!("╚════════════════════════════════════════════╝");
+            println!();
+            println!("  1. 👤 Manage Umpires");
+            println!("  2. 📋 Assign Umpires to Game");
+            println!("  3. 📝 Evaluate Game (Report Card)");
+            println!("  4. 📊 Umpire History / Statistics");
+            println!();
+            println!("  0. 🔙 Back to Main Menu");
+            println!();
+            print!("Select an option (1-4 or 0): ");
+            io::stdout().flush().unwrap();
+
+            let choice = utils::cli::read_choice();
+            match choice {
+                1 => return UmpireSupervisorMenuChoice::ManageUmpires,
+                2 => return UmpireSupervisorMenuChoice::AssignToGame,
+                3 => return UmpireSupervisorMenuChoice::EvaluateGame,
+                4 => return UmpireSupervisorMenuChoice::UmpireHistory,
+                0 => return UmpireSupervisorMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
                     utils::cli::wait_for_enter();

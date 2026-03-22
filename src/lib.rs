@@ -34,7 +34,7 @@ pub use db::team::Team;
 // ─── Menu / CLI ───────────────────────────────────────────────────────────────
 pub use core::menu::{
     DBMenuChoice, GameMenuChoice, LeagueMenuChoice, MainMenuChoice, Menu, PlayerMenuChoice,
-    TeamMenuChoice,
+    TeamMenuChoice, UmpireSupervisorMenuChoice,
 };
 pub use core::parser::CommandParser;
 

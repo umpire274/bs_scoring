@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 16;
+pub const CURRENT_SCHEMA_VERSION: i64 = 18;
 
 /// Migration structure
 pub struct Migration {
@@ -94,6 +94,16 @@ pub fn get_migrations() -> Vec<Migration> {
             version: 16,
             description: "Rebuild runner_movements: replace at_bat_id FK with pa_seq + game_event_id, add inning/half columns",
             up: migration_v16,
+        },
+        Migration {
+            version: 17,
+            description: "Add umpires, game_umpires, and umpire_evaluations tables for Umpire Supervisor module",
+            up: migration_v17,
+        },
+        Migration {
+            version: 18,
+            description: "Add umpire_leagues junction table for N:N umpire-league association",
+            up: migration_v18,
         },
     ]
 }
@@ -943,5 +953,127 @@ fn migration_v16(conn: &Connection) -> Result<()> {
         COMMIT;
         ",
     )?;
+    Ok(())
+}
+
+fn migration_v17(conn: &Connection) -> Result<()> {
+    // ─── Umpires registry ────────────────────────────────────────────────
+    // Anagrafica arbitri: dati personali e classificazione.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS umpires (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            license_number TEXT,
+            level TEXT,
+            email TEXT,
+            phone TEXT,
+            notes TEXT,
+            is_active BOOLEAN DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_umpires_name ON umpires(last_name, first_name)",
+        [],
+    )?;
+
+    // ─── Game ↔ Umpire assignments ──────────────────────────────────────
+    // Crew configurabile: 2, 3, 4 o 6 arbitri per gara.
+    // `position` indica il ruolo:
+    //   HP  = Home Plate
+    //   1B  = First Base
+    //   2B  = Second Base
+    //   3B  = Third Base
+    //   LF  = Left Field  (6-man crew)
+    //   RF  = Right Field  (6-man crew)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS game_umpires (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            umpire_id INTEGER NOT NULL,
+            position TEXT NOT NULL CHECK(position IN ('HP','1B','2B','3B','LF','RF')),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (umpire_id) REFERENCES umpires(id),
+            UNIQUE(game_id, position)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_game_umpires_game ON game_umpires(game_id)",
+        [],
+    )?;
+
+    // ─── Umpire evaluations (report card) ────────────────────────────────
+    // Una riga per arbitro per gara. Il supervisor compila dopo la gara.
+    // I punteggi usano una scala 1–10 (NULL = non valutato).
+    // `overall_score` può essere calcolato o inserito manualmente.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS umpire_evaluations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            umpire_id INTEGER NOT NULL,
+            evaluator_name TEXT,
+            position_evaluated TEXT NOT NULL CHECK(position_evaluated IN ('HP','1B','2B','3B','LF','RF')),
+            strike_zone_accuracy INTEGER CHECK(strike_zone_accuracy BETWEEN 1 AND 10),
+            safe_out_accuracy INTEGER CHECK(safe_out_accuracy BETWEEN 1 AND 10),
+            positioning INTEGER CHECK(positioning BETWEEN 1 AND 10),
+            timing INTEGER CHECK(timing BETWEEN 1 AND 10),
+            game_management INTEGER CHECK(game_management BETWEEN 1 AND 10),
+            professionalism INTEGER CHECK(professionalism BETWEEN 1 AND 10),
+            communication INTEGER CHECK(communication BETWEEN 1 AND 10),
+            hustle INTEGER CHECK(hustle BETWEEN 1 AND 10),
+            overall_score INTEGER CHECK(overall_score BETWEEN 1 AND 10),
+            strengths TEXT,
+            areas_to_improve TEXT,
+            notes TEXT,
+            evaluated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (umpire_id) REFERENCES umpires(id),
+            UNIQUE(game_id, umpire_id)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_umpire_evals_game ON umpire_evaluations(game_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_umpire_evals_umpire ON umpire_evaluations(umpire_id)",
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn migration_v18(conn: &Connection) -> Result<()> {
+    // Junction table: an umpire can work in multiple leagues,
+    // and a league can have multiple umpires.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS umpire_leagues (
+            umpire_id INTEGER NOT NULL,
+            league_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (umpire_id, league_id),
+            FOREIGN KEY (umpire_id) REFERENCES umpires(id),
+            FOREIGN KEY (league_id) REFERENCES leagues(id)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_umpire_leagues_umpire ON umpire_leagues(umpire_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_umpire_leagues_league ON umpire_leagues(league_id)",
+        [],
+    )?;
+
     Ok(())
 }
