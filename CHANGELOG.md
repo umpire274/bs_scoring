@@ -3,6 +3,84 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.10.0] - 2026-03-22
+
+### Added
+
+- **`core/runner_logic.rs`** — new module that unifies all runner advancement
+  logic into a single source of truth. Provides:
+    - `apply_hit()` — hit advancement with optional per-runner overrides,
+      returns `HitResult` containing both state mutations and
+      `RunnerMovementInsert` rows for DB persistence
+    - `apply_walk()` — walk/BB forced advancement, returns `WalkResult`
+      with movement rows
+    - `build_movements_from_snapshot()` — generates movement rows from a
+      pre-mutation `BaseSnapshot` without touching state (used by the live
+      PA path)
+    - `validate_runner_overrides()` — consolidated collision check
+    - `BaseSnapshot` struct for capturing base occupancy before plays
+- **`HalfInning` helper methods**:
+    - `as_str()` → `"Top"` / `"Bottom"` (replaces 12+ manual match blocks)
+    - `symbol()` → `'↑'` / `'↓'`
+    - `from_str_loose()` — case-insensitive parse from DB strings
+- **`PlateAppearanceOutcome` helper methods**:
+    - `bases()` → number of bases on a hit (1–4), 0 for non-hits
+    - `is_hit()` → true for Single/Double/Triple/HomeRun
+    - `zone()` → extract `Option<FieldZone>` from any hit variant
+    - `label()` → short symbol (`"H"`, `"2H"`, `"K"`, `"BB"`, …)
+    - `display_label()` → human-readable (`"Single"`, `"Home run"`, …)
+- **Database connection PRAGMAs** (set in `Database::new()`):
+    - `journal_mode = WAL` — better write performance for single-writer apps
+    - `synchronous = NORMAL` — safe with WAL, significantly faster than FULL
+    - `cache_size = -8000` — ~8 MB page cache (was default ~2 MB)
+    - `foreign_keys = ON` — FK enforcement enabled at connection time
+- **New test** `test_migrations_applied_on_new_db` — verifies that a
+  fresh `:memory:` database runs all migrations and reaches
+  `CURRENT_SCHEMA_VERSION`
+
+### Changed
+
+- **`Database::init_schema()` simplified** — removed ~170 lines of
+  `CREATE TABLE IF NOT EXISTS` that duplicated the migration chain.
+  Now only creates the `meta` table, then delegates everything to
+  `run_migrations()`. For a new database, all migrations (v1→v16) run
+  in order; for an existing database, only pending migrations apply.
+- **`migration_v1` is no longer a no-op** — now creates the foundational
+  tables (`leagues`, `teams`, `players`, `games` + indexes) that were
+  previously created by `init_schema()` directly.
+- **`play_ball_apply.rs` rewritten** (655 → 530 lines):
+    - Clean imports (removed 28 fully-qualified `crate::models::plate_appearance::*` paths)
+    - `require_batter!` macro replaces 3 identical guard blocks
+    - Hit command builder uses `PlateAppearanceOutcome::display_label()` and `zone()`
+    - Override validation delegates to `runner_logic::validate_runner_overrides()`
+- **`play_ball_reducer.rs` slimmed** (892 → 493 lines):
+    - `apply_hit_with_overrides()` → delegates to `runner_logic::apply_hit()`
+    - `apply_hit_advancement()` → delegates to `runner_logic::apply_hit()`
+    - `apply_walk_advancement()` → delegates to `runner_logic::apply_walk()`
+    - `build_hit_movements_from_snapshot()` → delegates to
+      `runner_logic::build_movements_from_snapshot()`
+    - Removed `place_runner_with_order()`, `ensure_inning()`,
+      `add_runs_to_score()` (moved to `runner_logic`)
+- **`HalfInning::as_str()` adopted** across `at_bat_draft.rs`,
+  `game_events.rs`, `engine/play_ball.rs` — replaced manual
+  `match half { Top => "Top", Bottom => "Bottom" }` patterns
+
+### Removed
+
+- ~250 lines of duplicated runner movement logic that existed in three
+  separate places (`apply_hit_with_overrides`, `build_hit_movements_from_snapshot`,
+  and inline walk movements in `apply_pitch`)
+- ~170 lines of `CREATE TABLE` in `Database::init_schema()` that
+  duplicated the migration chain
+- Standalone `place_runner_with_order()`, `ensure_inning()`,
+  `add_runs_to_score()` helper functions from `play_ball_reducer.rs`
+  (consolidated into `runner_logic`)
+- Standalone `half_symbol()` function from `engine/play_ball.rs`
+  (replaced by `HalfInning::symbol()`)
+
+---
 
 ## [0.9.3] - 2026-03-13
 
@@ -93,7 +171,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   occupied by a runner not listed in the overrides (who would otherwise be
   silently evicted).
 
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+---
 
 ## [0.9.0] - 2026-03-13
 
