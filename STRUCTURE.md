@@ -1,4 +1,4 @@
-# 🎯 BS Scoring v0.9.2 – Project Structure
+# 🎯 BS Scoring v0.10.0 – Project Structure
 
 ## 📂 Directory layout
 
@@ -41,21 +41,26 @@ bs_scoring/
     │                           #   handles "6 h, 5 2b" and "6 st 2b" syntax
     │
     ├── core/                   # Game logic
+    │   ├── runner_logic.rs   # ★ Unified runner movement logic             [v0.10.0]
+    │   │                       #   apply_hit(), apply_walk(),
+    │   │                       #   build_movements_from_snapshot(),
+    │   │                       #   validate_runner_overrides(), BaseSnapshot
     │   ├── menu.rs             # COBOL-style menu system
     │   ├── parser.rs           # Scoring notation parser (legacy / reference)
     │   ├── play_ball.rs        # ⚠ Deprecated shim — re-exports from      [v0.9.0]
     │   │                       #   db/game_queries
     │   ├── play_ball_apply.rs  # EngineCommand → ApplyResult
-    │   │                       #   apply_steal() lives here                [v0.9.1]
+    │   │                       #   delegates to runner_logic               [v0.10.0]
     │   └── play_ball_reducer.rs# DomainEvent / PA → GameState mutations
-    │                           #   apply_hit_with_overrides() lives here
+    │                           #   delegates to runner_logic               [v0.10.0]
     │
     ├── engine/
     │   └── play_ball.rs        # Main game loop: I/O, DB persistence, state drive
     │
     ├── db/                     # SQLite persistence layer
-    │   ├── database.rs         # Connection management
+    │   ├── database.rs         # Connection + WAL + PRAGMAs               [v0.10.0]
     │   ├── migrations.rs       # Schema versioning (v1–v16)                [v0.9.2]
+    │   │                       #   v1 now creates base tables              [v0.10.0]
     │   ├── game_queries.rs     # list_playable_games, gate_check_lineups,  [v0.9.0]
     │   │                       #   set_game_status
     │   ├── plate_appearances.rs# plate_appearances CRUD                    [v0.9.0]
@@ -115,10 +120,15 @@ bs_scoring/
 │            │  │                 │  │                     │
 │ engine_    │  │ play_ball_      │  │ plate_appearances.rs│
 │ parser.rs  │  │ apply.rs        │  │ game_events.rs      │
-│            │  │                 │  │ game_queries.rs     │
-│ "6 h, 5 2b"│  │ play_ball_      │  │ at_bat_draft.rs     │
-│ "6 st 2b"  │  │ reducer.rs      │  │                     │
-│            │  │                 │  │ SQLite (v15)        │
+│            │  │        │        │  │ game_queries.rs     │
+│ "6 h, 5 2b"│  │        ▼        │  │ at_bat_draft.rs     │
+│ "6 st 2b"  │  │ runner_logic.rs │  │ runner_movements.rs │
+│            │  │ (single source  │  │                     │
+│            │  │  of truth)      │  │ SQLite (v16 + WAL)  │
+│            │  │        │        │  │                     │
+│            │  │        ▼        │  │                     │
+│            │  │ play_ball_      │  │                     │
+│            │  │ reducer.rs      │  │                     │
 └────────────┘  └────────┬────────┘  └─────────────────────┘
                          │
                          ▼
@@ -277,6 +287,7 @@ Resume reconstructs state from three sources in order:
 
 | Version | Highlights                                                                                                                                                      |
 |---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| v0.10.0 | Unified `runner_logic` module; WAL mode + PRAGMAs; migration-only schema; `HalfInning`/`PlateAppearanceOutcome` helpers; ~400 lines of duplication removed      |
 | v0.9.2  | `runner_movements` rebuilt (migration v16); steal/hit/walk movements persisted per-runner; steal replay fixed; `game_events` scope clarified to admin/info only |
 | v0.9.1  | Steal command (`<order> st <dest>`); Unicode panic fix; runner collision validation                                                                             |
 | v0.9.0  | Module split (game_state, runner, session, scoring); runner override persistence (migration v15); DB queries moved to db/game_queries                           |

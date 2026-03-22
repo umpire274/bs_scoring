@@ -1,65 +1,116 @@
-# ⚾ Baseball Scorer - v0.4.0
+# ⚾ Baseball Scorer — v0.10.0
 
-A comprehensive baseball and softball scoring application with SQLite persistence, official scoring symbols support,
-cross-platform compatibility, professional database management, and complete lineup management with DH support.
+A comprehensive baseball and softball scoring TUI application with SQLite
+persistence, pitch-by-pitch tracking, runner advancement overrides, steal
+support, and deterministic game resume.
 
-## 🆕 What's New in v0.4.0
+## 🆕 What's New in v0.10.0
 
-- ✅ **Complete Lineup Entry**: Full lineup management during game creation with validation
-- ✅ **Designated Hitter Support**: Independent DH option for each team with proper pitcher handling
-- ✅ **Game Time Field**: Record both date and time for each game
-- ✅ **Custom Game IDs**: Option to use custom game identifiers
-- ✅ **Schema v3**: New `game_lineups` table for complete lineup tracking
+- ✅ **Unified runner logic** — all hit/walk/steal advancement consolidated into `core/runner_logic.rs`; single source of
+  truth for base movement and DB persistence
+- ✅ **Database optimisation** — WAL journal mode, `synchronous=NORMAL`, 8 MB page cache, foreign key enforcement enabled
+  at connection time
+- ✅ **Migration-only schema** — `init_schema()` no longer duplicates table creation; everything flows through the
+  migration chain (v1→v16)
+- ✅ **Ergonomic model helpers** — `HalfInning::as_str()`, `symbol()`, `from_str_loose()`;
+  `PlateAppearanceOutcome::bases()`, `is_hit()`, `zone()`, `label()`
+- ✅ **Cleaner architecture** — `play_ball_apply.rs` and `play_ball_reducer.rs` delegate to `runner_logic` instead of
+  duplicating ~250 lines of movement-building code
 
 ### Recent Versions
 
-**v0.3.1** - Complete CLI menu system, game metadata management  
-**v0.3.0** - Game management system with metadata tracking  
-**v0.2.5** - Database migration system with meta table  
-**v0.2.4** - Complete database management suite
+| Version | Highlights                                                      |
+|---------|-----------------------------------------------------------------|
+| 0.10.0  | Architecture refactor, DB optimisation, unified runner logic    |
+| 0.9.3   | Scrollable Help panel, Tab focus system, shortcuts bar          |
+| 0.9.2   | `runner_movements` rebuilt (v16); steal replay fixed            |
+| 0.9.1   | Steal command, Unicode panic fix, override collision validation |
+| 0.9.0   | Module split, runner override persistence (v15)                 |
+| 0.8.0   | Runner overrides by batting order                               |
 
 ## 📁 Project Structure
 
 ```
 bs_scoring/
-├── Cargo.toml              # Package configuration with lib + bin
+├── Cargo.toml                # Package configuration ([lib] + [[bin]])
 ├── README.md
 ├── CHANGELOG.md
-├── SCORING_GUIDE.md
-├── STRUCTURE.md
-└── src/                    # All source code
-    ├── lib.rs             # Library interface
-    ├── main.rs            # CLI application entry point (minimal)
-    ├── cli/               # Command-line interface
-    │   ├── mod.rs
-    │   └── commands/      # Command handlers
-    │       ├── db.rs      # Database management
-    │       ├── game.rs    # Game operations + LINEUP ENTRY (NEW v0.4.0)
-    │       ├── leagues.rs # League management
-    │       ├── main_menu.rs # Main menu loop
+├── SCORING_GUIDE.md          # Scorer command reference
+├── STRUCTURE.md              # Detailed architecture
+└── src/
+    ├── lib.rs                # Library entry point / public re-exports
+    ├── main.rs               # Binary entry point
+    │
+    ├── models/               # Pure data types — no I/O, no DB
+    │   ├── types.rs          # HalfInning, Pitch, GameStatus, Score, Position
+    │   ├── game_state.rs     # GameState, BatterOrder, PitchStats
+    │   ├── runner.rs         # RunnerDest, RunnerOverride
+    │   ├── session.rs        # PlayBallGameContext, PlayBallGate, LineupSide
+    │   ├── plate_appearance.rs # PlateAppearance, PlateAppearanceOutcome
+    │   ├── events.rs         # DomainEvent, PersistedEvent
+    │   ├── field_zone.rs     # FieldZone (LF, CF, RF, …)
+    │   ├── player_traits.rs  # PitchHand, BatSide
+    │   ├── play_ball.rs      # Compatibility re-export shim
+    │   └── scoring/          # Full scoring notation types (parser only)
+    │       └── types.rs      # HitType, OutType, Walk, AdvancedPlay, …
+    │
+    ├── commands/             # Input parsing
+    │   ├── types.rs          # EngineCommand enum
+    │   └── engine_parser.rs  # parse_engine_commands()
+    │
+    ├── core/                 # Game logic
+    │   ├── runner_logic.rs   # ★ Unified runner movement logic (NEW v0.10.0)
+    │   ├── play_ball_apply.rs # EngineCommand → ApplyResult
+    │   ├── play_ball_reducer.rs # DomainEvent / PA → GameState mutations
+    │   ├── menu.rs           # Menu system
+    │   ├── parser.rs         # Scoring notation parser (reference)
+    │   └── play_ball.rs      # Deprecated re-export shim
+    │
+    ├── engine/
+    │   └── play_ball.rs      # Main game loop: I/O, DB persistence, state drive
+    │
+    ├── db/                   # SQLite persistence layer
+    │   ├── database.rs       # Connection management + WAL + PRAGMAs
+    │   ├── migrations.rs     # Schema versioning (v1–v16)
+    │   ├── game_queries.rs   # Playable games, lineup gate-check, status
+    │   ├── plate_appearances.rs # plate_appearances CRUD
+    │   ├── runner_movements.rs  # runner_movements CRUD
+    │   ├── game_events.rs    # game_events log (admin/info only)
+    │   ├── at_bat_draft.rs   # In-progress PA draft (resume support)
+    │   ├── league.rs         # League CRUD
+    │   ├── team.rs           # Team CRUD
+    │   ├── player.rs         # Player CRUD
+    │   └── config.rs         # Cross-platform DB path
+    │
+    ├── ui/                   # UI abstractions
+    │   ├── tui.rs            # Terminal UI (ratatui) — scoreboard, log, help
+    │   ├── cli.rs            # Plain-text CLI fallback
+    │   ├── events.rs         # UiEvent definitions
+    │   ├── context.rs        # PlayBallUiContext
+    │   ├── factory.rs        # UI backend selection
+    │   └── app.rs            # App-level UI state
+    │
+    ├── cli/                  # CLI command handlers (menu actions)
+    │   └── commands/
+    │       ├── main_menu.rs
+    │       ├── game.rs       # Game creation, listing, editing, lineups
+    │       ├── play_ball.rs  # Play Ball session launcher
+    │       ├── players.rs    # Player management + import/export
+    │       ├── team.rs       # Team management
+    │       ├── leagues.rs    # League management
     │       ├── statistics.rs # Statistics display
-    │       └── team.rs    # Team management
-    ├── core/              # Business logic
-    │   ├── menu.rs        # Menu system
-    │   └── parser.rs      # Scoring notation parser
-    ├── db/                # Database layer
-    │   ├── config.rs      # Cross-platform paths + setup_db()
-    │   ├── database.rs    # SQLite schema and operations
-    │   ├── league.rs      # League CRUD
-    │   ├── team.rs        # Team and Player CRUD
-    │   ├── player.rs      # Player operations
-    │   └── migrations.rs  # Schema migration system (v3 in v0.4.0)
-    ├── models/            # Data types
-    │   └── types.rs       # Game scoring types
-    └── utils/             # Utilities
-        └── cli.rs         # CLI helper functions
+    │       └── db.rs         # Database management utilities
+    │
+    └── utils/
+        ├── boot.rs           # App initialization + banner
+        └── cli.rs            # Input helpers, CliSelectable trait
 ```
 
 ## 🚀 Installation
 
 ### Prerequisites
 
-- Rust 1.85+ (for edition 2024) - Install from [rustup.rs](https://rustup.rs/)
+- Rust 1.85+ (for edition 2024) — install from [rustup.rs](https://rustup.rs/)
 
 ### Compilation
 
@@ -68,7 +119,7 @@ cd bs_scoring
 cargo build --release
 ```
 
-Executable available at: `target/release/bs_scoring`
+Executable: `target/release/bs_scoring` (or `bs_scoring.exe` on Windows)
 
 ## 📖 Usage
 
@@ -80,18 +131,17 @@ cargo run
 
 ### First Run
 
-On first run, the application will:
-
-1. Create platform-specific database directory
-2. Initialize SQLite database
-3. Create schema with all tables
-4. Run migrations to latest version (v3)
-5. Display database location
+1. Creates platform-specific database directory
+2. Initialises SQLite database with WAL mode
+3. Runs all migrations (v1→v16) to create schema
+4. Displays database location and boot status
 
 **Database Locations:**
 
-- **Windows**: `%LOCALAPPDATA%\bs_scorer\baseball_scorer.db`
-- **macOS/Linux**: `$HOME/.bs_scorer/baseball_scorer.db`
+| Platform    | Path                                          |
+|-------------|-----------------------------------------------|
+| Windows     | `%LOCALAPPDATA%\bs_scorer\baseball_scorer.db` |
+| macOS/Linux | `$HOME/.bs_scorer/baseball_scorer.db`         |
 
 ## 🎮 Main Menu
 
@@ -100,282 +150,115 @@ On first run, the application will:
 ║  ⚾  BASEBALL/SOFTBALL SCORER - MAIN MENU  ║
 ╚════════════════════════════════════════════╝
 
-  1. 🎮 Manage Games
-  2. 🏆 Manage Leagues
-  3. ⚾ Manage Teams
-  4. 📊 Statistics
-  5. 💾 Manage DB
+  1. 🎮 Game Management
+  2. 🏆 Leagues Management
+  3. ⚾ Teams Management
+  4. 👥 Player Management
+  5. 📊 Statistics
+  6. 💾 Manage DB
 
   0. 🚪 Exit
-
-Select an option (1-5 or 0):
 ```
 
-## 🎮 Game Management (Enhanced in v0.4.0)
+## ⚾ Play Ball — Live Scoring
 
-```
-GAME MANAGEMENT
-═══════════════════════════════════
-  1. 🆕 New Game          ← ENHANCED with full lineup entry
-  2. 📋 List Games
-  3. ✏️  Edit Game
-  4. ⚾ Play Ball!
+The TUI scoring interface provides:
 
-  0. 🔙 Back to Main Menu
-```
+- **Scoreboard** with line score, base diamond, count, outs, pitcher stats
+- **Scrollable log** with replay on resume
+- **Help panel** with command reference
+- **Tab focus** between Log and Help panels
 
-### Creating a New Game (v0.4.0 Workflow)
+### Scorer Commands
 
-The new game creation process guides you through:
+| Command     | Description                         |
+|-------------|-------------------------------------|
+| `playball`  | Start the game                      |
+| `b`         | Ball                                |
+| `k`         | Called strike                       |
+| `s`         | Swinging strike                     |
+| `f`         | Foul                                |
+| `fl`        | Foul bunt (counts as strike 3)      |
+| `h [zone]`  | Single (optional field zone)        |
+| `2h [zone]` | Double                              |
+| `3h [zone]` | Triple                              |
+| `hr [zone]` | Home run                            |
+| `6 h, 5 2b` | Single by #6; runner #5 stays on 2B |
+| `6 st 2b`   | Runner #6 steals second             |
+| `regular`   | End game (regulation)               |
+| `exit`      | Return to menu                      |
 
-#### 1. **Game Metadata**
+**Field zones:** `LL LF LC CF RC RF RL GLL LS MI RS GRL`
 
-- **Game ID**: Auto-generated or custom (e.g., `B00A1AAAR0111`)
-- **Teams**: Select away and home teams
-- **Date**: Game date (YYYY-MM-DD, default today)
-- **Time**: Game time (HH:MM, default now)
-- **Venue**: Game location (required)
-
-#### 2. **Away Team Lineup**
-
-1. Check roster (minimum 12 players required)
-2. Choose DH option (Y/N)
-3. For each batting position (1-9 or 1-10 if DH):
-    - Enter jersey number
-    - Assign defensive position (1-9 or DH)
-4. If DH used: Enter pitcher (position 10, doesn't bat)
-5. Review complete lineup
-6. Confirm or restart
-
-#### 3. **Home Team Lineup**
-
-(Same process as away team)
-
-#### 4. **Confirmation**
-
-Review all game details and lineups before saving.
-
-### Lineup Entry Rules
-
-**With DH (Designated Hitter):**
-
-- 10 players in batting order
-- Positions 1-9: Regular batters with defensive positions
-- Position 10: Pitcher (defensive position 1, does NOT bat)
-- DH can bat in any position 1-9
-- DH defensive position: "DH" (does not field)
-
-**Without DH:**
-
-- 9 players in batting order
-- All players bat and field
-- Pitcher bats at his position in the order
-
-**Validations:**
-
-- Each defensive position (1-9) assigned exactly once
-- Each player used only once in lineup
-- Jersey numbers must exist in team roster
-- Minimum 12 players in roster required
-
-**Example Lineup with DH:**
-
-```
-═══════════════════════════════════════════════════
-║              BOSTON RED SOX LINEUP                ║
-═══════════════════════════════════════════════════
-
-⚾ Designated Hitter: YES
-
-  1.  #50 Mookie Betts           Pos 9 (RF)
-  2.  #16 Andrew Benintendi      Pos 7 (LF)
-  3.  #28 J.D. Martinez          DH
-  4.  #15 Dustin Pedroia         Pos 4 (2B)
-  5.  #2  Xander Bogaerts        Pos 6 (SS)
-  6.  #11 Rafael Devers          Pos 5 (3B)
-  7.  #36 Eduardo Núñez          Pos 3 (1B)
-  8.  #23 Blake Swihart          Pos 2 (C)
-  9.  #19 Jackie Bradley Jr.     Pos 8 (CF)
-  10. #41 Chris Sale             P (does not bat)
-```
-
-## 🏆 Manage Leagues
-
-Create and manage leagues/championships:
-
-- ➕ **Create League**: Name, season, description
-- 📋 **View Leagues**: List all existing leagues
-- ✏️ **Edit League**: Update information
-- 🗑️ **Delete League**: Remove league (with confirmation)
-
-## ⚾ Manage Teams
-
-Complete team management:
-
-- ➕ **Create Team**: Name, city, abbreviation, founded year
-- 📋 **View Teams**: List all teams with details
-- ✏️ **Edit Team**: Update team information
-- 👥 **Manage Roster**: Add/edit/remove players
-    - ⚠️ **Important**: Need minimum 12 players to create games!
-- 📥 **Import Team**: From JSON/CSV (in development)
-- 🗑️ **Delete Team**: Remove team and all players
-
-## 🗄️ Database Schema
+## 🗄️ Database Schema (v16)
 
 ### Core Tables
 
-**meta**
-
-- Application metadata and schema version tracking
-
-**leagues**
-
-- League/championship information
-
-**teams**
-
-- Team data with optional league association
-
-**players**
-
-- Player roster with positions and batting order
-
-**games** (Enhanced in v0.4.0)
-
-- Game metadata including:
-    - `game_id`: Unique identifier
-    - `game_date`: Date of game
-    - `game_time`: Time of game (NEW v0.4.0)
-    - `at_uses_dh`: Away team uses DH (NEW v0.4.0)
-    - `ht_uses_dh`: Home team uses DH (NEW v0.4.0)
-    - Status, scores, current inning
-
-**game_lineups** (NEW in v0.4.0)
-
-- Starting lineups for both teams:
-    - `game_id`: Reference to game
-    - `team_id`: Reference to team
-    - `player_id`: Reference to player
-    - `batting_order`: Position in order (1-10)
-    - `defensive_position`: Field position (1-9 or "DH")
-    - Substitution tracking (for future use)
-
-**at_bats**
-
-- Detailed scoring of each plate appearance
-
-**pitches**
-
-- Individual pitch tracking
-
-**runner_movements**
-
-- Base runner advancement tracking
-
-**game_events**
-
-- Special events (substitutions, delays, etc.)
+| Table               | Purpose                                                |
+|---------------------|--------------------------------------------------------|
+| `meta`              | App metadata and schema version                        |
+| `leagues`           | League/championship information                        |
+| `teams`             | Team data with league association                      |
+| `players`           | Player roster (first/last name, position, handedness)  |
+| `games`             | Game metadata (teams, venue, date, DH flags, status)   |
+| `game_lineups`      | Starting lineups for both teams                        |
+| `plate_appearances` | Compact PA log (1 row per completed PA)                |
+| `runner_movements`  | Per-runner base movements (hit, walk, steal)           |
+| `game_events`       | Administrative event log (start, status, side changes) |
+| `at_bat_draft`      | In-progress at-bat for resume support                  |
+| `at_bats`           | Legacy detailed at-bat table                           |
+| `pitches`           | Legacy pitch tracking table                            |
 
 ## 💾 Database Management
 
-Complete database lifecycle management:
-
 ```
 DATABASE MANAGEMENT
-═══════════════════════════════════
   1. 📋 View DB Info
   2. 🔍 View DB Status
-  3. 🔄 Run Migrations      ← Includes v3 migration
+  3. 🔄 Run Migrations
   4. 💾 Backup Database
   5. 📥 Restore Database
   6. 🧹 Vacuum Database
   7. 🗑️  Clear All Data
   8. 📤 Export Game
-
-  0. 🔙 Back to Main Menu
 ```
-
-## 🔄 Database Migrations
-
-### Schema Version 3 (v0.4.0)
-
-**Changes:**
-
-1. ALTER TABLE games:
-    - Add `game_time TEXT`
-    - Add `at_uses_dh BOOLEAN DEFAULT 0`
-    - Add `ht_uses_dh BOOLEAN DEFAULT 0`
-
-2. CREATE TABLE game_lineups:
-    - Complete lineup tracking
-    - Support for starting lineups
-    - Ready for substitution tracking
-
-**Migration Path:**
-
-- Automatic on app startup
-- Manual via "Manage DB > Run Migrations"
-- Recommended: Backup database first
 
 ## 📊 Features by Version
 
-| Version | Key Features                                 |
-|---------|----------------------------------------------|
-| 0.4.0   | Complete lineup entry, DH support, game time |
-| 0.3.1   | Complete CLI menu structure                  |
-| 0.3.0   | Game management system                       |
-| 0.2.5   | Migration system, meta table                 |
-| 0.2.4   | DB backup/restore, VACUUM, export            |
-| 0.2.3   | CLI refactor, DB management menu             |
-| 0.2.2   | Library support, standard structure          |
+| Version | Key Features                                                             |
+|---------|--------------------------------------------------------------------------|
+| 0.10.0  | Unified runner logic, WAL mode, migration-only schema, model helpers     |
+| 0.9.x   | TUI Help/focus system, steal command, runner_movements v16, module split |
+| 0.8.0   | Runner overrides by batting order, `Option<BatterOrder>` on bases        |
+| 0.7.x   | Compact PA persistence, deterministic resume, TUI scoreboard             |
+| 0.6.x   | Pitch-by-pitch tracking, pitch count, strike/ball logic                  |
+| 0.4.x   | Pre-game lineup editing, DH support, GameStatus enum                     |
+| 0.3.x   | Player management, CSV/JSON import-export                                |
+| 0.2.x   | SQLite persistence, menu system, schema migrations                       |
+| 0.1.0   | Initial CLI scoring                                                      |
 
 ## 🚀 Roadmap
 
-### v0.5.0 (Next)
-
-- **Play Ball!** - Live game scoring interface
-- Pitch-by-pitch tracking
-- Real-time score display
-- Base runner tracking
-- Automatic lineup advancement
-
-### v0.6.0 (Planned)
-
-- Mid-game substitutions
-- Pinch hitters/runners
-- Defensive replacements
-- Lineup editing
-
-### Future
-
+- Mid-game substitutions (pinch hitters/runners, defensive replacements)
 - Player statistics (AVG, ERA, OPS, WHIP)
-- Team statistics and rankings
-- League standings
-- Season summaries
-- Web interface
+- League standings and season summaries
 - PDF scorecard generation
+- Game export/import
 
 ## 📚 Documentation
 
-- [CHANGELOG.md](CHANGELOG.md) - Complete version history
-- [CHANGELOG_v0.4.0.md](CHANGELOG_v0.4.0.md) - Detailed v0.4.0 changes
-- [SCORING_GUIDE.md](SCORING_GUIDE.md) - Official scoring symbols
-- [STRUCTURE.md](STRUCTURE.md) - Project architecture
-- [RELEASE.md](RELEASE.md) - Release process
+- [CHANGELOG.md](CHANGELOG.md) — Complete version history
+- [SCORING_GUIDE.md](SCORING_GUIDE.md) — Official scoring symbols
+- [STRUCTURE.md](STRUCTURE.md) — Project architecture
+- [RELEASE.md](RELEASE.md) — Release process
 
 ## 🤝 Contributing
 
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+Contributions welcome! Fork → feature branch → PR.
 
 ## 📄 License
 
-MIT License - Free to use for your games! ⚾
+MIT License — Free to use for your games! ⚾
 
 ## 🔗 Links
 
@@ -385,9 +268,9 @@ MIT License - Free to use for your games! ⚾
 
 ---
 
-**Version:** 0.4.0  
-**Schema:** v3  
-**Edition:** Rust 2024  
+**Version:** 0.10.0
+**Schema:** v16
+**Edition:** Rust 2024
 **Author:** Alessandro Maestri
 
 **Play Ball! ⚾**

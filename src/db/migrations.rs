@@ -98,10 +98,91 @@ pub fn get_migrations() -> Vec<Migration> {
     ]
 }
 
-/// Migration v1: Initial schema (noop - already handled by init_schema)
-fn migration_v1(_conn: &Connection) -> Result<()> {
-    // Initial schema already created by init_schema()
-    // This is just a placeholder for version tracking
+/// Migration v1: Initial schema — creates the foundational tables.
+///
+/// Previously these CREATE TABLE statements lived in `Database::init_schema()` and
+/// this migration was a no-op placeholder.  Now that `init_schema()` delegates
+/// everything to migrations, v1 must actually create the base tables.
+fn migration_v1(conn: &Connection) -> Result<()> {
+    // Leagues
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS leagues (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            season TEXT,
+            description TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    )?;
+
+    // Teams
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS teams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            league_id INTEGER,
+            city TEXT,
+            abbreviation TEXT,
+            founded_year INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (league_id) REFERENCES leagues(id)
+        )",
+        [],
+    )?;
+
+    // Players (original v1 schema — later migrations restructure this)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS players (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            batting_order INTEGER,
+            is_active BOOLEAN DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (team_id) REFERENCES teams(id),
+            UNIQUE(team_id, number)
+        )",
+        [],
+    )?;
+
+    // Games (original v1 schema — later migrations restructure this)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS games (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id TEXT NOT NULL UNIQUE,
+            home_team_id INTEGER NOT NULL,
+            away_team_id INTEGER NOT NULL,
+            venue TEXT,
+            game_date DATE NOT NULL,
+            league_id INTEGER,
+            home_score INTEGER DEFAULT 0,
+            away_score INTEGER DEFAULT 0,
+            home_hits INTEGER DEFAULT 0,
+            away_hits INTEGER DEFAULT 0,
+            home_errors INTEGER DEFAULT 0,
+            away_errors INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'in_progress',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (home_team_id) REFERENCES teams(id),
+            FOREIGN KEY (away_team_id) REFERENCES teams(id),
+            FOREIGN KEY (league_id) REFERENCES leagues(id)
+        )",
+        [],
+    )?;
+
+    // Indexes
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_games_date ON games(game_date)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id)",
+        [],
+    )?;
+
     Ok(())
 }
 
