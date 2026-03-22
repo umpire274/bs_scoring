@@ -65,10 +65,7 @@ pub fn append_game_event(
         _ => {}
     }
 
-    let half_str = match half {
-        HalfInning::Top => "Top",
-        HalfInning::Bottom => "Bottom",
-    };
+    let half_str = half.as_str();
 
     let data = serde_json::to_string(event).ok();
 

@@ -54,10 +54,7 @@ pub fn upsert_at_bat_draft(
     pitcher_id: Option<i64>,
     pitch_count: &PitchCount,
 ) -> rusqlite::Result<()> {
-    let half_str = match half {
-        HalfInning::Top => "Top",
-        HalfInning::Bottom => "Bottom",
-    };
+    let half_str = half.as_str();
 
     let pitch_count_json = serde_json::to_string(pitch_count)
         .unwrap_or_else(|_| r#"{"balls":0,"strikes":0,"sequence":[]}"#.to_string());

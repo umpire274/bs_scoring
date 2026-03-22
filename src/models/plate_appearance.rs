@@ -70,3 +70,58 @@ pub enum PlateAppearanceOutcome {
     Triple { zone: Option<FieldZone> },
     HomeRun { zone: Option<FieldZone> },
 }
+
+impl PlateAppearanceOutcome {
+    /// Number of bases the batter reaches on a hit (1-4). Returns 0 for non-hit outcomes.
+    pub fn bases(&self) -> u8 {
+        match self {
+            Self::Single { .. } => 1,
+            Self::Double { .. } => 2,
+            Self::Triple { .. } => 3,
+            Self::HomeRun { .. } => 4,
+            _ => 0,
+        }
+    }
+
+    /// Returns true if this outcome is a hit (Single, Double, Triple, HomeRun).
+    pub fn is_hit(&self) -> bool {
+        self.bases() > 0
+    }
+
+    /// Extract the field zone from hit outcomes.
+    pub fn zone(&self) -> Option<FieldZone> {
+        match self {
+            Self::Single { zone }
+            | Self::Double { zone }
+            | Self::Triple { zone }
+            | Self::HomeRun { zone } => *zone,
+            _ => None,
+        }
+    }
+
+    /// Short label for display (e.g. "H", "2H", "3H", "HR", "BB", "K", "OUT").
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Single { .. } => "H",
+            Self::Double { .. } => "2H",
+            Self::Triple { .. } => "3H",
+            Self::HomeRun { .. } => "HR",
+            Self::Walk => "BB",
+            Self::Strikeout(_) => "K",
+            Self::Out => "OUT",
+        }
+    }
+
+    /// Human-readable label for display.
+    pub fn display_label(&self) -> &'static str {
+        match self {
+            Self::Single { .. } => "Single",
+            Self::Double { .. } => "Double",
+            Self::Triple { .. } => "Triple",
+            Self::HomeRun { .. } => "Home run",
+            Self::Walk => "BB",
+            Self::Strikeout(_) => "K",
+            Self::Out => "OUT",
+        }
+    }
+}

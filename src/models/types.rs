@@ -208,6 +208,30 @@ pub enum HalfInning {
     Bottom, // Home team batting
 }
 
+impl HalfInning {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HalfInning::Top => "Top",
+            HalfInning::Bottom => "Bottom",
+        }
+    }
+
+    pub fn symbol(self) -> char {
+        match self {
+            HalfInning::Top => '↑',
+            HalfInning::Bottom => '↓',
+        }
+    }
+
+    pub fn from_str_loose(s: &str) -> Self {
+        if s.eq_ignore_ascii_case("Bottom") {
+            HalfInning::Bottom
+        } else {
+            HalfInning::Top
+        }
+    }
+}
+
 /// Score tracking for a game
 #[derive(Debug, Clone, Default)]
 pub struct Score {

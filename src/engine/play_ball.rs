@@ -777,12 +777,7 @@ struct FormatLiveAtBatInput {
 }
 
 fn live_half_label(inning: u32, half: HalfInning) -> String {
-    let sym = match half {
-        HalfInning::Top => '↑',
-        HalfInning::Bottom => '↓',
-    };
-
-    format!("{inning}{sym}")
+    format!("{inning}{}", half.symbol())
 }
 
 fn format_live_at_bat(flabi: &FormatLiveAtBatInput) -> String {
@@ -981,11 +976,7 @@ fn format_replay_prefix(
 }
 
 fn half_symbol(half: &str) -> char {
-    match half {
-        "Top" | "top" => '↑',
-        "Bottom" | "bottom" => '↓',
-        _ => '?',
-    }
+    HalfInning::from_str_loose(half).symbol()
 }
 
 /// Formatta la sequenza come: [B, K, S, F]
