@@ -44,23 +44,73 @@ pub fn append_plate_appearance(
 ) -> Result<i64> {
     let (outcome_type, outcome_data) = match &pa.outcome {
         crate::models::plate_appearance::PlateAppearanceOutcome::Walk => ("walk".to_string(), None),
+
         crate::models::plate_appearance::PlateAppearanceOutcome::Out => ("out".to_string(), None),
+
         crate::models::plate_appearance::PlateAppearanceOutcome::Strikeout(kind) => (
             "strikeout".to_string(),
             Some(serde_json::to_string(kind).unwrap_or_else(|_| "null".to_string())),
         ),
+
         crate::models::plate_appearance::PlateAppearanceOutcome::Single { zone } => {
             ("single".to_string(), Some(serialize_hit_outcome_data(zone)))
         }
+
         crate::models::plate_appearance::PlateAppearanceOutcome::Double { zone } => {
             ("double".to_string(), Some(serialize_hit_outcome_data(zone)))
         }
+
         crate::models::plate_appearance::PlateAppearanceOutcome::Triple { zone } => {
             ("triple".to_string(), Some(serialize_hit_outcome_data(zone)))
         }
+
         crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { zone } => (
             "home_run".to_string(),
             Some(serialize_hit_outcome_data(zone)),
+        ),
+
+        crate::models::plate_appearance::PlateAppearanceOutcome::GroundOut { sequence } => (
+            "ground_out".to_string(),
+            Some(
+                serde_json::json!({
+                    "sequence": sequence,
+                })
+                .to_string(),
+            ),
+        ),
+
+        crate::models::plate_appearance::PlateAppearanceOutcome::FlyOut {
+            fielder,
+            in_foul_territory,
+        } => (
+            "fly_out".to_string(),
+            Some(
+                serde_json::json!({
+                    "fielder": fielder,
+                    "in_foul_territory": in_foul_territory,
+                })
+                .to_string(),
+            ),
+        ),
+
+        crate::models::plate_appearance::PlateAppearanceOutcome::LineOut { fielder } => (
+            "line_out".to_string(),
+            Some(
+                serde_json::json!({
+                    "fielder": fielder,
+                })
+                .to_string(),
+            ),
+        ),
+
+        crate::models::plate_appearance::PlateAppearanceOutcome::InfieldFly { fielder } => (
+            "infield_fly".to_string(),
+            Some(
+                serde_json::json!({
+                    "fielder": fielder,
+                })
+                .to_string(),
+            ),
         ),
     };
 

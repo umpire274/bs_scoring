@@ -225,21 +225,26 @@ fn apply_plate_appearance_core(
 
         for step in &pa.pitches_sequence {
             match step {
-                PlateAppearanceStep::Pitch(Pitch::Ball) => {
+                PlateAppearanceStep::Pitch(Pitch::Ball) | PlateAppearanceStep::Walk => {
                     stats.balls = stats.balls.saturating_add(1);
                 }
+
                 PlateAppearanceStep::Pitch(_) => {
                     stats.strikes = stats.strikes.saturating_add(1);
                 }
-                PlateAppearanceStep::Single
+
+                PlateAppearanceStep::Strikeout
+                | PlateAppearanceStep::Out
+                | PlateAppearanceStep::GroundOut { .. }
+                | PlateAppearanceStep::FlyOut { .. }
+                | PlateAppearanceStep::LineOut { .. }
+                | PlateAppearanceStep::InfieldFly { .. }
+                | PlateAppearanceStep::Single
                 | PlateAppearanceStep::Double
                 | PlateAppearanceStep::Triple
                 | PlateAppearanceStep::HomeRun => {
                     stats.strikes = stats.strikes.saturating_add(1);
                 }
-                PlateAppearanceStep::Walk
-                | PlateAppearanceStep::Strikeout
-                | PlateAppearanceStep::Out => {}
             }
         }
     } else {
@@ -261,7 +266,11 @@ fn apply_plate_appearance_core(
         }
 
         crate::models::plate_appearance::PlateAppearanceOutcome::Strikeout(_)
-        | crate::models::plate_appearance::PlateAppearanceOutcome::Out => {
+        | crate::models::plate_appearance::PlateAppearanceOutcome::Out
+        | crate::models::plate_appearance::PlateAppearanceOutcome::GroundOut { .. }
+        | crate::models::plate_appearance::PlateAppearanceOutcome::FlyOut { .. }
+        | crate::models::plate_appearance::PlateAppearanceOutcome::LineOut { .. }
+        | crate::models::plate_appearance::PlateAppearanceOutcome::InfieldFly { .. } => {
             state.outs = pa.outs;
         }
 
@@ -312,7 +321,7 @@ pub fn apply_live_plate_appearance(
     state: &mut GameState,
     pa: &crate::models::plate_appearance::PlateAppearance,
 ) -> Vec<crate::db::runner_movements::RunnerMovementInsert> {
-    use crate::db::runner_movements::RunnerMovementInsert;
+    use crate::models::plate_appearance::PlateAppearanceOutcome;
 
     // Snapshot bases before state mutation so we can build movement rows.
     let runner_on_1b = state.on_1b;
@@ -324,21 +333,25 @@ pub fn apply_live_plate_appearance(
         HalfInning::Bottom => "Bottom",
     };
 
+    // In live mode we add the terminal synthetic pitch for:
+    // - hits
+    // - batter outs in play
+    // Walk is handled separately inside core as terminal ball.
     let add_terminal_live_pitch = matches!(
         &pa.outcome,
-        crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. }
-            | crate::models::plate_appearance::PlateAppearanceOutcome::Double { .. }
-            | crate::models::plate_appearance::PlateAppearanceOutcome::Triple { .. }
-            | crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. }
+        PlateAppearanceOutcome::Single { .. }
+            | PlateAppearanceOutcome::Double { .. }
+            | PlateAppearanceOutcome::Triple { .. }
+            | PlateAppearanceOutcome::HomeRun { .. }
+            | PlateAppearanceOutcome::GroundOut { .. }
+            | PlateAppearanceOutcome::FlyOut { .. }
+            | PlateAppearanceOutcome::LineOut { .. }
+            | PlateAppearanceOutcome::InfieldFly { .. }
     );
 
-    // For hits: apply_hit_with_overrides is called inside apply_plate_appearance_core
-    // and now returns movements — but we can't intercept it there without bigger
-    // refactor. Instead, call it directly here for hit outcomes and skip the core path.
-    let movements: Vec<RunnerMovementInsert> = match &pa.outcome {
-        crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. } => {
+    match &pa.outcome {
+        PlateAppearanceOutcome::Single { .. } => {
             apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
-            // Rebuild movements from snapshot (state already mutated by core)
             build_hit_movements_from_snapshot(
                 runner_on_1b,
                 runner_on_2b,
@@ -350,7 +363,8 @@ pub fn apply_live_plate_appearance(
                 half_str,
             )
         }
-        crate::models::plate_appearance::PlateAppearanceOutcome::Double { .. } => {
+
+        PlateAppearanceOutcome::Double { .. } => {
             apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
             build_hit_movements_from_snapshot(
                 runner_on_1b,
@@ -363,7 +377,8 @@ pub fn apply_live_plate_appearance(
                 half_str,
             )
         }
-        crate::models::plate_appearance::PlateAppearanceOutcome::Triple { .. } => {
+
+        PlateAppearanceOutcome::Triple { .. } => {
             apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
             build_hit_movements_from_snapshot(
                 runner_on_1b,
@@ -376,7 +391,8 @@ pub fn apply_live_plate_appearance(
                 half_str,
             )
         }
-        crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { .. } => {
+
+        PlateAppearanceOutcome::HomeRun { .. } => {
             apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
             build_hit_movements_from_snapshot(
                 runner_on_1b,
@@ -389,13 +405,20 @@ pub fn apply_live_plate_appearance(
                 half_str,
             )
         }
+
+        PlateAppearanceOutcome::GroundOut { .. }
+        | PlateAppearanceOutcome::FlyOut { .. }
+        | PlateAppearanceOutcome::LineOut { .. }
+        | PlateAppearanceOutcome::InfieldFly { .. } => {
+            apply_plate_appearance_core(state, pa, false, add_terminal_live_pitch, false);
+            vec![]
+        }
+
         _ => {
             apply_plate_appearance_core(state, pa, false, false, false);
             vec![]
         }
-    };
-
-    movements
+    }
 }
 
 /// Build RunnerMovementInsert rows from a pre-mutation base snapshot.
