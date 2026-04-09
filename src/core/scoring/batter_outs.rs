@@ -196,7 +196,14 @@ pub fn parse_batter_out_token(token: &str) -> Result<BatterOutType, BatterOutPar
 
     let normalized = token.to_ascii_uppercase();
 
+    // Legacy compatibility: check the longer prefix first.
     if let Some(rest) = normalized.strip_prefix("IFF") {
+        let fielder = parse_single_fielder(rest)?;
+        return Ok(BatterOutType::InfieldFly { fielder });
+    }
+
+    // Documented syntax
+    if let Some(rest) = normalized.strip_prefix("IF") {
         let fielder = parse_single_fielder(rest)?;
         return Ok(BatterOutType::InfieldFly { fielder });
     }
@@ -463,18 +470,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_infield_fly() {
-        let cmd = parse_batter_out_command("9 IFF4").unwrap();
-
-        match cmd.out_type {
-            BatterOutType::InfieldFly { fielder } => {
-                assert_eq!(fielder, 4);
-            }
-            other => panic!("expected InfieldFly, found {other:?}"),
-        }
-    }
-
-    #[test]
     fn reject_invalid_lineup_slot_zero() {
         let err = parse_batter_out_command("0 F8").unwrap_err();
         assert!(matches!(err, BatterOutParseError::InvalidLineupSlot(_)));
@@ -559,14 +554,29 @@ mod tests {
     }
 
     #[test]
-    fn parse_infield_fly_lowercase() {
-        let cmd = parse_batter_out_command("9 iff4").unwrap();
-
+    fn parse_infield_fly_if() {
+        let cmd = parse_batter_out_command("7 IF4").unwrap();
         match cmd.out_type {
-            BatterOutType::InfieldFly { fielder } => {
-                assert_eq!(fielder, 4);
-            }
-            other => panic!("expected InfieldFly, found {other:?}"),
+            BatterOutType::InfieldFly { fielder } => assert_eq!(fielder, 4),
+            _ => panic!("expected InfieldFly"),
+        }
+    }
+
+    #[test]
+    fn parse_infield_fly_if_lowercase() {
+        let cmd = parse_batter_out_command("7 if4").unwrap();
+        match cmd.out_type {
+            BatterOutType::InfieldFly { fielder } => assert_eq!(fielder, 4),
+            _ => panic!("expected InfieldFly"),
+        }
+    }
+
+    #[test]
+    fn parse_infield_fly_legacy_iff() {
+        let cmd = parse_batter_out_command("7 IFF4").unwrap();
+        match cmd.out_type {
+            BatterOutType::InfieldFly { fielder } => assert_eq!(fielder, 4),
+            _ => panic!("expected InfieldFly"),
         }
     }
 }

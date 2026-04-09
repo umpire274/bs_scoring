@@ -1,10 +1,10 @@
-use crate::Pitch;
 use crate::commands::types::EngineCommand;
 use crate::core::scoring::batter_outs::{BatterOutType, FieldingSequence};
 use crate::models::field_zone::FieldZone;
 use crate::models::game_state::BatterOrder;
 use crate::models::runner::{RunnerDest, RunnerOverride};
 use crate::models::types::GameStatus;
+use crate::Pitch;
 
 /// Parse a raw input line into a list of engine commands.
 ///
@@ -246,6 +246,11 @@ fn parse_batter_out_type(token: &str) -> Option<BatterOutType> {
     let normalized = token.to_ascii_uppercase();
 
     if let Some(rest) = normalized.strip_prefix("IFF") {
+        let fielder = parse_single_fielder(rest)?;
+        return Some(BatterOutType::InfieldFly { fielder });
+    }
+
+    if let Some(rest) = normalized.strip_prefix("IF") {
         let fielder = parse_single_fielder(rest)?;
         return Some(BatterOutType::InfieldFly { fielder });
     }
@@ -883,7 +888,7 @@ mod tests {
 
     #[test]
     fn test_infield_fly() {
-        let cmd = single(parse_engine_commands("2 IFF4"));
+        let cmd = single(parse_engine_commands("2 IF4"));
         match cmd {
             EngineCommand::BatterOut { order, out_type } => {
                 assert_eq!(order, 2);

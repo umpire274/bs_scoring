@@ -76,7 +76,7 @@ impl fmt::Display for PlateAppearanceStep {
                 ..
             } => write!(f, "FFO"),
             PlateAppearanceStep::LineOut { .. } => write!(f, "LO"),
-            PlateAppearanceStep::InfieldFly { .. } => write!(f, "IFF"),
+            PlateAppearanceStep::InfieldFly { .. } => write!(f, "IF"),
         }
     }
 }
@@ -168,7 +168,7 @@ impl PlateAppearanceOutcome {
                 ..
             } => "FFO",
             Self::LineOut { .. } => "LO",
-            Self::InfieldFly { .. } => "IFF",
+            Self::InfieldFly { .. } => "IF",
         }
     }
 

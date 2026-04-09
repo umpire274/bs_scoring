@@ -1004,7 +1004,7 @@ fn outcome_symbol_from_row(pa: &PlateAppearanceRow) -> String {
         "ground_out" | "go" => "GO".to_string(),
         "fly_out" | "fo" => "FO".to_string(),
         "line_out" | "lo" => "LO".to_string(),
-        "infield_fly" | "iff" => "IFF".to_string(),
+        "infield_fly" | "if" => "IF".to_string(),
         _ => "OUT".to_string(),
     };
 
@@ -1056,7 +1056,7 @@ fn outcome_symbol_from_row(pa: &PlateAppearanceRow) -> String {
             if let Some(v) = parse_outcome_json(pa.outcome_data.as_deref())
                 && let Some(fielder) = get_fielder(&v)
             {
-                return format!("Infield fly: IFF{fielder}");
+                return format!("Infield fly: IF{fielder}");
             }
             "Infield fly".to_string()
         }
