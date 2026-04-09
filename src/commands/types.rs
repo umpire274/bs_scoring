@@ -1,4 +1,5 @@
-use crate::Pitch;
+use crate::{BatterOrder, Pitch};
+use crate::core::scoring::BatterOutType;
 use crate::models::field_zone::FieldZone;
 use crate::models::runner::RunnerOverride;
 use crate::models::types::GameStatus;
@@ -34,5 +35,10 @@ pub enum EngineCommand {
         dest: crate::models::runner::RunnerDest,
     },
 
+    BatterOut {
+        order: BatterOrder,
+        out_type: BatterOutType,
+    },
+    
     Unknown(String),
 }

@@ -5,6 +5,84 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.10.2] - 2026-04-09
+
+### Added
+
+- Added support for batter-out scoring commands in the Play Ball engine:
+    - ground out with compact and hyphenated defensive sequences:
+        - `63`
+        - `6-3`
+        - `862`
+        - `8-6-2`
+    - fly out:
+        - `F<n>`
+    - foul fly out:
+        - `FF<n>`
+    - line out:
+        - `L<n>`
+    - infield fly:
+        - `IF<n>`
+- Added support for multiple defensive assists in batter-out plays through fielding sequences.
+- Added new `PlateAppearanceOutcome` variants for batter-out outcomes:
+    - `GroundOut`
+    - `FlyOut`
+    - `LineOut`
+    - `InfieldFly`
+- Added new `PlateAppearanceStep` variants for batter-out terminal events:
+    - `GroundOut`
+    - `FlyOut`
+    - `LineOut`
+    - `InfieldFly`
+
+### Changed
+
+- Extended Play Ball engine command parsing to recognise batter-out commands with batting-order prefix.
+- Updated live command application to process batter-out plays as completed plate appearances.
+- Updated replay/resume rendering so batter-out plays are shown with specific labels instead of generic `OUT`.
+- Improved `PlateAppearanceStep` display formatting to keep the pitch sequence compact:
+    - `GO`
+    - `FO`
+    - `FFO`
+    - `LO`
+    - `IFF`
+- Refactored plate appearance sequence construction so the terminal play step is appended consistently across:
+    - pitch-based completed PA
+    - hit outcomes
+    - batter-out outcomes
+- Updated replay/state rebuild logic to understand the new batter-out outcomes.
+- Updated pitcher pitch/stat recount logic so batter-out plays in play correctly contribute the terminal pitch in both:
+    - replay/recount mode
+    - live application mode
+
+### Fixed
+
+- Fixed missing scoreboard updates after batter-out commands:
+    - outs are now incremented correctly
+    - count is reset correctly
+    - next batter is started correctly
+- Fixed missing DB persistence for batter-out plate appearances.
+- Fixed resume output showing generic `OUT` for batter-out plays restored from DB.
+- Fixed missing terminal plate-appearance step in persisted `pitches_sequence` for batter-out outcomes.
+- Fixed live pitcher stats not counting the terminal pitch for:
+    - ground out
+    - fly out
+    - foul fly out
+    - line out
+    - infield fly
+- Fixed lowercase parsing support for batter-out commands such as:
+    - `f9`
+    - `ff3`
+    - `l6`
+    - `if4`
+
+### Internal
+
+- Centralized plate appearance sequence finalization to reduce duplicated logic.
+- Kept legacy generic `Out` handling for backward compatibility with existing data.
+
+---
+
 ## [0.10.1] - 2026-03-23
 
 ### Added

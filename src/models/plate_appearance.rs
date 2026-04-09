@@ -37,19 +37,46 @@ pub enum PlateAppearanceStep {
     Walk,
     Strikeout,
     Out,
+    GroundOut {
+        sequence: String,
+    },
+    FlyOut {
+        fielder: u8,
+        in_foul_territory: bool,
+    },
+    LineOut {
+        fielder: u8,
+    },
+    InfieldFly {
+        fielder: u8,
+    },
 }
 
 impl fmt::Display for PlateAppearanceStep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PlateAppearanceStep::Pitch(p) => write!(f, "{p}"),
+
             PlateAppearanceStep::Single => write!(f, "H"),
             PlateAppearanceStep::Double => write!(f, "2H"),
             PlateAppearanceStep::Triple => write!(f, "3H"),
             PlateAppearanceStep::HomeRun => write!(f, "HR"),
+
             PlateAppearanceStep::Walk => write!(f, "BB"),
             PlateAppearanceStep::Strikeout => write!(f, "K"),
             PlateAppearanceStep::Out => write!(f, "OUT"),
+
+            PlateAppearanceStep::GroundOut { .. } => write!(f, "GO"),
+            PlateAppearanceStep::FlyOut {
+                in_foul_territory: false,
+                ..
+            } => write!(f, "FO"),
+            PlateAppearanceStep::FlyOut {
+                in_foul_territory: true,
+                ..
+            } => write!(f, "FFO"),
+            PlateAppearanceStep::LineOut { .. } => write!(f, "LO"),
+            PlateAppearanceStep::InfieldFly { .. } => write!(f, "IFF"),
         }
     }
 }
@@ -65,10 +92,32 @@ pub enum PlateAppearanceOutcome {
     Walk,
     Strikeout(crate::models::events::StrikeoutKind),
     Out,
-    Single { zone: Option<FieldZone> },
-    Double { zone: Option<FieldZone> },
-    Triple { zone: Option<FieldZone> },
-    HomeRun { zone: Option<FieldZone> },
+    Single {
+        zone: Option<FieldZone>,
+    },
+    Double {
+        zone: Option<FieldZone>,
+    },
+    Triple {
+        zone: Option<FieldZone>,
+    },
+    HomeRun {
+        zone: Option<FieldZone>,
+    },
+
+    GroundOut {
+        sequence: String,
+    },
+    FlyOut {
+        fielder: u8,
+        in_foul_territory: bool,
+    },
+    LineOut {
+        fielder: u8,
+    },
+    InfieldFly {
+        fielder: u8,
+    },
 }
 
 impl PlateAppearanceOutcome {
@@ -109,6 +158,17 @@ impl PlateAppearanceOutcome {
             Self::Walk => "BB",
             Self::Strikeout(_) => "K",
             Self::Out => "OUT",
+            Self::GroundOut { .. } => "GO",
+            Self::FlyOut {
+                in_foul_territory: false,
+                ..
+            } => "FO",
+            Self::FlyOut {
+                in_foul_territory: true,
+                ..
+            } => "FFO",
+            Self::LineOut { .. } => "LO",
+            Self::InfieldFly { .. } => "IFF",
         }
     }
 
@@ -122,6 +182,17 @@ impl PlateAppearanceOutcome {
             Self::Walk => "BB",
             Self::Strikeout(_) => "K",
             Self::Out => "OUT",
+            Self::GroundOut { .. } => "Ground out",
+            Self::FlyOut {
+                in_foul_territory: false,
+                ..
+            } => "Fly out",
+            Self::FlyOut {
+                in_foul_territory: true,
+                ..
+            } => "Foul fly out",
+            Self::LineOut { .. } => "Line out",
+            Self::InfieldFly { .. } => "Infield fly",
         }
     }
 }

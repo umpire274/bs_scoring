@@ -6,6 +6,7 @@
 
 use crate::commands::types::EngineCommand;
 use crate::core::runner_logic;
+use crate::core::scoring::BatterOutType;
 use crate::db::runner_movements::RunnerMovementInsert;
 use crate::models::events::{
     DomainEvent, OutRecordedData, PersistedEvent, StatusChangedData, StrikeoutKind,
@@ -17,6 +18,7 @@ use crate::models::plate_appearance::{
 use crate::models::runner::RunnerOverride;
 use crate::models::types::{GameStatus, Pitch};
 use crate::ui::events::UiEvent;
+use crate::BatterOrder;
 
 // ─── Result type ──────────────────────────────────────────────────────────────
 
@@ -106,6 +108,10 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
             &runner_overrides,
         ),
 
+        EngineCommand::BatterOut { order, out_type } => {
+            apply_batter_out_command(state, order, out_type)
+        }
+
         EngineCommand::StealBase { order, dest } => apply_steal(state, order, dest),
 
         EngineCommand::Unknown(s) => ApplyResult {
@@ -167,6 +173,33 @@ fn build_pa_sequence(state: &GameState) -> Vec<PlateAppearanceStep> {
         .collect()
 }
 
+fn build_pa_sequence_with_terminal_step(
+    state: &GameState,
+    final_step: PlateAppearanceStep,
+) -> Vec<PlateAppearanceStep> {
+    let mut seq = build_pa_sequence(state);
+    seq.push(final_step);
+    seq
+}
+
+fn batter_out_terminal_step(out_type: &BatterOutType) -> PlateAppearanceStep {
+    match out_type {
+        BatterOutType::GroundOut { sequence } => PlateAppearanceStep::GroundOut {
+            sequence: sequence.as_hyphenated_string(),
+        },
+        BatterOutType::FlyOut {
+            fielder,
+            in_foul_territory,
+        } => PlateAppearanceStep::FlyOut {
+            fielder: *fielder,
+            in_foul_territory: *in_foul_territory,
+        },
+        BatterOutType::LineOut { fielder } => PlateAppearanceStep::LineOut { fielder: *fielder },
+        BatterOutType::InfieldFly { fielder } => {
+            PlateAppearanceStep::InfieldFly { fielder: *fielder }
+        }
+    }
+}
 // ─── Pitch ────────────────────────────────────────────────────────────────────
 
 fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
@@ -201,9 +234,9 @@ fn apply_pitch(state: &mut GameState, pitch: Pitch) -> ApplyResult {
     let mut plate_appearance: Option<PlateAppearance> = None;
     let mut walk_movements: Vec<RunnerMovementInsert> = vec![];
 
-    let pitches_in_pa = state.pitch_count.sequence.len() as u32 + 1;
-    let mut final_sequence = build_pa_sequence(state);
-    final_sequence.push(PlateAppearanceStep::Pitch(pitch.clone()));
+    let final_sequence =
+        build_pa_sequence_with_terminal_step(state, PlateAppearanceStep::Pitch(pitch.clone()));
+    let pitches_in_pa = final_sequence.len() as u32;
 
     // Helper to finalize a PA
     let finalize_pa = |outcome: PlateAppearanceOutcome, outs: u8| -> PlateAppearance {
@@ -363,8 +396,7 @@ fn apply_hit_command(
         }
     };
 
-    let mut final_sequence = build_pa_sequence(state);
-    final_sequence.push(final_step);
+    let final_sequence = build_pa_sequence_with_terminal_step(state, final_step);
 
     // Validate runner overrides before touching state
     if let Err(msg) = runner_logic::validate_runner_overrides(state, batter_order, runner_overrides)
@@ -525,4 +557,112 @@ fn resolve_runner_identity(state: &GameState, order: u8) -> (i64, String, String
         );
     }
     (0, format!("#{order}"), String::new())
+}
+
+fn apply_batter_out_command(
+    state: &mut GameState,
+    order: BatterOrder,
+    out_type: BatterOutType,
+) -> ApplyResult {
+    let (batter_id, batter_order, pitcher_id) = require_batter!(state);
+
+    if order != batter_order {
+        return ApplyResult {
+            events: vec![UiEvent::Error(format!(
+                "Batter mismatch: expected #{}, found #{}.",
+                batter_order, order
+            ))],
+            ..Default::default()
+        };
+    }
+
+    let mut events_ui: Vec<UiEvent> = Vec::new();
+    let mut applied: Vec<DomainEvent> = Vec::new();
+
+    let final_step = batter_out_terminal_step(&out_type);
+    let final_sequence = build_pa_sequence_with_terminal_step(state, final_step);
+    let pitches_in_pa = final_sequence.len() as u32;
+
+    let finalize_pa = |outcome: PlateAppearanceOutcome, outs: u8| -> PlateAppearance {
+        PlateAppearance {
+            inning: state.inning,
+            half: state.half,
+            batter_id,
+            batter_order,
+            pitcher_id,
+            pitches: pitches_in_pa,
+            pitches_sequence: final_sequence.clone(),
+            outcome,
+            outs,
+            runner_overrides: vec![],
+        }
+    };
+
+    let (description, pa_outcome) = match &out_type {
+        BatterOutType::GroundOut { sequence } => (
+            format!(
+                "Batter #{} grounded out {}.",
+                batter_order,
+                sequence.as_hyphenated_string()
+            ),
+            PlateAppearanceOutcome::GroundOut {
+                sequence: sequence.as_hyphenated_string(),
+            },
+        ),
+
+        BatterOutType::FlyOut {
+            fielder,
+            in_foul_territory: false,
+        } => (
+            format!("Batter #{} flied out to F{}.", batter_order, fielder),
+            PlateAppearanceOutcome::FlyOut {
+                fielder: *fielder,
+                in_foul_territory: false,
+            },
+        ),
+
+        BatterOutType::FlyOut {
+            fielder,
+            in_foul_territory: true,
+        } => (
+            format!("Batter #{} fouled out to F{}.", batter_order, fielder),
+            PlateAppearanceOutcome::FlyOut {
+                fielder: *fielder,
+                in_foul_territory: true,
+            },
+        ),
+
+        BatterOutType::LineOut { fielder } => (
+            format!("Batter #{} lined out to L{}.", batter_order, fielder),
+            PlateAppearanceOutcome::LineOut { fielder: *fielder },
+        ),
+
+        BatterOutType::InfieldFly { fielder } => (
+            format!(
+                "Batter #{} out on infield fly to IF{}.",
+                batter_order, fielder
+            ),
+            PlateAppearanceOutcome::InfieldFly { fielder: *fielder },
+        ),
+    };
+
+    applied.push(DomainEvent::OutRecorded(OutRecordedData {
+        outs_before: state.outs,
+        outs_after: state.outs.saturating_add(1),
+    }));
+
+    applied.push(DomainEvent::CountReset);
+
+    events_ui.push(UiEvent::Line(description));
+
+    ApplyResult {
+        events: events_ui,
+        persisted: vec![],
+        applied,
+        plate_appearance: Some(finalize_pa(pa_outcome, state.outs.saturating_add(1))),
+        runner_movements: vec![],
+        exit: false,
+        status_change: None,
+        needs_next_at_bat: true,
+    }
 }

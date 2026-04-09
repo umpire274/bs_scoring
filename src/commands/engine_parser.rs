@@ -1,5 +1,6 @@
 use crate::Pitch;
 use crate::commands::types::EngineCommand;
+use crate::core::scoring::batter_outs::{BatterOutType, FieldingSequence};
 use crate::models::field_zone::FieldZone;
 use crate::models::game_state::BatterOrder;
 use crate::models::runner::{RunnerDest, RunnerOverride};
@@ -12,15 +13,18 @@ use crate::models::types::GameStatus;
 /// ```text
 /// h                    → single, automatic runner advancement
 /// h lf                 → single to left field
-/// 6 h                  → batter #6 hits single  (batting-order prefix)
+/// 6 h                  → batter #6 hits single
 /// 6 h, 5 2b            → batter #6 single; runner #5 stays on 2B
 /// 6 h lf, 5 2b, 3 sc   → batter #6 single LF; runner #5 → 2B; runner #3 scores
-/// ```
 ///
-/// Token grammar for hits:
-/// ```text
-/// [<order>] <hit_cmd> [<zone>]          → batter token (first token in PA)
-/// <order> <dest>                         → runner-override token (subsequent tokens)
+/// 6 63                 → batter #6 ground out 6-3
+/// 6 6-3                → batter #6 ground out 6-3
+/// 4 862                → batter #4 ground out 8-6-2
+/// 4 8-6-2              → batter #4 ground out 8-6-2
+/// 7 F8                 → batter #7 fly out to CF
+/// 7 FF3                → batter #7 foul fly out to 1B
+/// 7 L6                 → batter #7 line out to SS
+/// 7 IF4                → batter #7 infield fly to 2B
 /// ```
 pub fn parse_engine_commands(line: &str) -> Vec<EngineCommand> {
     let tokens: Vec<&str> = line
@@ -33,12 +37,9 @@ pub fn parse_engine_commands(line: &str) -> Vec<EngineCommand> {
         return vec![];
     }
 
-    // Try to parse the first token as a hit command (possibly with batting-order prefix).
+    // First try to parse the first token as a hit command (possibly with batting-order prefix).
     // If it matches, gather runner overrides from the remaining tokens.
     if let Some((hit_cmd_no_overrides, batter_order)) = parse_batter_token(tokens[0]) {
-        // All subsequent tokens must be valid runner overrides.
-        // If any token fails to parse, reject the whole command — silently
-        // dropping an invalid token (e.g. "6 h, 5 xx") would cause incorrect scoring.
         let mut runner_overrides: Vec<RunnerOverride> = Vec::new();
         for token in &tokens[1..] {
             match parse_runner_override_token(token) {
@@ -47,12 +48,8 @@ pub fn parse_engine_commands(line: &str) -> Vec<EngineCommand> {
             }
         }
 
-        // Rebuild the hit command with overrides.
         let hit_cmd = attach_overrides(hit_cmd_no_overrides, runner_overrides);
 
-        // Validate: the batter's own batting-order must not appear in runner overrides.
-        // (The batter is placed automatically on their target base; they can't also be
-        //  a runner override in the same PA.)
         if let Some(order) = batter_order {
             let hit_cmd = match &hit_cmd {
                 EngineCommand::Single {
@@ -98,7 +95,6 @@ pub fn parse_engine_commands(line: &str) -> Vec<EngineCommand> {
 fn parse_batter_token(raw: &str) -> Option<(EngineCommand, Option<BatterOrder>)> {
     let parts: Vec<&str> = raw.split_whitespace().collect();
 
-    // Extract optional leading batting-order number
     let (order, rest): (Option<BatterOrder>, &[&str]) = {
         if let Some(&first) = parts.first() {
             if let Ok(n) = first.parse::<u8>() {
@@ -122,16 +118,14 @@ fn parse_batter_token(raw: &str) -> Option<(EngineCommand, Option<BatterOrder>)>
     let cmd_str = rest[0].to_ascii_lowercase();
     let zone_str = rest.get(1).copied();
 
-    // Zone is optional; if present it must be a valid FieldZone
     let zone: Option<FieldZone> = match zone_str {
         Some(z) => match FieldZone::parse(z) {
             Some(fz) => Some(fz),
-            None => return None, // unrecognised zone → not a valid batter token
+            None => return None,
         },
         None => None,
     };
 
-    // More than 2 tokens after order? Not a valid batter token.
     if rest.len() > 2 {
         return None;
     }
@@ -165,18 +159,11 @@ fn parse_batter_token(raw: &str) -> Option<(EngineCommand, Option<BatterOrder>)>
 ///
 /// Examples: `"5 2b"`, `"3 sc"`, `"7 home"`, `"2 3b"`
 fn parse_runner_override_token(raw: &str) -> Option<RunnerOverride> {
-    // Accepted formats: "7 sc", "7sc", "5 2b", "52b"
-    // Split on whitespace first; if only one token, try to split the leading digits
-    // from the trailing destination string.
     let parts: Vec<&str> = raw.split_whitespace().collect();
 
     let (order_str, dest_str): (&str, &str) = match parts.as_slice() {
         [order, dest] => (order, dest),
         [compact] => {
-            // Compact format: batting order is the leading ASCII digit (1-9),
-            // the rest is the destination string (e.g. "7sc" → "7" + "sc").
-            // Use char_indices to find the first char boundary — avoids a panic
-            // on any non-ASCII input (e.g. Unicode pasted by mistake).
             if compact.is_empty() {
                 return None;
             }
@@ -185,7 +172,7 @@ fn parse_runner_override_token(raw: &str) -> Option<RunnerOverride> {
             if !first_char.is_ascii_digit() {
                 return None;
             }
-            let split_at = first_char.len_utf8(); // always 1 for ASCII digits
+            let split_at = first_char.len_utf8();
             (&compact[..split_at], &compact[split_at..])
         }
         _ => return None,
@@ -223,13 +210,158 @@ fn attach_overrides(cmd: EngineCommand, overrides: Vec<RunnerOverride>) -> Engin
     }
 }
 
+fn parse_zone_arg(arg: Option<&str>, raw: &str) -> Result<Option<FieldZone>, EngineCommand> {
+    match arg {
+        Some(z) => match FieldZone::parse(z) {
+            Some(zone) => Ok(Some(zone)),
+            None => Err(EngineCommand::Unknown(raw.to_string())),
+        },
+        None => Ok(None),
+    }
+}
+
+fn parse_batter_out_token(raw: &str) -> Option<EngineCommand> {
+    let parts: Vec<&str> = raw.split_whitespace().collect();
+    if parts.len() != 2 {
+        return None;
+    }
+
+    let order = parse_batter_order(parts[0])?;
+    let token = parts[1];
+
+    let out_type = parse_batter_out_type(token)?;
+    Some(EngineCommand::BatterOut { order, out_type })
+}
+
+fn parse_batter_order(raw: &str) -> Option<BatterOrder> {
+    let order = raw.parse::<u8>().ok()?;
+    if (1..=9).contains(&order) {
+        Some(order)
+    } else {
+        None
+    }
+}
+
+fn parse_batter_out_type(token: &str) -> Option<BatterOutType> {
+    let normalized = token.to_ascii_uppercase();
+
+    if let Some(rest) = normalized.strip_prefix("IFF") {
+        let fielder = parse_single_fielder(rest)?;
+        return Some(BatterOutType::InfieldFly { fielder });
+    }
+
+    if let Some(rest) = normalized.strip_prefix("FF") {
+        let fielder = parse_single_fielder(rest)?;
+        return Some(BatterOutType::FlyOut {
+            fielder,
+            in_foul_territory: true,
+        });
+    }
+
+    if let Some(rest) = normalized.strip_prefix('F') {
+        let fielder = parse_single_fielder(rest)?;
+        return Some(BatterOutType::FlyOut {
+            fielder,
+            in_foul_territory: false,
+        });
+    }
+
+    if let Some(rest) = normalized.strip_prefix('L') {
+        let fielder = parse_single_fielder(rest)?;
+        return Some(BatterOutType::LineOut { fielder });
+    }
+
+    if is_fielding_sequence_token(normalized.as_str()) {
+        let sequence = parse_fielding_sequence(token)?;
+        return Some(BatterOutType::GroundOut { sequence });
+    }
+
+    None
+}
+
+fn parse_single_fielder(raw: &str) -> Option<u8> {
+    if raw.is_empty() {
+        return None;
+    }
+
+    let value = raw.parse::<u8>().ok()?;
+    if (1..=9).contains(&value) {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+fn is_fielding_sequence_token(token: &str) -> bool {
+    !token.is_empty()
+        && token
+        .chars()
+        .all(|ch| ch.is_ascii_digit() || ch == '-')
+}
+
+fn parse_fielding_sequence(token: &str) -> Option<FieldingSequence> {
+    let fielders = if token.contains('-') {
+        parse_hyphenated_fielding_sequence(token)?
+    } else {
+        parse_compact_fielding_sequence(token)?
+    };
+
+    FieldingSequence::new(fielders).ok()
+}
+
+fn parse_compact_fielding_sequence(token: &str) -> Option<Vec<u8>> {
+    let mut fielders = Vec::with_capacity(token.len());
+
+    for ch in token.chars() {
+        let digit = ch.to_digit(10)?;
+        let value = u8::try_from(digit).ok()?;
+        if !(1..=9).contains(&value) {
+            return None;
+        }
+        fielders.push(value);
+    }
+
+    if fielders.len() < 2 {
+        return None;
+    }
+
+    Some(fielders)
+}
+
+fn parse_hyphenated_fielding_sequence(token: &str) -> Option<Vec<u8>> {
+    let mut fielders = Vec::new();
+
+    for part in token.split('-') {
+        let part = part.trim();
+        if part.is_empty() {
+            return None;
+        }
+
+        let value = part.parse::<u8>().ok()?;
+        if !(1..=9).contains(&value) {
+            return None;
+        }
+
+        fielders.push(value);
+    }
+
+    if fielders.len() < 2 {
+        return None;
+    }
+
+    Some(fielders)
+}
+
 // ─── Non-hit commands ─────────────────────────────────────────────────────────
 
 fn parse_non_hit_command(raw: &str) -> EngineCommand {
+    if let Some(cmd) = parse_batter_out_token(raw) {
+        return cmd;
+    }
+
     let tokens: Vec<&str> = raw.split_whitespace().collect();
 
     // ── Steal: `<order> st <base>` ────────────────────────────────────────────
-    // Three-token form handled before the generic 2-token path below.
     if tokens.len() == 3 {
         if let (Ok(order), true, Some(dest)) = (
             tokens[0].parse::<u8>(),
@@ -248,7 +380,6 @@ fn parse_non_hit_command(raw: &str) -> EngineCommand {
     };
     let arg = parts.next();
 
-    // Reject unexpected extra tokens (already handled 3-token case above)
     if parts.next().is_some() {
         return EngineCommand::Unknown(raw.to_string());
     }
@@ -272,9 +403,7 @@ fn parse_non_hit_command(raw: &str) -> EngineCommand {
         "f" => EngineCommand::Pitch(Pitch::Foul),
         "fl" => EngineCommand::Pitch(Pitch::FoulBunt),
 
-        // Hit commands without batting-order prefix (no runner overrides possible
-        // when going through the non-hit path, since we only reach here if
-        // parse_batter_token returned None for the first token)
+        // Hit commands without batting-order prefix
         "h" => {
             let zone = parse_zone_arg(arg, raw);
             match zone {
@@ -317,16 +446,6 @@ fn parse_non_hit_command(raw: &str) -> EngineCommand {
         }
 
         _ => EngineCommand::Unknown(raw.to_string()),
-    }
-}
-
-fn parse_zone_arg(arg: Option<&str>, raw: &str) -> Result<Option<FieldZone>, EngineCommand> {
-    match arg {
-        Some(z) => match FieldZone::parse(z) {
-            Some(zone) => Ok(Some(zone)),
-            None => Err(EngineCommand::Unknown(raw.to_string())),
-        },
-        None => Ok(None),
     }
 }
 
@@ -422,19 +541,12 @@ mod tests {
 
     #[test]
     fn test_full_bases_three_overrides() {
-        // Basi piene: r1=order 3, r2=order 5, r3=order 7; batter=order 6
-        // 6 h, 7 sc, 5 sc, 3 3b  → r7 e r5 segnano, r3 va in 3a, #6 in 1a
         let cmd = single(parse_engine_commands("6 h, 7 sc, 5 sc, 3 3b"));
         match cmd {
             EngineCommand::Single {
                 runner_overrides, ..
             } => {
-                assert_eq!(
-                    runner_overrides.len(),
-                    3,
-                    "expected 3 overrides, got {}",
-                    runner_overrides.len()
-                );
+                assert_eq!(runner_overrides.len(), 3);
                 assert!(
                     runner_overrides
                         .iter()
@@ -463,7 +575,6 @@ mod tests {
 
     #[test]
     fn test_compact_format_no_space() {
-        // "9 h, 8 2b, 7sc, 6sc" — caso reale con basi piene
         let cmd = single(parse_engine_commands("9 h, 8 2b, 7sc, 6sc"));
         match cmd {
             EngineCommand::Single {
@@ -548,7 +659,6 @@ mod tests {
 
     #[test]
     fn test_invalid_override_token_rejected() {
-        // "5 xx" is not a valid runner override — whole command must become Unknown
         let cmds = parse_engine_commands("6 h, 5 xx");
         assert_eq!(cmds.len(), 1);
         assert!(matches!(cmds[0], EngineCommand::Unknown(_)));
@@ -556,13 +666,10 @@ mod tests {
 
     #[test]
     fn test_invalid_override_typo_rejected() {
-        // "h, b" — "b" looks like a ball command but is not a valid runner override
         let cmds = parse_engine_commands("h, b");
         assert_eq!(cmds.len(), 1);
         assert!(matches!(cmds[0], EngineCommand::Unknown(_)));
     }
-
-    // ─── Steal tests ──────────────────────────────────────────────────────────
 
     #[test]
     fn test_steal_second() {
@@ -605,12 +712,11 @@ mod tests {
 
     #[test]
     fn test_steal_combined_with_pitch() {
-        // "k, 6 st 2b" — strike then steal, two commands
         let cmds = parse_engine_commands("k, 6 st 2b");
         assert_eq!(cmds.len(), 2);
         assert!(matches!(
             cmds[0],
-            EngineCommand::Pitch(crate::models::types::Pitch::CalledStrike)
+            EngineCommand::Pitch(Pitch::CalledStrike)
         ));
         assert!(matches!(
             cmds[1],
@@ -623,9 +729,7 @@ mod tests {
 
     #[test]
     fn test_steal_invalid_dest() {
-        // "6 st 1b" is not a valid steal destination
         let cmds = parse_engine_commands("6 st 1b");
-        // Parses as StealBase{dest: First} — engine will reject it, not the parser
         assert!(matches!(
             cmds[0],
             EngineCommand::StealBase {
@@ -637,23 +741,184 @@ mod tests {
 
     #[test]
     fn test_steal_bad_order() {
-        // order 0 is out of range 1-9
         let cmds = parse_engine_commands("0 st 2b");
         assert!(matches!(cmds[0], EngineCommand::Unknown(_)));
     }
 
     #[test]
     fn test_steal_bad_dest_token() {
-        // "6 st xx" — unrecognised dest
         let cmds = parse_engine_commands("6 st xx");
         assert!(matches!(cmds[0], EngineCommand::Unknown(_)));
     }
 
     #[test]
     fn test_compact_override_unicode_no_panic() {
-        // Non-ASCII leading char in compact token must not panic — return Unknown
         let cmds = parse_engine_commands("h, é2b");
         assert_eq!(cmds.len(), 1);
         assert!(matches!(cmds[0], EngineCommand::Unknown(_)));
+    }
+
+    // ─── Batter out tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ground_out_compact() {
+        let cmd = single(parse_engine_commands("6 63"));
+        match cmd {
+            EngineCommand::BatterOut { order, out_type } => {
+                assert_eq!(order, 6);
+                match out_type {
+                    BatterOutType::GroundOut { sequence } => {
+                        assert_eq!(sequence.fielders(), &[6, 3]);
+                    }
+                    _ => panic!("expected GroundOut"),
+                }
+            }
+            _ => panic!("expected BatterOut"),
+        }
+    }
+
+    #[test]
+    fn test_ground_out_hyphenated() {
+        let cmd = single(parse_engine_commands("6 6-3"));
+        match cmd {
+            EngineCommand::BatterOut { order, out_type } => {
+                assert_eq!(order, 6);
+                match out_type {
+                    BatterOutType::GroundOut { sequence } => {
+                        assert_eq!(sequence.fielders(), &[6, 3]);
+                    }
+                    _ => panic!("expected GroundOut"),
+                }
+            }
+            _ => panic!("expected BatterOut"),
+        }
+    }
+
+    #[test]
+    fn test_ground_out_multi_assist_compact() {
+        let cmd = single(parse_engine_commands("4 862"));
+        match cmd {
+            EngineCommand::BatterOut { order, out_type } => {
+                assert_eq!(order, 4);
+                match out_type {
+                    BatterOutType::GroundOut { sequence } => {
+                        assert_eq!(sequence.fielders(), &[8, 6, 2]);
+                    }
+                    _ => panic!("expected GroundOut"),
+                }
+            }
+            _ => panic!("expected BatterOut"),
+        }
+    }
+
+    #[test]
+    fn test_ground_out_multi_assist_hyphenated() {
+        let cmd = single(parse_engine_commands("4 8-6-2"));
+        match cmd {
+            EngineCommand::BatterOut { order, out_type } => {
+                assert_eq!(order, 4);
+                match out_type {
+                    BatterOutType::GroundOut { sequence } => {
+                        assert_eq!(sequence.fielders(), &[8, 6, 2]);
+                    }
+                    _ => panic!("expected GroundOut"),
+                }
+            }
+            _ => panic!("expected BatterOut"),
+        }
+    }
+
+    #[test]
+    fn test_fly_out_fair() {
+        let cmd = single(parse_engine_commands("7 F8"));
+        match cmd {
+            EngineCommand::BatterOut { order, out_type } => {
+                assert_eq!(order, 7);
+                match out_type {
+                    BatterOutType::FlyOut {
+                        fielder,
+                        in_foul_territory,
+                    } => {
+                        assert_eq!(fielder, 8);
+                        assert!(!in_foul_territory);
+                    }
+                    _ => panic!("expected FlyOut"),
+                }
+            }
+            _ => panic!("expected BatterOut"),
+        }
+    }
+
+    #[test]
+    fn test_fly_out_foul() {
+        let cmd = single(parse_engine_commands("7 FF3"));
+        match cmd {
+            EngineCommand::BatterOut { order, out_type } => {
+                assert_eq!(order, 7);
+                match out_type {
+                    BatterOutType::FlyOut {
+                        fielder,
+                        in_foul_territory,
+                    } => {
+                        assert_eq!(fielder, 3);
+                        assert!(in_foul_territory);
+                    }
+                    _ => panic!("expected FlyOut"),
+                }
+            }
+            _ => panic!("expected BatterOut"),
+        }
+    }
+
+    #[test]
+    fn test_line_out() {
+        let cmd = single(parse_engine_commands("8 L6"));
+        match cmd {
+            EngineCommand::BatterOut { order, out_type } => {
+                assert_eq!(order, 8);
+                match out_type {
+                    BatterOutType::LineOut { fielder } => {
+                        assert_eq!(fielder, 6);
+                    }
+                    _ => panic!("expected LineOut"),
+                }
+            }
+            _ => panic!("expected BatterOut"),
+        }
+    }
+
+    #[test]
+    fn test_infield_fly() {
+        let cmd = single(parse_engine_commands("2 IF4"));
+        match cmd {
+            EngineCommand::BatterOut { order, out_type } => {
+                assert_eq!(order, 2);
+                match out_type {
+                    BatterOutType::InfieldFly { fielder } => {
+                        assert_eq!(fielder, 4);
+                    }
+                    _ => panic!("expected InfieldFly"),
+                }
+            }
+            _ => panic!("expected BatterOut"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_ground_out_sequence_rejected() {
+        let cmd = single(parse_engine_commands("6 6--3"));
+        assert!(matches!(cmd, EngineCommand::Unknown(_)));
+    }
+
+    #[test]
+    fn test_invalid_single_fielder_ground_out_rejected() {
+        let cmd = single(parse_engine_commands("6 3"));
+        assert!(matches!(cmd, EngineCommand::Unknown(_)));
+    }
+
+    #[test]
+    fn test_invalid_batter_out_fielder_rejected() {
+        let cmd = single(parse_engine_commands("7 F10"));
+        assert!(matches!(cmd, EngineCommand::Unknown(_)));
     }
 }

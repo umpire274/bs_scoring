@@ -19,6 +19,7 @@ use crate::ui::Ui;
 use crate::ui::events::UiEvent;
 use crate::{HalfInning, Pitch, Position};
 use rusqlite::{Connection, params};
+use crate::engine::{get_fielder, get_foul_flag, get_sequence, parse_outcome_json};
 
 pub enum EngineExit {
     ExitToMenu,
@@ -1000,6 +1001,10 @@ fn outcome_symbol_from_row(pa: &PlateAppearanceRow) -> String {
         "double" | "2h" => "2H".to_string(),
         "triple" | "3h" => "3H".to_string(),
         "home_run" | "hr" => "HR".to_string(),
+        "ground_out" | "go" => "GO".to_string(),
+        "fly_out" | "fo" => "FO".to_string(),
+        "line_out" | "lo" => "LO".to_string(),
+        "infield_fly" | "iff" => "IFF".to_string(),
         _ => "OUT".to_string(),
     };
 
@@ -1013,6 +1018,47 @@ fn outcome_symbol_from_row(pa: &PlateAppearanceRow) -> String {
                 return format!("{} {}", base, zone.as_str());
             }
             base
+        }
+        "ground_out" => {
+            if let Some(v) = parse_outcome_json(pa.outcome_data.as_deref())
+                && let Some(sequence) = get_sequence(&v)
+            {
+                return format!("Ground out: {sequence}");
+            }
+            "Ground out".to_string()
+        }
+
+        "fly_out" => {
+            if let Some(v) = parse_outcome_json(pa.outcome_data.as_deref())
+                && let Some(fielder) = get_fielder(&v)
+            {
+                let foul = get_foul_flag(&v);
+
+                return if foul {
+                    format!("Foul fly: FF{fielder}")
+                } else {
+                    format!("Fly out: F{fielder}")
+                };
+            }
+            "Fly out".to_string()
+        }
+
+        "line_out" => {
+            if let Some(v) = parse_outcome_json(pa.outcome_data.as_deref())
+                && let Some(fielder) = get_fielder(&v)
+            {
+                return format!("Line out: L{fielder}");
+            }
+            "Line out".to_string()
+        }
+
+        "infield_fly" => {
+            if let Some(v) = parse_outcome_json(pa.outcome_data.as_deref())
+                && let Some(fielder) = get_fielder(&v)
+            {
+                return format!("Infield fly: IFF{fielder}");
+            }
+            "Infield fly".to_string()
         }
         _ => base,
     }
