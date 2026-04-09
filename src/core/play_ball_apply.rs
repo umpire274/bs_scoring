@@ -4,6 +4,7 @@
 //! describing what happened (UI events, domain events, PA record, runner movements).
 //! No DB access — the engine loop handles persistence.
 
+use crate::BatterOrder;
 use crate::commands::types::EngineCommand;
 use crate::core::runner_logic;
 use crate::core::scoring::BatterOutType;
@@ -18,7 +19,6 @@ use crate::models::plate_appearance::{
 use crate::models::runner::RunnerOverride;
 use crate::models::types::{GameStatus, Pitch};
 use crate::ui::events::UiEvent;
-use crate::BatterOrder;
 
 // ─── Result type ──────────────────────────────────────────────────────────────
 

@@ -12,6 +12,7 @@ use crate::db::game_queries::set_game_status;
 use crate::db::plate_appearances::{
     PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
 };
+use crate::engine::{get_fielder, get_foul_flag, get_sequence, parse_outcome_json};
 use crate::models::events::{DomainEvent, SideChangeData};
 use crate::models::game_state::{BatterOrder, GameState};
 use crate::models::plate_appearance::PlateAppearanceStep;
@@ -19,7 +20,6 @@ use crate::ui::Ui;
 use crate::ui::events::UiEvent;
 use crate::{HalfInning, Pitch, Position};
 use rusqlite::{Connection, params};
-use crate::engine::{get_fielder, get_foul_flag, get_sequence, parse_outcome_json};
 
 pub enum EngineExit {
     ExitToMenu,

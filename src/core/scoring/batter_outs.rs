@@ -73,9 +73,7 @@ impl FieldingSequence {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BatterOutType {
     /// Batter is retired on a defensive sequence such as `6-3` or `8-6-2`.
-    GroundOut {
-        sequence: FieldingSequence,
-    },
+    GroundOut { sequence: FieldingSequence },
 
     /// Fly out in fair or foul territory.
     FlyOut {
@@ -84,14 +82,10 @@ pub enum BatterOutType {
     },
 
     /// Line out.
-    LineOut {
-        fielder: u8,
-    },
+    LineOut { fielder: u8 },
 
     /// Infield fly.
-    InfieldFly {
-        fielder: u8,
-    },
+    InfieldFly { fielder: u8 },
 }
 
 impl BatterOutType {
@@ -160,19 +154,21 @@ impl Error for BatterOutParseError {}
 /// - `7 FF3`
 /// - `7 L6`
 /// - `7 IF4`
-pub fn parse_batter_out_command(input: &str) -> Result<ParsedBatterOutCommand, BatterOutParseError> {
+pub fn parse_batter_out_command(
+    input: &str,
+) -> Result<ParsedBatterOutCommand, BatterOutParseError> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Err(BatterOutParseError::EmptyInput);
     }
 
     let mut parts = trimmed.split_whitespace();
-    let lineup_slot_raw = parts.next().ok_or_else(|| {
-        BatterOutParseError::InvalidFormat("missing lineup slot".to_string())
-    })?;
-    let token = parts.next().ok_or_else(|| {
-        BatterOutParseError::InvalidFormat("missing play token".to_string())
-    })?;
+    let lineup_slot_raw = parts
+        .next()
+        .ok_or_else(|| BatterOutParseError::InvalidFormat("missing lineup slot".to_string()))?;
+    let token = parts
+        .next()
+        .ok_or_else(|| BatterOutParseError::InvalidFormat("missing play token".to_string()))?;
 
     if parts.next().is_some() {
         return Err(BatterOutParseError::InvalidFormat(
@@ -468,7 +464,7 @@ mod tests {
 
     #[test]
     fn parse_infield_fly() {
-        let cmd = parse_batter_out_command("9 IF4").unwrap();
+        let cmd = parse_batter_out_command("9 IFF4").unwrap();
 
         match cmd.out_type {
             BatterOutType::InfieldFly { fielder } => {
@@ -564,7 +560,7 @@ mod tests {
 
     #[test]
     fn parse_infield_fly_lowercase() {
-        let cmd = parse_batter_out_command("9 if4").unwrap();
+        let cmd = parse_batter_out_command("9 iff4").unwrap();
 
         match cmd.out_type {
             BatterOutType::InfieldFly { fielder } => {

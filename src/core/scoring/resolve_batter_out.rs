@@ -19,10 +19,7 @@ pub struct BatterOutResolution {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveBatterOutError {
     InvalidCurrentOuts(u8),
-    LineupMismatch {
-        expected: u8,
-        found: u8,
-    },
+    LineupMismatch { expected: u8, found: u8 },
 }
 
 impl fmt::Display for ResolveBatterOutError {
@@ -82,9 +79,7 @@ pub fn resolve_batter_out(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::scoring::batter_outs::{
-        parse_batter_out_command, BatterOutType,
-    };
+    use crate::core::scoring::batter_outs::{BatterOutType, parse_batter_out_command};
 
     #[test]
     fn resolve_regular_batter_out() {
@@ -136,9 +131,6 @@ mod tests {
         let cmd = parse_batter_out_command("5 L6").unwrap();
         let err = resolve_batter_out(5, 3, cmd).unwrap_err();
 
-        assert!(matches!(
-            err,
-            ResolveBatterOutError::InvalidCurrentOuts(3)
-        ));
+        assert!(matches!(err, ResolveBatterOutError::InvalidCurrentOuts(3)));
     }
 }

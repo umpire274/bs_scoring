@@ -293,10 +293,7 @@ fn parse_single_fielder(raw: &str) -> Option<u8> {
 }
 
 fn is_fielding_sequence_token(token: &str) -> bool {
-    !token.is_empty()
-        && token
-        .chars()
-        .all(|ch| ch.is_ascii_digit() || ch == '-')
+    !token.is_empty() && token.chars().all(|ch| ch.is_ascii_digit() || ch == '-')
 }
 
 fn parse_fielding_sequence(token: &str) -> Option<FieldingSequence> {
@@ -714,10 +711,7 @@ mod tests {
     fn test_steal_combined_with_pitch() {
         let cmds = parse_engine_commands("k, 6 st 2b");
         assert_eq!(cmds.len(), 2);
-        assert!(matches!(
-            cmds[0],
-            EngineCommand::Pitch(Pitch::CalledStrike)
-        ));
+        assert!(matches!(cmds[0], EngineCommand::Pitch(Pitch::CalledStrike)));
         assert!(matches!(
             cmds[1],
             EngineCommand::StealBase {
@@ -889,7 +883,7 @@ mod tests {
 
     #[test]
     fn test_infield_fly() {
-        let cmd = single(parse_engine_commands("2 IF4"));
+        let cmd = single(parse_engine_commands("2 IFF4"));
         match cmd {
             EngineCommand::BatterOut { order, out_type } => {
                 assert_eq!(order, 2);

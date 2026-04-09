@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Result};
+use rusqlite::{Connection, Result, params};
 
 use crate::models::game_state::BatterOrder;
 use crate::models::plate_appearance::{HitOutcomeData, PlateAppearance};

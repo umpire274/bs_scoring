@@ -1,8 +1,8 @@
-use crate::{BatterOrder, Pitch};
 use crate::core::scoring::BatterOutType;
 use crate::models::field_zone::FieldZone;
 use crate::models::runner::RunnerOverride;
 use crate::models::types::GameStatus;
+use crate::{BatterOrder, Pitch};
 
 #[derive(Debug, Clone)]
 pub enum EngineCommand {
@@ -39,6 +39,6 @@ pub enum EngineCommand {
         order: BatterOrder,
         out_type: BatterOutType,
     },
-    
+
     Unknown(String),
 }
