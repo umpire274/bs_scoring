@@ -1,10 +1,10 @@
+use crate::Pitch;
 use crate::commands::types::EngineCommand;
 use crate::core::scoring::batter_outs::{BatterOutType, FieldingSequence};
 use crate::models::field_zone::FieldZone;
 use crate::models::game_state::BatterOrder;
 use crate::models::runner::{RunnerDest, RunnerOverride};
 use crate::models::types::GameStatus;
-use crate::Pitch;
 
 /// Parse a raw input line into a list of engine commands.
 ///
