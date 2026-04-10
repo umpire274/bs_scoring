@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.10.3] - 2026-04-10
+
+### Improved
+- Refactored `handle_umpire_history()` to separate concerns using helper functions:
+    - `print_umpire_header`
+    - `print_umpire_evaluation_summary`
+    - `print_umpire_evaluation_detail`
+- Improved CLI usability when browsing umpire evaluations:
+    - added interactive menu after summary table
+    - users can now select a specific report by `Game ID`
+    - textual evaluation fields are now accessible:
+        - strengths
+        - areas to improve
+        - notes
+- Enforced selection consistency: umpire must belong to the filtered league list.
+
+### Fixed
+- Fixed logical inconsistency where user could input an umpire ID not present in the filtered list.
+
+---
+
 ## [v0.10.2] - 2026-04-09
 
 ### Added
