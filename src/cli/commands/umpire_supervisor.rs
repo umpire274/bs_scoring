@@ -5,7 +5,9 @@ use crate::db::umpire::{Umpire, UmpireEvaluation, UmpirePosition};
 use crate::models::session::PlayBallGameContext;
 use crate::utils;
 use crate::{Database, Menu, UmpireSupervisorMenuChoice};
+use std::collections::HashMap;
 
+use crate::cli::commands::game::get_game_by_id;
 use rusqlite::Connection;
 use std::io::{self, Write};
 // ─── Menu dispatcher ──────────────────────────────────────────────────────────
@@ -604,6 +606,7 @@ fn read_score(prompt: &str) -> Option<i32> {
 // ─── 4. Umpire History / Statistics ──────────────────────────────────────────
 
 fn handle_umpire_history(db: &mut Database) {
+    use std::collections::HashMap;
     use std::io::{self, Write};
 
     utils::cli::clear_screen();
@@ -680,12 +683,25 @@ fn handle_umpire_history(db: &mut Database) {
         return;
     }
 
+    let mut game_map: HashMap<i64, String> = HashMap::new();
+
+    for ev in &evals {
+        if !game_map.contains_key(&ev.game_id) {
+            if let Ok(Some(game_info)) = get_game_by_id(conn, ev.game_id) {
+                game_map.insert(
+                    ev.game_id,
+                    format!("{} @ {}", game_info.away_team, game_info.home_team),
+                );
+            }
+        }
+    }
+
     loop {
         utils::cli::clear_screen();
         println!("═══ Umpire History / Statistics ═══\n");
 
         print_umpire_header(&umpire);
-        print_umpire_evaluation_summary(&evals);
+        print_umpire_evaluation_summary(&evals, &game_map);
 
         println!("\n  Options:");
         println!("    [V] View detailed report by Game ID");
@@ -701,8 +717,10 @@ fn handle_umpire_history(db: &mut Database) {
         }
 
         match choice.trim().to_uppercase().as_str() {
+            "" | "E" | "X" => break,
+
             "V" => {
-                let game_id = utils::cli::read_i64_required("Game ID: ");
+                let game_id = utils::cli::read_i64_required("\n  Game ID: ");
 
                 let Some(report) = evals.iter().find(|ev| ev.game_id == game_id) else {
                     println!("❌ No report found for the selected Game ID.");
@@ -711,11 +729,9 @@ fn handle_umpire_history(db: &mut Database) {
                 };
 
                 utils::cli::clear_screen();
-                print_umpire_evaluation_detail(&umpire, report);
+                print_umpire_evaluation_detail(&umpire, report, &game_map);
                 utils::cli::wait_for_enter();
             }
-
-            "E" | "" => break,
 
             _ => {
                 println!("❌ Invalid choice.");
@@ -735,12 +751,12 @@ fn print_umpire_header(umpire: &Umpire) {
     }
 }
 
-fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation]) {
+fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation], game_map: &HashMap<i64, String>) {
     println!(
-        "\n  {:>5}  {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
-        "Game", "Pos", "SZ", "S/O", "Pos", "Tim", "Mgmt", "Prof", "Comm", "Hust", "Overall"
+        "\n  {:>5}  {:<25} {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
+        "Game", "Matchup", "Pos", "SZ", "S/O", "Pos", "Tim", "Mgmt", "Prof", "Comm", "Overall"
     );
-    println!("  {}", "─".repeat(75));
+    println!("  {}", "─".repeat(96));
 
     let mut total_overall: f64 = 0.0;
     let mut count_overall: u32 = 0;
@@ -756,9 +772,12 @@ fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation]) {
             count_overall += 1;
         }
 
+        let matchup = game_map.get(&ev.game_id).map(String::as_str).unwrap_or("-");
+
         println!(
-            "  {:>5}  {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
+            "  {:>5}  {:<25} {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
             ev.game_id,
+            matchup,
             ev.position_evaluated,
             ev.strike_zone_accuracy
                 .map(|s| s.to_string())
@@ -781,26 +800,31 @@ fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation]) {
             ev.communication
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "-".to_string()),
-            ev.hustle
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "-".to_string()),
             overall_str,
         );
     }
 
-    println!("  {}", "─".repeat(75));
+    println!("  {}", "─".repeat(96));
     println!("  Games evaluated: {}", evals.len());
+
     if count_overall > 0 {
         let avg = total_overall / count_overall as f64;
         println!("  Career average overall: {avg:.1}");
     }
 }
 
-fn print_umpire_evaluation_detail(umpire: &Umpire, report: &UmpireEvaluation) {
+fn print_umpire_evaluation_detail(
+    umpire: &Umpire,
+    report: &UmpireEvaluation,
+    game_map: &HashMap<i64, String>,
+) {
+    let matchup = game_map.get(&report.game_id).map(String::as_str).unwrap_or("-");
+
     println!("═══ Detailed Umpire Evaluation Report ═══\n");
 
     println!("  Umpire   : {}", umpire.full_name());
     println!("  Game ID  : {}", report.game_id);
+    println!("  Matchup  : {}", matchup);
     println!("  Position : {}", report.position_evaluated);
 
     println!("\n  Numeric scores:");
