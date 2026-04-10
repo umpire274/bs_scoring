@@ -262,7 +262,7 @@ impl Menu {
         loop {
             utils::cli::clear_screen();
             println!("╔════════════════════════════════════════════╗");
-            println!("║       🧑‍⚖️  UMPIRE SUPERVISOR               ║");
+            println!("║        🧑‍⚖️  UMPIRE SUPERVISOR               ║");
             println!("╚════════════════════════════════════════════╝");
             println!();
             println!("  1. 👤 Manage Umpires");

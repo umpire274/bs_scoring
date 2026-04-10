@@ -6,8 +6,8 @@ use crate::models::session::PlayBallGameContext;
 use crate::utils;
 use crate::{Database, Menu, UmpireSupervisorMenuChoice};
 
+use rusqlite::Connection;
 use std::io::{self, Write};
-
 // ─── Menu dispatcher ──────────────────────────────────────────────────────────
 
 pub fn handle_umpire_supervisor_menu(db: &mut Database) {
@@ -326,6 +326,19 @@ fn edit_umpire(db: &mut Database) {
     utils::cli::wait_for_enter();
 }
 
+/// Fetch an umpire by id, printing an error and pausing if not found.
+/// Returns None if the umpire does not exist.
+pub fn fetch_umpire_or_notify(conn: &Connection, id: i64) -> Option<Umpire> {
+    match Umpire::get_by_id(conn, id) {
+        Ok(u) => Some(u),
+        Err(_) => {
+            println!("❌ Umpire not found.");
+            utils::cli::wait_for_enter();
+            None
+        }
+    }
+}
+
 fn delete_umpire(db: &mut Database) {
     utils::cli::clear_screen();
     println!("═══ Delete Umpire ═══\n");
@@ -333,13 +346,8 @@ fn delete_umpire(db: &mut Database) {
     let id = utils::cli::read_i64_required("Umpire ID to delete: ");
     let conn = db.get_connection();
 
-    let umpire = match Umpire::get_by_id(conn, id) {
-        Ok(u) => u,
-        Err(_) => {
-            println!("❌ Umpire not found.");
-            utils::cli::wait_for_enter();
-            return;
-        }
+    let Some(umpire) = fetch_umpire_or_notify(conn, id) else {
+        return;
     };
 
     println!(
@@ -361,7 +369,7 @@ fn delete_umpire(db: &mut Database) {
 // ─── Shared: game picker (same criteria as Play Ball) ─────────────────────────
 
 /// Display available games and let the user pick one.
-/// Returns `None` if cancelled or no games available.
+/// Returns `None` if canceled or no games available.
 fn select_game(db: &mut Database, header: &str) -> Option<PlayBallGameContext> {
     let conn = db.get_connection_mut();
 
@@ -596,28 +604,65 @@ fn read_score(prompt: &str) -> Option<i32> {
 // ─── 4. Umpire History / Statistics ──────────────────────────────────────────
 
 fn handle_umpire_history(db: &mut Database) {
+    use std::io::{self, Write};
+
     utils::cli::clear_screen();
     println!("═══ Umpire History / Statistics ═══\n");
 
-    let umpire_id = utils::cli::read_i64_required("Umpire ID: ");
     let conn = db.get_connection();
 
-    let umpire = match Umpire::get_by_id(conn, umpire_id) {
-        Ok(u) => u,
-        Err(_) => {
-            println!("❌ Umpire not found.");
-            utils::cli::wait_for_enter();
-            return;
-        }
+    // Optional league filter
+    let all_umpires = Umpire::get_all(conn).unwrap_or_default();
+    let league_ids = select_leagues(conn);
+
+    let filtered_umpires: Vec<Umpire> = if league_ids.is_empty() {
+        all_umpires
+    } else {
+        all_umpires
+            .into_iter()
+            .filter(|u| {
+                let Some(uid) = u.id else {
+                    return false;
+                };
+
+                crate::db::umpire::get_umpire_leagues(conn, uid)
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|(lid, _)| league_ids.contains(lid))
+            })
+            .collect()
     };
 
-    println!("  Umpire: {}", umpire.full_name());
-    if let Some(ref lic) = umpire.license_number {
-        println!("  License: {lic}");
+    if filtered_umpires.is_empty() {
+        println!("\n  No umpires found for the selected filter.");
+        utils::cli::wait_for_enter();
+        return;
     }
-    if let Some(ref level) = umpire.level {
-        println!("  Level: {level}");
+
+    println!("\n  Available umpires:");
+    println!("    {:>3}  {:<25} {:<12}", "ID", "Name", "Level");
+    println!("    {}", "─".repeat(42));
+    for u in &filtered_umpires {
+        println!(
+            "    {:>3}  {:<25} {:<12}",
+            u.id.unwrap_or(0),
+            u.full_name(),
+            u.level.as_deref().unwrap_or("-"),
+        );
     }
+    println!();
+
+    let umpire_id = utils::cli::read_i64_required("Umpire ID: ");
+
+    let Some(umpire) = filtered_umpires
+        .iter()
+        .find(|u| u.id == Some(umpire_id))
+        .cloned()
+    else {
+        println!("❌ Umpire not found in the selected list.");
+        utils::cli::wait_for_enter();
+        return;
+    };
 
     let evals = match UmpireEvaluation::list_by_umpire(conn, umpire_id) {
         Ok(e) => e,
@@ -629,11 +674,68 @@ fn handle_umpire_history(db: &mut Database) {
     };
 
     if evals.is_empty() {
+        print_umpire_header(&umpire);
         println!("\n  No evaluations recorded yet.");
         utils::cli::wait_for_enter();
         return;
     }
 
+    loop {
+        utils::cli::clear_screen();
+        println!("═══ Umpire History / Statistics ═══\n");
+
+        print_umpire_header(&umpire);
+        print_umpire_evaluation_summary(&evals);
+
+        println!("\n  Options:");
+        println!("    [V] View detailed report by Game ID");
+        println!("    [E] Exit");
+        print!("\n  Choice: ");
+        let _ = io::stdout().flush();
+
+        let mut choice = String::new();
+        if io::stdin().read_line(&mut choice).is_err() {
+            println!("\n❌ Failed to read input.");
+            utils::cli::wait_for_enter();
+            continue;
+        }
+
+        match choice.trim().to_uppercase().as_str() {
+            "V" => {
+                let game_id = utils::cli::read_i64_required("Game ID: ");
+
+                let Some(report) = evals.iter().find(|ev| ev.game_id == game_id) else {
+                    println!("❌ No report found for the selected Game ID.");
+                    utils::cli::wait_for_enter();
+                    continue;
+                };
+
+                utils::cli::clear_screen();
+                print_umpire_evaluation_detail(&umpire, report);
+                utils::cli::wait_for_enter();
+            }
+
+            "E" | "" => break,
+
+            _ => {
+                println!("❌ Invalid choice.");
+                utils::cli::wait_for_enter();
+            }
+        }
+    }
+}
+
+fn print_umpire_header(umpire: &Umpire) {
+    println!("  Umpire: {}", umpire.full_name());
+    if let Some(ref lic) = umpire.license_number {
+        println!("  License: {lic}");
+    }
+    if let Some(ref level) = umpire.level {
+        println!("  Level: {level}");
+    }
+}
+
+fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation]) {
     println!(
         "\n  {:>5}  {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
         "Game", "Pos", "SZ", "S/O", "Pos", "Tim", "Mgmt", "Prof", "Comm", "Hust", "Overall"
@@ -643,7 +745,7 @@ fn handle_umpire_history(db: &mut Database) {
     let mut total_overall: f64 = 0.0;
     let mut count_overall: u32 = 0;
 
-    for ev in &evals {
+    for ev in evals {
         let overall_str = ev
             .overall_score
             .map(|s| s.to_string())
@@ -692,6 +794,86 @@ fn handle_umpire_history(db: &mut Database) {
         let avg = total_overall / count_overall as f64;
         println!("  Career average overall: {avg:.1}");
     }
+}
 
-    utils::cli::wait_for_enter();
+fn print_umpire_evaluation_detail(umpire: &Umpire, report: &UmpireEvaluation) {
+    println!("═══ Detailed Umpire Evaluation Report ═══\n");
+
+    println!("  Umpire   : {}", umpire.full_name());
+    println!("  Game ID  : {}", report.game_id);
+    println!("  Position : {}", report.position_evaluated);
+
+    println!("\n  Numeric scores:");
+    println!(
+        "    Strike zone accuracy : {}",
+        report
+            .strike_zone_accuracy
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "    Safe/Out accuracy    : {}",
+        report
+            .safe_out_accuracy
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "    Positioning          : {}",
+        report
+            .positioning
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "    Timing               : {}",
+        report
+            .timing
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "    Game management      : {}",
+        report
+            .game_management
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "    Professionalism      : {}",
+        report
+            .professionalism
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "    Communication        : {}",
+        report
+            .communication
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "    Hustle               : {}",
+        report
+            .hustle
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "    Overall              : {}",
+        report
+            .overall_score
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+
+    println!("\n  Strengths:");
+    println!("    {}", report.strengths.as_deref().unwrap_or("-"));
+
+    println!("\n  Areas to improve:");
+    println!("    {}", report.areas_to_improve.as_deref().unwrap_or("-"));
+
+    println!("\n  Notes:");
+    println!("    {}", report.notes.as_deref().unwrap_or("-"));
 }
