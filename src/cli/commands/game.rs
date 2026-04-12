@@ -4,7 +4,7 @@ use crate::db::game_events::refactor_batter_order;
 use crate::utils::cli;
 use crate::{Database, Menu, Team};
 use chrono::Local;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::{fs, io};
@@ -156,10 +156,7 @@ pub struct GameInfo {
     pub venue: String,
 }
 
-pub fn get_game_by_id(
-    conn: &Connection,
-    game_id: i64,
-) -> rusqlite::Result<Option<GameInfo>> {
+pub fn get_game_by_id(conn: &Connection, game_id: i64) -> rusqlite::Result<Option<GameInfo>> {
     let mut stmt = conn.prepare(
         "SELECT g.game_id, t1.name, t2.name,
                 g.game_date, g.game_time, g.venue

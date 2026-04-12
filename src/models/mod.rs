@@ -9,3 +9,4 @@ pub mod runner;
 pub mod scoring;
 pub mod session;
 pub mod types;
+pub mod umpires;

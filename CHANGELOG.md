@@ -5,9 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.4] - WIP
+
+### Added
+
+- Added `Export Umpire Reports` option to the Umpire Supervisor menu.
+- Added CSV and JSON export for umpire evaluation reports.
+- Export now includes all fields from `umpire_evaluations` plus derived `matchup` (`away_team @ home_team`).
+- Export filenames now follow the format `<umpire-name>-<timestamp>.<csv|json>`.
+- Export now prompts the user to choose the destination directory before writing CSV/JSON files.
+- Export now includes game date time and venue for each evaluation report.
+- Removed internal identifiers (`game_id`, `umpire_id`) from exported output.
+
+### Improved
+
+- Reused league-based umpire filtering workflow for report export.
+- Improved umpire evaluation data access by enriching exported rows with matchup information.
+
+### ✨ Enhancements
+
+- Improved umpire evaluation summary view:
+    - Added `Matchup` column (`away_team @ home_team`)
+    - Better column alignment and readability in CLI output
+- Added interactive navigation in umpire history:
+    - Ability to view detailed report per game
+    - Clean menu loop with exit on empty input / `E` / `X`
+
+### 🧠 Refactor
+
+- Introduced `GameInfo` struct for type-safe game retrieval
+- Refactored `get_game_by_id` to return `Result<Option<GameInfo>>`
+- Replaced tuple-based DB results with structured data
+- Optimized matchup resolution using `HashMap<i64, String>` cache
+- Eliminated redundant umpire fetch logic via helper (`fetch_umpire_or_notify`)
+- Split UI logic into reusable helpers:
+    - `print_umpire_header`
+    - `print_umpire_evaluation_summary`
+    - `print_umpire_evaluation_detail`
+
+### 🐛 Fixes
+
+- Fixed incorrect handling of `Result<Option<T>>` when loading game data
+- Prevented potential panic / invalid access when game is not found
+- Fixed duplicated DB lookups in umpire history workflow
+- Corrected CLI rendering misalignment after adding matchup column
+
+### 🎯 UX Improvements
+
+- Improved CLI navigation flow in umpire history section
+- Consistent handling of invalid input and empty selections
+- Added fallback values (`"-"`) for missing game data
+
+### 🚧 Notes
+
+- Current implementation still uses N+1 queries for game lookup
+  (planned optimization: batch query with `IN (...)`)
+
+---
+
 ## [v0.10.3] - 2026-04-10
 
 ### Improved
+
 - Refactored `handle_umpire_history()` to separate concerns using helper functions:
     - `print_umpire_header`
     - `print_umpire_evaluation_summary`
@@ -22,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enforced selection consistency: umpire must belong to the filtered league list.
 
 ### Fixed
+
 - Fixed logical inconsistency where user could input an umpire ID not present in the filtered list.
 
 ---
