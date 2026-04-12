@@ -608,6 +608,21 @@ fn read_score(prompt: &str) -> Option<i32> {
     }
 }
 
+fn extract_game_info(
+    game_map: &HashMap<i64, GameInfo>,
+    game_id: i64,
+) -> (String, &str, &str, &str) {
+    match game_map.get(&game_id) {
+        Some(g) => (
+            format!("{} @ {}", g.away_team, g.home_team),
+            g.game_date.as_str(),
+            g.game_time.as_str(),
+            g.venue.as_str(),
+        ),
+        None => ("-".to_string(), "-", "-", "-"),
+    }
+}
+
 // ─── 4. Umpire History / Statistics ──────────────────────────────────────────
 
 fn handle_umpire_history(db: &mut Database) {
@@ -688,13 +703,13 @@ fn handle_umpire_history(db: &mut Database) {
         return;
     }
 
-    let mut game_map: HashMap<i64, String> = HashMap::new();
+    let mut game_map: HashMap<i64, GameInfo> = HashMap::new();
 
     for ev in &evals {
-        if let std::collections::hash_map::Entry::Vacant(e) = game_map.entry(ev.game_id)
+        if let std::collections::hash_map::Entry::Vacant(entry) = game_map.entry(ev.game_id)
             && let Ok(Some(game_info)) = get_game_by_id(conn, ev.game_id)
         {
-            e.insert(format!("{} @ {}", game_info.away_team, game_info.home_team));
+            entry.insert(game_info);
         }
     }
 
@@ -753,12 +768,24 @@ fn print_umpire_header(umpire: &Umpire) {
     }
 }
 
-fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation], game_map: &HashMap<i64, String>) {
+fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation], game_map: &HashMap<i64, GameInfo>) {
     println!(
-        "\n  {:>5}  {:<25} {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
-        "Game", "Matchup", "Pos", "SZ", "S/O", "Pos", "Tim", "Mgmt", "Prof", "Comm", "Overall"
+        "\n  {:>5}  {:<25} {:<10} {:<6} {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
+        "Game",
+        "Matchup",
+        "Date",
+        "Time",
+        "Pos",
+        "SZ",
+        "S/O",
+        "Pos",
+        "Tim",
+        "Mgmt",
+        "Prof",
+        "Comm",
+        "Overall"
     );
-    println!("  {}", "─".repeat(96));
+    println!("  {}", "─".repeat(114));
 
     let mut total_overall: f64 = 0.0;
     let mut count_overall: u32 = 0;
@@ -774,12 +801,14 @@ fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation], game_map: &HashMa
             count_overall += 1;
         }
 
-        let matchup = game_map.get(&ev.game_id).map(String::as_str).unwrap_or("-");
+        let (matchup, game_date, game_time, _venue) = extract_game_info(game_map, ev.game_id);
 
         println!(
-            "  {:>5}  {:<25} {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
+            "  {:>5}  {:<25} {:<10} {:<6} {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
             ev.game_id,
             matchup,
+            game_date,
+            game_time,
             ev.position_evaluated,
             ev.strike_zone_accuracy
                 .map(|s| s.to_string())
@@ -806,7 +835,7 @@ fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation], game_map: &HashMa
         );
     }
 
-    println!("  {}", "─".repeat(96));
+    println!("  {}", "─".repeat(114));
     println!("  Games evaluated: {}", evals.len());
 
     if count_overall > 0 {
@@ -818,19 +847,17 @@ fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation], game_map: &HashMa
 fn print_umpire_evaluation_detail(
     umpire: &Umpire,
     report: &UmpireEvaluation,
-    game_map: &HashMap<i64, String>,
+    game_map: &HashMap<i64, GameInfo>,
 ) {
-    let matchup = game_map
-        .get(&report.game_id)
-        .map(String::as_str)
-        .unwrap_or("-");
+    let (matchup, game_date, game_time, venue) = extract_game_info(game_map, report.game_id);
 
     println!("═══ Detailed Umpire Evaluation Report ═══\n");
 
-    println!("  Umpire   : {}", umpire.full_name());
-    println!("  Game ID  : {}", report.game_id);
-    println!("  Matchup  : {}", matchup);
-    println!("  Position : {}", report.position_evaluated);
+    println!("  Umpire         : {}", umpire.full_name());
+    println!("  Game ID        : {}", report.game_id);
+    println!("  Matchup        : {}", matchup);
+    println!("  Date and Venue : {} {} - {}", game_date, game_time, venue);
+    println!("  Position       : {}", report.position_evaluated);
 
     println!("\n  Numeric scores:");
     println!(
