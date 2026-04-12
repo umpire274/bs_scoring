@@ -5,7 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.10.4] - WIP
+## [0.10.5] - 2026-04-12
+
+### ✨ Enhancements
+
+- Enhanced umpire evaluation summary view:
+    - Added game date (`game_date`)
+    - Added game time (`game_time`)
+    - Added venue (`venue`)
+- Summary table now provides full contextual information for each evaluation:
+    - matchup (`away_team @ home_team`)
+    - date and time of the game
+    - venue
+
+### 🧠 Refactor
+
+- Refactored game lookup cache:
+    - replaced `HashMap<i64, String>` with `HashMap<i64, GameInfo>`
+- Centralized access to game metadata via `GameInfo` struct
+- Removed need for duplicated formatting logic across UI functions
+
+### 🎯 UX Improvements
+
+- Improved readability of CLI tables for umpire reports
+- Reduced need for opening detailed view just to identify a game
+- More professional and complete report visualization
+
+---
+
+## [0.10.4] - 2026-04-12
 
 ### Added
 
