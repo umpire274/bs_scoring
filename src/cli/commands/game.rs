@@ -146,6 +146,42 @@ pub fn show_edit_game_menu() -> EditGameMenuChoice {
     }
 }
 
+#[derive(Debug)]
+pub struct GameInfo {
+    pub game_id: String,
+    pub away_team: String,
+    pub home_team: String,
+    pub game_date: String,
+    pub game_time: String,
+    pub venue: String,
+}
+
+pub fn get_game_by_id(conn: &Connection, game_id: i64) -> rusqlite::Result<Option<GameInfo>> {
+    let mut stmt = conn.prepare(
+        "SELECT g.game_id, t1.name, t2.name,
+                g.game_date, g.game_time, g.venue
+         FROM games g
+         JOIN teams t1 ON g.away_team_id = t1.id
+         JOIN teams t2 ON g.home_team_id = t2.id
+         WHERE g.id = ?1",
+    )?;
+
+    let mut rows = stmt.query(rusqlite::params![game_id])?;
+
+    if let Some(row) = rows.next()? {
+        Ok(Some(GameInfo {
+            game_id: row.get(0)?,
+            away_team: row.get(1)?,
+            home_team: row.get(2)?,
+            game_date: row.get(3)?,
+            game_time: row.get(4)?,
+            venue: row.get(5)?,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
 fn create_new_game(db: &Database) {
     cli::show_header("CREATE NEW GAME");
 

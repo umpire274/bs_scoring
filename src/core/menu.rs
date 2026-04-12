@@ -19,6 +19,7 @@ pub enum UmpireSupervisorMenuChoice {
     AssignToGame,
     EvaluateGame,
     UmpireHistory,
+    ExportReports,
     Back,
 }
 
@@ -269,6 +270,7 @@ impl Menu {
             println!("  2. 📋 Assign Umpires to Game");
             println!("  3. 📝 Evaluate Game (Report Card)");
             println!("  4. 📊 Umpire History / Statistics");
+            println!("  5. 📤 Export Umpire Reports");
             println!();
             println!("  0. 🔙 Back to Main Menu");
             println!();
@@ -281,6 +283,7 @@ impl Menu {
                 2 => return UmpireSupervisorMenuChoice::AssignToGame,
                 3 => return UmpireSupervisorMenuChoice::EvaluateGame,
                 4 => return UmpireSupervisorMenuChoice::UmpireHistory,
+                5 => return UmpireSupervisorMenuChoice::ExportReports,
                 0 => return UmpireSupervisorMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");

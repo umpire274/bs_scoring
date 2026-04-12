@@ -207,3 +207,43 @@ where
     let idx = (choice - 1) as usize;
     options.get(idx).copied()
 }
+
+use std::path::PathBuf;
+
+/// Prompts the user for an export directory.
+/// Returns None if the user leaves the input blank.
+pub fn prompt_export_directory() -> Option<PathBuf> {
+    use std::io::{self, Write};
+
+    println!("\n  Output directory (leave empty to cancel):");
+    print!("  Path: ");
+    let _ = io::stdout().flush();
+
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input).is_err() {
+        println!("\n❌ Failed to read input.");
+        wait_for_enter();
+        return None;
+    }
+
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let path = PathBuf::from(trimmed);
+
+    if !path.exists() {
+        println!("\n❌ Directory does not exist.");
+        wait_for_enter();
+        return None;
+    }
+
+    if !path.is_dir() {
+        println!("\n❌ The specified path is not a directory.");
+        wait_for_enter();
+        return None;
+    }
+
+    Some(path)
+}

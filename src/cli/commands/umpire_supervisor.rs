@@ -5,7 +5,13 @@ use crate::db::umpire::{Umpire, UmpireEvaluation, UmpirePosition};
 use crate::models::session::PlayBallGameContext;
 use crate::utils;
 use crate::{Database, Menu, UmpireSupervisorMenuChoice};
+use std::collections::HashMap;
 
+use crate::cli::commands::export::{
+    build_umpire_export_rows, export_umpire_reports_csv, export_umpire_reports_json,
+};
+use crate::cli::commands::game::{GameInfo, get_game_by_id};
+use crate::utils::cli::prompt_export_directory;
 use rusqlite::Connection;
 use std::io::{self, Write};
 // ─── Menu dispatcher ──────────────────────────────────────────────────────────
@@ -17,6 +23,7 @@ pub fn handle_umpire_supervisor_menu(db: &mut Database) {
             UmpireSupervisorMenuChoice::AssignToGame => handle_assign_to_game(db),
             UmpireSupervisorMenuChoice::EvaluateGame => handle_evaluate_game(db),
             UmpireSupervisorMenuChoice::UmpireHistory => handle_umpire_history(db),
+            UmpireSupervisorMenuChoice::ExportReports => handle_export_umpire_reports(db),
             UmpireSupervisorMenuChoice::Back => return,
         }
     }
@@ -33,8 +40,8 @@ fn handle_manage_umpires(db: &mut Database) {
         println!();
         println!("  1. ➕ Add New Umpire");
         println!("  2. 📋 List All Umpires");
-        println!("  3. ✏️  Edit Umpire");
-        println!("  4. 🗑️  Delete Umpire");
+        println!("  3. ✏️ Edit Umpire");
+        println!("  4. 🗑️ Delete Umpire");
         println!();
         println!("  0. 🔙 Back");
         println!();
@@ -604,6 +611,7 @@ fn read_score(prompt: &str) -> Option<i32> {
 // ─── 4. Umpire History / Statistics ──────────────────────────────────────────
 
 fn handle_umpire_history(db: &mut Database) {
+    use std::collections::HashMap;
     use std::io::{self, Write};
 
     utils::cli::clear_screen();
@@ -680,12 +688,22 @@ fn handle_umpire_history(db: &mut Database) {
         return;
     }
 
+    let mut game_map: HashMap<i64, String> = HashMap::new();
+
+    for ev in &evals {
+        if let std::collections::hash_map::Entry::Vacant(e) = game_map.entry(ev.game_id)
+            && let Ok(Some(game_info)) = get_game_by_id(conn, ev.game_id)
+        {
+            e.insert(format!("{} @ {}", game_info.away_team, game_info.home_team));
+        }
+    }
+
     loop {
         utils::cli::clear_screen();
         println!("═══ Umpire History / Statistics ═══\n");
 
         print_umpire_header(&umpire);
-        print_umpire_evaluation_summary(&evals);
+        print_umpire_evaluation_summary(&evals, &game_map);
 
         println!("\n  Options:");
         println!("    [V] View detailed report by Game ID");
@@ -701,8 +719,10 @@ fn handle_umpire_history(db: &mut Database) {
         }
 
         match choice.trim().to_uppercase().as_str() {
+            "" | "E" | "X" => break,
+
             "V" => {
-                let game_id = utils::cli::read_i64_required("Game ID: ");
+                let game_id = utils::cli::read_i64_required("\n  Game ID: ");
 
                 let Some(report) = evals.iter().find(|ev| ev.game_id == game_id) else {
                     println!("❌ No report found for the selected Game ID.");
@@ -711,11 +731,9 @@ fn handle_umpire_history(db: &mut Database) {
                 };
 
                 utils::cli::clear_screen();
-                print_umpire_evaluation_detail(&umpire, report);
+                print_umpire_evaluation_detail(&umpire, report, &game_map);
                 utils::cli::wait_for_enter();
             }
-
-            "E" | "" => break,
 
             _ => {
                 println!("❌ Invalid choice.");
@@ -735,12 +753,12 @@ fn print_umpire_header(umpire: &Umpire) {
     }
 }
 
-fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation]) {
+fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation], game_map: &HashMap<i64, String>) {
     println!(
-        "\n  {:>5}  {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
-        "Game", "Pos", "SZ", "S/O", "Pos", "Tim", "Mgmt", "Prof", "Comm", "Hust", "Overall"
+        "\n  {:>5}  {:<25} {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
+        "Game", "Matchup", "Pos", "SZ", "S/O", "Pos", "Tim", "Mgmt", "Prof", "Comm", "Overall"
     );
-    println!("  {}", "─".repeat(75));
+    println!("  {}", "─".repeat(96));
 
     let mut total_overall: f64 = 0.0;
     let mut count_overall: u32 = 0;
@@ -756,9 +774,12 @@ fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation]) {
             count_overall += 1;
         }
 
+        let matchup = game_map.get(&ev.game_id).map(String::as_str).unwrap_or("-");
+
         println!(
-            "  {:>5}  {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
+            "  {:>5}  {:<25} {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
             ev.game_id,
+            matchup,
             ev.position_evaluated,
             ev.strike_zone_accuracy
                 .map(|s| s.to_string())
@@ -781,26 +802,34 @@ fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation]) {
             ev.communication
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "-".to_string()),
-            ev.hustle
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "-".to_string()),
             overall_str,
         );
     }
 
-    println!("  {}", "─".repeat(75));
+    println!("  {}", "─".repeat(96));
     println!("  Games evaluated: {}", evals.len());
+
     if count_overall > 0 {
         let avg = total_overall / count_overall as f64;
         println!("  Career average overall: {avg:.1}");
     }
 }
 
-fn print_umpire_evaluation_detail(umpire: &Umpire, report: &UmpireEvaluation) {
+fn print_umpire_evaluation_detail(
+    umpire: &Umpire,
+    report: &UmpireEvaluation,
+    game_map: &HashMap<i64, String>,
+) {
+    let matchup = game_map
+        .get(&report.game_id)
+        .map(String::as_str)
+        .unwrap_or("-");
+
     println!("═══ Detailed Umpire Evaluation Report ═══\n");
 
     println!("  Umpire   : {}", umpire.full_name());
     println!("  Game ID  : {}", report.game_id);
+    println!("  Matchup  : {}", matchup);
     println!("  Position : {}", report.position_evaluated);
 
     println!("\n  Numeric scores:");
@@ -876,4 +905,150 @@ fn print_umpire_evaluation_detail(umpire: &Umpire, report: &UmpireEvaluation) {
 
     println!("\n  Notes:");
     println!("    {}", report.notes.as_deref().unwrap_or("-"));
+}
+
+fn handle_export_umpire_reports(db: &mut Database) {
+    use std::collections::HashMap;
+    use std::io::{self, Write};
+
+    utils::cli::clear_screen();
+    println!("═══ Export Umpire Reports ═══\n");
+
+    let conn = db.get_connection();
+
+    // Optional league filter
+    let all_umpires = Umpire::get_all(conn).unwrap_or_default();
+    let league_ids = select_leagues(conn);
+
+    let filtered_umpires: Vec<Umpire> = if league_ids.is_empty() {
+        all_umpires
+    } else {
+        all_umpires
+            .into_iter()
+            .filter(|u| {
+                let Some(uid) = u.id else {
+                    return false;
+                };
+
+                crate::db::umpire::get_umpire_leagues(conn, uid)
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|(lid, _)| league_ids.contains(lid))
+            })
+            .collect()
+    };
+
+    if filtered_umpires.is_empty() {
+        println!("  No umpires found for the selected filter.");
+        utils::cli::wait_for_enter();
+        return;
+    }
+
+    println!("  Available umpires:");
+    println!("    {:>3}  {:<25} {:<12}", "ID", "Name", "Level");
+    println!("    {}", "─".repeat(42));
+    for u in &filtered_umpires {
+        println!(
+            "    {:>3}  {:<25} {:<12}",
+            u.id.unwrap_or(0),
+            u.full_name(),
+            u.level.as_deref().unwrap_or("-"),
+        );
+    }
+    println!();
+
+    let umpire_id = utils::cli::read_i64_required("Umpire ID: ");
+
+    let Some(umpire) = filtered_umpires
+        .iter()
+        .find(|u| u.id == Some(umpire_id))
+        .cloned()
+    else {
+        println!("❌ Umpire not found in the selected list.");
+        utils::cli::wait_for_enter();
+        return;
+    };
+
+    let evals = match UmpireEvaluation::list_by_umpire(conn, umpire_id) {
+        Ok(e) => e,
+        Err(e) => {
+            println!("\n❌ Failed to load evaluations: {e}");
+            utils::cli::wait_for_enter();
+            return;
+        }
+    };
+
+    if evals.is_empty() {
+        println!(
+            "\n  No evaluations recorded yet for {}.",
+            umpire.full_name()
+        );
+        utils::cli::wait_for_enter();
+        return;
+    }
+
+    let mut game_map: HashMap<i64, GameInfo> = HashMap::new();
+    for ev in &evals {
+        game_map
+            .entry(ev.game_id)
+            .or_insert_with(|| match get_game_by_id(conn, ev.game_id) {
+                Ok(Some(game)) => game,
+                _ => GameInfo {
+                    game_id: "-".to_string(),
+                    away_team: "-".to_string(),
+                    home_team: "-".to_string(),
+                    game_date: "-".to_string(),
+                    game_time: "-".to_string(),
+                    venue: "-".to_string(),
+                },
+            });
+    }
+
+    let rows = build_umpire_export_rows(&evals, &game_map);
+
+    println!("  Export format:");
+    println!("    [1] CSV");
+    println!("    [2] JSON");
+    println!("    [Enter] Cancel");
+    print!("\n  Choice: ");
+    let _ = io::stdout().flush();
+
+    let mut choice = String::new();
+    if io::stdin().read_line(&mut choice).is_err() {
+        println!("\n❌ Failed to read input.");
+        utils::cli::wait_for_enter();
+        return;
+    }
+
+    let choice = choice.trim();
+
+    if choice.is_empty() {
+        return;
+    }
+
+    let Some(output_dir) = prompt_export_directory() else {
+        return;
+    };
+
+    let export_result = match choice {
+        "1" => export_umpire_reports_csv(&rows, &umpire.full_name(), &output_dir),
+        "2" => export_umpire_reports_json(&rows, &umpire.full_name(), &output_dir),
+        _ => {
+            println!("\n❌ Invalid choice.");
+            utils::cli::wait_for_enter();
+            return;
+        }
+    };
+
+    match export_result {
+        Ok(path) => {
+            println!("\n✅ Export completed successfully.");
+            println!("   File: {}", path.display());
+        }
+        Err(e) => {
+            println!("\n❌ Export failed: {e}");
+        }
+    }
+
+    utils::cli::wait_for_enter();
 }
