@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::cli::commands::export::{
     build_umpire_export_rows, export_umpire_reports_csv, export_umpire_reports_json,
 };
-use crate::cli::commands::game::{get_game_by_id, GameInfo};
+use crate::cli::commands::game::{GameInfo, get_game_by_id};
 use crate::utils::cli::prompt_export_directory;
 use rusqlite::Connection;
 use std::io::{self, Write};
@@ -989,8 +989,9 @@ fn handle_export_umpire_reports(db: &mut Database) {
 
     let mut game_map: HashMap<i64, GameInfo> = HashMap::new();
     for ev in &evals {
-        game_map.entry(ev.game_id).or_insert_with(|| {
-            match get_game_by_id(conn, ev.game_id) {
+        game_map
+            .entry(ev.game_id)
+            .or_insert_with(|| match get_game_by_id(conn, ev.game_id) {
                 Ok(Some(game)) => game,
                 _ => GameInfo {
                     game_id: "-".to_string(),
@@ -1000,8 +1001,7 @@ fn handle_export_umpire_reports(db: &mut Database) {
                     game_time: "-".to_string(),
                     venue: "-".to_string(),
                 },
-            }
-        });
+            });
     }
 
     let rows = build_umpire_export_rows(&evals, &game_map);
