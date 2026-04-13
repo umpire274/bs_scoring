@@ -29,7 +29,7 @@ pub fn build_umpire_export_rows(
                 (
                     "-".to_string(),
                     "-".to_string(),
-                    "-".to_string(),
+                    Some("-".to_string()),
                     "-".to_string(),
                 )
             };
@@ -37,7 +37,7 @@ pub fn build_umpire_export_rows(
             UmpireEvaluationExportRow {
                 matchup,
                 game_date: date,
-                game_time: time,
+                game_time: time.unwrap_or("-".to_string()),
                 venue,
 
                 position_evaluated: ev.position_evaluated.clone(),
