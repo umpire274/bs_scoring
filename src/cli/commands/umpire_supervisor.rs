@@ -616,7 +616,7 @@ fn extract_game_info(
         Some(g) => (
             format!("{} @ {}", g.away_team, g.home_team),
             g.game_date.as_str(),
-            g.game_time.as_str(),
+            g.game_time.as_deref().unwrap_or("-"),
             g.venue.as_str(),
         ),
         None => ("-".to_string(), "-", "-", "-"),
@@ -1025,7 +1025,7 @@ fn handle_export_umpire_reports(db: &mut Database) {
                     away_team: "-".to_string(),
                     home_team: "-".to_string(),
                     game_date: "-".to_string(),
-                    game_time: "-".to_string(),
+                    game_time: Some("-".to_string()),
                     venue: "-".to_string(),
                 },
             });

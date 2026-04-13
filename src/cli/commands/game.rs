@@ -152,7 +152,7 @@ pub struct GameInfo {
     pub away_team: String,
     pub home_team: String,
     pub game_date: String,
-    pub game_time: String,
+    pub game_time: Option<String>,
     pub venue: String,
 }
 
@@ -174,7 +174,7 @@ pub fn get_game_by_id(conn: &Connection, game_id: i64) -> rusqlite::Result<Optio
             away_team: row.get(1)?,
             home_team: row.get(2)?,
             game_date: row.get(3)?,
-            game_time: row.get(4)?,
+            game_time: row.get::<_, Option<String>>(4)?,
             venue: row.get(5)?,
         }))
     } else {
