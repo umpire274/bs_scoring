@@ -5,13 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.10.6] - 2026-04-13
+## [0.10.5-bugfix] - 2026-04-13
 
 ### 🐛 Fixes
 
 - Fix handling of nullable `game_time` in game lookup.
 - Prevent failure when loading legacy games with NULL time values.
 - Ensure matchup/date/venue are correctly displayed and exported for migrated data.
+- Fixed unused variable warnings in umpire evaluation summary rendering.
+- Removed unnecessary extraction of `game_time` and `venue` in summary view.
+- Introduced dedicated helper for summary rendering to avoid unused data.
+
+### 🧠 Refactor
+
+- Added `extract_game_summary_info()` helper for lightweight game data access in summary view.
+- Kept `extract_game_info()` for full-detail contexts (detail view and export).
+- Removed explicit lifetimes in helper function signatures where they could be safely elided.
+
+### 🎯 UX Improvements
+
+- Simplified summary table layout for better readability in CLI.
+- Reduced visual clutter by limiting summary data to essential fields.
 
 ---
 

@@ -608,6 +608,16 @@ fn read_score(prompt: &str) -> Option<i32> {
     }
 }
 
+fn extract_game_summary_info(game_map: &HashMap<i64, GameInfo>, game_id: i64) -> (String, &str) {
+    match game_map.get(&game_id) {
+        Some(g) => (
+            format!("{} @ {}", g.away_team, g.home_team),
+            g.game_date.as_str(),
+        ),
+        None => ("-".to_string(), "-"),
+    }
+}
+
 fn extract_game_info(
     game_map: &HashMap<i64, GameInfo>,
     game_id: i64,
@@ -770,22 +780,10 @@ fn print_umpire_header(umpire: &Umpire) {
 
 fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation], game_map: &HashMap<i64, GameInfo>) {
     println!(
-        "\n  {:>5}  {:<25} {:<10} {:<6} {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
-        "Game",
-        "Matchup",
-        "Date",
-        "Time",
-        "Pos",
-        "SZ",
-        "S/O",
-        "Pos",
-        "Tim",
-        "Mgmt",
-        "Prof",
-        "Comm",
-        "Overall"
+        "\n  {:>5}  {:<28} {:<10} {:<4}  {:>5}  {:>5}  {:>7}",
+        "Game", "Matchup", "Date", "Pos", "SZ", "S/O", "Overall"
     );
-    println!("  {}", "─".repeat(114));
+    println!("  {}", "─".repeat(78));
 
     let mut total_overall: f64 = 0.0;
     let mut count_overall: u32 = 0;
@@ -801,14 +799,13 @@ fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation], game_map: &HashMa
             count_overall += 1;
         }
 
-        let (matchup, game_date, game_time, _venue) = extract_game_info(game_map, ev.game_id);
+        let (matchup, game_date) = extract_game_summary_info(game_map, ev.game_id);
 
         println!(
-            "  {:>5}  {:<25} {:<10} {:<6} {:<4}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>7}",
+            "  {:>5}  {:<28} {:<10} {:<4}  {:>5}  {:>5}  {:>7}",
             ev.game_id,
             matchup,
             game_date,
-            game_time,
             ev.position_evaluated,
             ev.strike_zone_accuracy
                 .map(|s| s.to_string())
@@ -816,26 +813,11 @@ fn print_umpire_evaluation_summary(evals: &[UmpireEvaluation], game_map: &HashMa
             ev.safe_out_accuracy
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "-".to_string()),
-            ev.positioning
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            ev.timing
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            ev.game_management
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            ev.professionalism
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            ev.communication
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "-".to_string()),
             overall_str,
         );
     }
 
-    println!("  {}", "─".repeat(114));
+    println!("  {}", "─".repeat(78));
     println!("  Games evaluated: {}", evals.len());
 
     if count_overall > 0 {
