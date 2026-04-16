@@ -1,6 +1,6 @@
 use crate::Pitch;
 use crate::commands::types::EngineCommand;
-use crate::core::scoring::batter_outs::{BatterOutType, FieldingSequence};
+use crate::core::scoring::parse_batter_out_token;
 use crate::models::field_zone::FieldZone;
 use crate::models::game_state::BatterOrder;
 use crate::models::runner::{RunnerDest, RunnerOverride};
@@ -77,7 +77,28 @@ pub fn parse_engine_commands(line: &str) -> Vec<EngineCommand> {
         return vec![hit_cmd];
     }
 
-    // Not a hit command — parse each token independently as a non-hit command.
+    // If there is a single segment, preserve legacy non-hit parsing first.
+    // This keeps commands like `1 64` working as batter-out syntax.
+    if tokens.len() == 1 {
+        let cmd = parse_non_hit_command(tokens[0]);
+        if !matches!(cmd, EngineCommand::Unknown(_)) {
+            return vec![cmd];
+        }
+
+        if let Ok(def_play) = crate::core::scoring::batter_outs::parse_defensive_play_command(line)
+        {
+            return vec![EngineCommand::DefensivePlay(def_play)];
+        }
+
+        return vec![EngineCommand::Unknown(line.to_string())];
+    }
+
+    // Multi-segment defensive play parsing.
+    if let Ok(def_play) = crate::core::scoring::batter_outs::parse_defensive_play_command(line) {
+        return vec![EngineCommand::DefensivePlay(def_play)];
+    }
+
+    // Fallback: parse each token independently as a non-hit command.
     tokens.iter().map(|t| parse_non_hit_command(t)).collect()
 }
 
@@ -220,19 +241,6 @@ fn parse_zone_arg(arg: Option<&str>, raw: &str) -> Result<Option<FieldZone>, Eng
     }
 }
 
-fn parse_batter_out_token(raw: &str) -> Option<EngineCommand> {
-    let parts: Vec<&str> = raw.split_whitespace().collect();
-    if parts.len() != 2 {
-        return None;
-    }
-
-    let order = parse_batter_order(parts[0])?;
-    let token = parts[1];
-
-    let out_type = parse_batter_out_type(token)?;
-    Some(EngineCommand::BatterOut { order, out_type })
-}
-
 fn parse_batter_order(raw: &str) -> Option<BatterOrder> {
     let order = raw.parse::<u8>().ok()?;
     if (1..=9).contains(&order) {
@@ -242,122 +250,22 @@ fn parse_batter_order(raw: &str) -> Option<BatterOrder> {
     }
 }
 
-fn parse_batter_out_type(token: &str) -> Option<BatterOutType> {
-    let normalized = token.to_ascii_uppercase();
-
-    if let Some(rest) = normalized.strip_prefix("IFF") {
-        let fielder = parse_single_fielder(rest)?;
-        return Some(BatterOutType::InfieldFly { fielder });
-    }
-
-    if let Some(rest) = normalized.strip_prefix("IF") {
-        let fielder = parse_single_fielder(rest)?;
-        return Some(BatterOutType::InfieldFly { fielder });
-    }
-
-    if let Some(rest) = normalized.strip_prefix("FF") {
-        let fielder = parse_single_fielder(rest)?;
-        return Some(BatterOutType::FlyOut {
-            fielder,
-            in_foul_territory: true,
-        });
-    }
-
-    if let Some(rest) = normalized.strip_prefix('F') {
-        let fielder = parse_single_fielder(rest)?;
-        return Some(BatterOutType::FlyOut {
-            fielder,
-            in_foul_territory: false,
-        });
-    }
-
-    if let Some(rest) = normalized.strip_prefix('L') {
-        let fielder = parse_single_fielder(rest)?;
-        return Some(BatterOutType::LineOut { fielder });
-    }
-
-    if is_fielding_sequence_token(normalized.as_str()) {
-        let sequence = parse_fielding_sequence(token)?;
-        return Some(BatterOutType::GroundOut { sequence });
-    }
-
-    None
-}
-
-fn parse_single_fielder(raw: &str) -> Option<u8> {
-    if raw.is_empty() {
+fn parse_legacy_batter_out_command(raw: &str) -> Option<EngineCommand> {
+    let parts: Vec<&str> = raw.split_whitespace().collect();
+    if parts.len() != 2 {
         return None;
     }
 
-    let value = raw.parse::<u8>().ok()?;
-    if (1..=9).contains(&value) {
-        Some(value)
-    } else {
-        None
-    }
-}
+    let order = parse_batter_order(parts[0])?;
+    let out_type = parse_batter_out_token(parts[1]).ok()?;
 
-fn is_fielding_sequence_token(token: &str) -> bool {
-    !token.is_empty() && token.chars().all(|ch| ch.is_ascii_digit() || ch == '-')
-}
-
-fn parse_fielding_sequence(token: &str) -> Option<FieldingSequence> {
-    let fielders = if token.contains('-') {
-        parse_hyphenated_fielding_sequence(token)?
-    } else {
-        parse_compact_fielding_sequence(token)?
-    };
-
-    FieldingSequence::new(fielders).ok()
-}
-
-fn parse_compact_fielding_sequence(token: &str) -> Option<Vec<u8>> {
-    let mut fielders = Vec::with_capacity(token.len());
-
-    for ch in token.chars() {
-        let digit = ch.to_digit(10)?;
-        let value = u8::try_from(digit).ok()?;
-        if !(1..=9).contains(&value) {
-            return None;
-        }
-        fielders.push(value);
-    }
-
-    if fielders.len() < 2 {
-        return None;
-    }
-
-    Some(fielders)
-}
-
-fn parse_hyphenated_fielding_sequence(token: &str) -> Option<Vec<u8>> {
-    let mut fielders = Vec::new();
-
-    for part in token.split('-') {
-        let part = part.trim();
-        if part.is_empty() {
-            return None;
-        }
-
-        let value = part.parse::<u8>().ok()?;
-        if !(1..=9).contains(&value) {
-            return None;
-        }
-
-        fielders.push(value);
-    }
-
-    if fielders.len() < 2 {
-        return None;
-    }
-
-    Some(fielders)
+    Some(EngineCommand::BatterOut { order, out_type })
 }
 
 // ─── Non-hit commands ─────────────────────────────────────────────────────────
 
 fn parse_non_hit_command(raw: &str) -> EngineCommand {
-    if let Some(cmd) = parse_batter_out_token(raw) {
+    if let Some(cmd) = parse_legacy_batter_out_command(raw) {
         return cmd;
     }
 
@@ -456,6 +364,8 @@ fn parse_non_hit_command(raw: &str) -> EngineCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::scoring::BatterOutType;
+    use crate::core::scoring::batter_outs::DefensiveOutKind;
 
     fn single(cmds: Vec<EngineCommand>) -> EngineCommand {
         assert_eq!(cmds.len(), 1);
@@ -910,14 +820,59 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_single_fielder_ground_out_rejected() {
+    fn test_single_fielder_unassisted_out_valid() {
         let cmd = single(parse_engine_commands("6 3"));
-        assert!(matches!(cmd, EngineCommand::Unknown(_)));
+
+        match cmd {
+            EngineCommand::BatterOut { order, out_type } => {
+                assert_eq!(order, 6);
+
+                match out_type {
+                    BatterOutType::UnassistedOut { fielder } => {
+                        assert_eq!(fielder, 3);
+                    }
+                    other => panic!("expected UnassistedOut, found {other:?}"),
+                }
+            }
+            other => panic!("expected BatterOut command, found {other:?}"),
+        }
     }
 
     #[test]
     fn test_invalid_batter_out_fielder_rejected() {
         let cmd = single(parse_engine_commands("7 F10"));
         assert!(matches!(cmd, EngineCommand::Unknown(_)));
+    }
+
+    #[test]
+    fn test_unassisted_out_batter_implicit() {
+        let cmd = single(parse_engine_commands("3"));
+
+        match cmd {
+            EngineCommand::DefensivePlay(play) => {
+                assert_eq!(play.outs.len(), 1);
+
+                match &play.outs[0].kind {
+                    DefensiveOutKind::UnassistedOut { fielder } => {
+                        assert_eq!(*fielder, 3);
+                    }
+                    other => panic!("expected UnassistedOut, found {other:?}"),
+                }
+            }
+            other => panic!("expected DefensivePlay, found {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_unassisted_in_multi_play() {
+        let cmd = single(parse_engine_commands("8 5, 9 54, 1 o5 1b"));
+
+        match cmd {
+            EngineCommand::DefensivePlay(play) => {
+                assert_eq!(play.outs.len(), 2);
+                assert_eq!(play.safe_advances.len(), 1);
+            }
+            other => panic!("expected DefensivePlay, found {other:?}"),
+        }
     }
 }

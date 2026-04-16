@@ -22,7 +22,7 @@ fn ensure_inning(vec: &mut Vec<u16>, inning: u32) {
     }
 }
 
-fn add_runs_to_score(state: &mut GameState, runs: u32) {
+pub fn add_runs_to_score(state: &mut GameState, runs: u32) {
     if runs == 0 {
         return;
     }

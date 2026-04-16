@@ -1,3 +1,4 @@
+use crate::RunnerDest;
 use crate::models::field_zone::FieldZone;
 use crate::models::game_state::BatterOrder;
 use crate::models::runner::RunnerOverride;
@@ -37,6 +38,9 @@ pub enum PlateAppearanceStep {
     Walk,
     Strikeout,
     Out,
+    UnassistedOut {
+        fielder: u8,
+    },
     GroundOut {
         sequence: String,
     },
@@ -49,6 +53,10 @@ pub enum PlateAppearanceStep {
     },
     InfieldFly {
         fielder: u8,
+    },
+    FieldersChoice {
+        fielder: u8,
+        reached_base: RunnerDest,
     },
 }
 
@@ -66,6 +74,7 @@ impl fmt::Display for PlateAppearanceStep {
             PlateAppearanceStep::Strikeout => write!(f, "K"),
             PlateAppearanceStep::Out => write!(f, "OUT"),
 
+            PlateAppearanceStep::UnassistedOut { .. } => write!(f, "UO"),
             PlateAppearanceStep::GroundOut { .. } => write!(f, "GO"),
             PlateAppearanceStep::FlyOut {
                 in_foul_territory: false,
@@ -77,6 +86,7 @@ impl fmt::Display for PlateAppearanceStep {
             } => write!(f, "FFO"),
             PlateAppearanceStep::LineOut { .. } => write!(f, "LO"),
             PlateAppearanceStep::InfieldFly { .. } => write!(f, "IF"),
+            PlateAppearanceStep::FieldersChoice { .. } => write!(f, "FC"),
         }
     }
 }
@@ -105,6 +115,9 @@ pub enum PlateAppearanceOutcome {
         zone: Option<FieldZone>,
     },
 
+    UnassistedOut {
+        fielder: u8,
+    },
     GroundOut {
         sequence: String,
     },
@@ -117,6 +130,10 @@ pub enum PlateAppearanceOutcome {
     },
     InfieldFly {
         fielder: u8,
+    },
+    FieldersChoice {
+        fielder: u8,
+        reached_base: RunnerDest,
     },
 }
 
@@ -158,6 +175,7 @@ impl PlateAppearanceOutcome {
             Self::Walk => "BB",
             Self::Strikeout(_) => "K",
             Self::Out => "OUT",
+            Self::UnassistedOut { .. } => "UO",
             Self::GroundOut { .. } => "GO",
             Self::FlyOut {
                 in_foul_territory: false,
@@ -169,6 +187,7 @@ impl PlateAppearanceOutcome {
             } => "FFO",
             Self::LineOut { .. } => "LO",
             Self::InfieldFly { .. } => "IF",
+            Self::FieldersChoice { .. } => "FC",
         }
     }
 
@@ -182,6 +201,7 @@ impl PlateAppearanceOutcome {
             Self::Walk => "BB",
             Self::Strikeout(_) => "K",
             Self::Out => "OUT",
+            Self::UnassistedOut { .. } => "Unassisted out",
             Self::GroundOut { .. } => "Ground out",
             Self::FlyOut {
                 in_foul_territory: false,
@@ -193,6 +213,7 @@ impl PlateAppearanceOutcome {
             } => "Foul fly out",
             Self::LineOut { .. } => "Line out",
             Self::InfieldFly { .. } => "Infield fly",
+            Self::FieldersChoice { .. } => "Fielder's choice",
         }
     }
 }

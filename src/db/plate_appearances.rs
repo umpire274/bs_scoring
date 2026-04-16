@@ -1,8 +1,8 @@
-use rusqlite::{Connection, Result, params};
-
+use crate::core::play_ball_apply::serialize_runner_dest;
 use crate::models::game_state::BatterOrder;
 use crate::models::plate_appearance::{HitOutcomeData, PlateAppearance};
 use crate::models::runner::RunnerOverride;
+use rusqlite::{Connection, Result, params};
 
 #[derive(Debug, Clone)]
 pub struct PlateAppearanceRow {
@@ -69,6 +69,16 @@ pub fn append_plate_appearance(
             Some(serialize_hit_outcome_data(zone)),
         ),
 
+        crate::models::plate_appearance::PlateAppearanceOutcome::UnassistedOut { fielder } => (
+            "unassisted_out".to_string(),
+            Some(
+                serde_json::json!({
+                    "fielder": fielder,
+                })
+                .to_string(),
+            ),
+        ),
+
         crate::models::plate_appearance::PlateAppearanceOutcome::GroundOut { sequence } => (
             "ground_out".to_string(),
             Some(
@@ -108,6 +118,20 @@ pub fn append_plate_appearance(
             Some(
                 serde_json::json!({
                     "fielder": fielder,
+                })
+                .to_string(),
+            ),
+        ),
+
+        crate::models::plate_appearance::PlateAppearanceOutcome::FieldersChoice {
+            fielder,
+            reached_base,
+        } => (
+            "fielders_choice".to_string(),
+            Some(
+                serde_json::json!({
+                    "fielder": fielder,
+                    "reached_base": serialize_runner_dest(*reached_base),
                 })
                 .to_string(),
             ),

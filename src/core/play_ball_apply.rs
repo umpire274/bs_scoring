@@ -4,9 +4,11 @@
 //! describing what happened (UI events, domain events, PA record, runner movements).
 //! No DB access — the engine loop handles persistence.
 
-use crate::BatterOrder;
 use crate::commands::types::EngineCommand;
 use crate::core::runner_logic;
+use crate::core::scoring::batter_outs::{
+    DefensiveOutKind, DefensivePlayCommand, DefensivePlayTarget,
+};
 use crate::core::scoring::BatterOutType;
 use crate::db::runner_movements::RunnerMovementInsert;
 use crate::models::events::{
@@ -19,7 +21,8 @@ use crate::models::plate_appearance::{
 use crate::models::runner::RunnerOverride;
 use crate::models::types::{GameStatus, Pitch};
 use crate::ui::events::UiEvent;
-
+use crate::{BatterOrder, HalfInning, RunnerDest};
+use crate::core::runner_logic::add_runs_to_score;
 // ─── Result type ──────────────────────────────────────────────────────────────
 
 #[derive(Default)]
@@ -114,6 +117,8 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
 
         EngineCommand::StealBase { order, dest } => apply_steal(state, order, dest),
 
+        EngineCommand::DefensivePlay(play) => apply_defensive_play_command(state, play),
+
         EngineCommand::Unknown(s) => ApplyResult {
             events: vec![UiEvent::Error(format!("Unknown command: {s}"))],
             ..Default::default()
@@ -184,6 +189,10 @@ fn build_pa_sequence_with_terminal_step(
 
 fn batter_out_terminal_step(out_type: &BatterOutType) -> PlateAppearanceStep {
     match out_type {
+        BatterOutType::UnassistedOut { fielder } => {
+            PlateAppearanceStep::UnassistedOut { fielder: *fielder }
+        }
+
         BatterOutType::GroundOut { sequence } => PlateAppearanceStep::GroundOut {
             sequence: sequence.as_hyphenated_string(),
         },
@@ -493,33 +502,33 @@ fn apply_steal(
         2 => "2B",
         _ => "3B",
     };
+
     let end_base: &'static str = match dest {
         RunnerDest::Second => "2B",
         RunnerDest::Third => "3B",
         RunnerDest::Score => "HOME",
         RunnerDest::First => "1B",
     };
-    let scored = dest == RunnerDest::Score;
 
+    let scored = dest == RunnerDest::Score;
     let log_msg = format!("[{order}] {first_name} {last_name} ruba la {end_base}");
 
-    // Move the runner in state.
+    // Remove runner from the source base.
     match expected {
         1 => state.on_1b = None,
         2 => state.on_2b = None,
         3 => state.on_3b = None,
         _ => {}
     }
+
+    // Apply destination and scoring.
     match dest {
         RunnerDest::Second => state.on_2b = Some(order),
         RunnerDest::Third => state.on_3b = Some(order),
-        RunnerDest::Score => match state.half {
-            crate::models::types::HalfInning::Top => state.score.away += 1,
-            crate::models::types::HalfInning::Bottom => state.score.home += 1,
-        },
+        RunnerDest::Score => add_runs_to_score(state, 1),
         RunnerDest::First => {}
     }
-
+    
     let rm = RunnerMovementInsert {
         game_id: 0,
         pa_seq: None,
@@ -576,6 +585,17 @@ fn apply_batter_out_command(
         };
     }
 
+    if let BatterOutType::InfieldFly { .. } = out_type {
+        let valid_infield_fly = state.outs < 2 && state.on_1b.is_some() && state.on_2b.is_some();
+
+        if !valid_infield_fly {
+            return ApplyResult {
+                events: vec![UiEvent::Error("Invalid infield fly situation.".to_string())],
+                ..Default::default()
+            };
+        }
+    }
+
     let mut events_ui: Vec<UiEvent> = Vec::new();
     let mut applied: Vec<DomainEvent> = Vec::new();
 
@@ -599,6 +619,11 @@ fn apply_batter_out_command(
     };
 
     let (description, pa_outcome) = match &out_type {
+        BatterOutType::UnassistedOut { fielder } => (
+            format!("Batter #{} out unassisted by {}.", batter_order, fielder),
+            PlateAppearanceOutcome::UnassistedOut { fielder: *fielder },
+        ),
+
         BatterOutType::GroundOut { sequence } => (
             format!(
                 "Batter #{} grounded out {}.",
@@ -664,5 +689,431 @@ fn apply_batter_out_command(
         exit: false,
         status_change: None,
         needs_next_at_bat: true,
+    }
+}
+
+fn apply_defensive_play_command(state: &mut GameState, play: DefensivePlayCommand) -> ApplyResult {
+    let (batter_id, batter_order, pitcher_id) = require_batter!(state);
+
+    let normalize_target = |target: &DefensivePlayTarget| -> DefensivePlayTarget {
+        match target {
+            DefensivePlayTarget::Runner(order) if *order == batter_order => {
+                DefensivePlayTarget::Batter
+            }
+            other => other.clone(),
+        }
+    };
+
+    let normalized_outs: Vec<(DefensivePlayTarget, DefensiveOutKind)> = play
+        .outs
+        .iter()
+        .map(|out| (normalize_target(&out.target), out.kind.clone()))
+        .collect();
+
+    let normalized_fc: Vec<(DefensivePlayTarget, u8, RunnerDest)> = play
+        .safe_advances
+        .iter()
+        .map(|fc| (normalize_target(&fc.target), fc.fielder, fc.reached_base))
+        .collect();
+
+    let batter_out_count = normalized_outs
+        .iter()
+        .filter(|(target, _)| matches!(target, DefensivePlayTarget::Batter))
+        .count();
+
+    let batter_fc_count = normalized_fc
+        .iter()
+        .filter(|(target, _, _)| matches!(target, DefensivePlayTarget::Batter))
+        .count();
+
+    if batter_out_count > 1 {
+        return ApplyResult {
+            events: vec![UiEvent::Error(
+                "Invalid defensive play: multiple batter outs found.".to_string(),
+            )],
+            ..Default::default()
+        };
+    }
+
+    if batter_fc_count > 1 {
+        return ApplyResult {
+            events: vec![UiEvent::Error(
+                "Invalid defensive play: multiple batter fielder's choices found.".to_string(),
+            )],
+            ..Default::default()
+        };
+    }
+
+    if batter_out_count > 0 && batter_fc_count > 0 {
+        return ApplyResult {
+            events: vec![UiEvent::Error(
+                "Invalid defensive play: batter cannot be both out and safe.".to_string(),
+            )],
+            ..Default::default()
+        };
+    }
+
+    if batter_out_count == 0 && batter_fc_count == 0 {
+        return ApplyResult {
+            events: vec![UiEvent::Error(
+                "Invalid defensive play: batter result is missing.".to_string(),
+            )],
+            ..Default::default()
+        };
+    }
+
+    // Infield Fly validation must happen here too, because commands like `if4`
+    // are parsed as DefensivePlayCommand, not legacy BatterOut.
+    for (target, kind) in &normalized_outs {
+        if matches!(target, DefensivePlayTarget::Batter)
+            && matches!(kind, DefensiveOutKind::InfieldFly { .. })
+        {
+            let valid_infield_fly =
+                state.outs < 2 && state.on_1b.is_some() && state.on_2b.is_some();
+
+            if !valid_infield_fly {
+                return ApplyResult {
+                    events: vec![UiEvent::Error("Invalid infield fly situation.".to_string())],
+                    ..Default::default()
+                };
+            }
+        }
+    }
+
+    let outs_before = state.outs;
+    let outs_gained = normalized_outs.len() as u8;
+    let outs_after = state.outs.saturating_add(outs_gained);
+
+    let batter_out = normalized_outs
+        .iter()
+        .find(|(target, _)| matches!(target, DefensivePlayTarget::Batter));
+
+    let batter_fc = normalized_fc
+        .iter()
+        .find(|(target, _, _)| matches!(target, DefensivePlayTarget::Batter));
+
+    let final_step = if let Some((_, out_kind)) = batter_out {
+        match out_kind {
+            DefensiveOutKind::UnassistedOut { fielder } => {
+                PlateAppearanceStep::UnassistedOut { fielder: *fielder }
+            }
+            DefensiveOutKind::GroundOut { sequence } => PlateAppearanceStep::GroundOut {
+                sequence: sequence.as_hyphenated_string(),
+            },
+            DefensiveOutKind::FlyOut {
+                fielder,
+                in_foul_territory,
+            } => PlateAppearanceStep::FlyOut {
+                fielder: *fielder,
+                in_foul_territory: *in_foul_territory,
+            },
+            DefensiveOutKind::LineOut { fielder } => {
+                PlateAppearanceStep::LineOut { fielder: *fielder }
+            }
+            DefensiveOutKind::InfieldFly { fielder } => {
+                PlateAppearanceStep::InfieldFly { fielder: *fielder }
+            }
+        }
+    } else {
+        let (_, fielder, reached_base) = batter_fc.expect("batter_fc already validated");
+        PlateAppearanceStep::FieldersChoice {
+            fielder: *fielder,
+            reached_base: *reached_base,
+        }
+    };
+
+    let final_sequence = build_pa_sequence_with_terminal_step(state, final_step);
+    let pitches_in_pa = final_sequence.len() as u32;
+
+    let pa_outcome = if let Some((_, out_kind)) = batter_out {
+        match out_kind {
+            DefensiveOutKind::UnassistedOut { fielder } => {
+                PlateAppearanceOutcome::UnassistedOut { fielder: *fielder }
+            }
+            DefensiveOutKind::GroundOut { sequence } => PlateAppearanceOutcome::GroundOut {
+                sequence: sequence.as_hyphenated_string(),
+            },
+            DefensiveOutKind::FlyOut {
+                fielder,
+                in_foul_territory,
+            } => PlateAppearanceOutcome::FlyOut {
+                fielder: *fielder,
+                in_foul_territory: *in_foul_territory,
+            },
+            DefensiveOutKind::LineOut { fielder } => {
+                PlateAppearanceOutcome::LineOut { fielder: *fielder }
+            }
+            DefensiveOutKind::InfieldFly { fielder } => {
+                PlateAppearanceOutcome::InfieldFly { fielder: *fielder }
+            }
+        }
+    } else {
+        let (_, fielder, reached_base) = batter_fc.expect("batter_fc already validated");
+        PlateAppearanceOutcome::FieldersChoice {
+            fielder: *fielder,
+            reached_base: *reached_base,
+        }
+    };
+
+    let half_str = match state.half {
+        HalfInning::Top => "Top",
+        HalfInning::Bottom => "Bottom",
+    };
+
+    let mut runner_movements: Vec<RunnerMovementInsert> = Vec::new();
+
+    for (target, out_kind) in &normalized_outs {
+        let (runner_id, order, start_base) = match target {
+            DefensivePlayTarget::Batter => (Some(batter_id), batter_order, "BAT"),
+            DefensivePlayTarget::Runner(order) => {
+                (None, *order, runner_start_base_label(state, *order))
+            }
+        };
+
+        let advancement_type = match out_kind {
+            DefensiveOutKind::UnassistedOut { .. } => "unassisted_out",
+            DefensiveOutKind::GroundOut { .. } => "ground_out",
+            DefensiveOutKind::FlyOut { .. } => "fly_out",
+            DefensiveOutKind::LineOut { .. } => "line_out",
+            DefensiveOutKind::InfieldFly { .. } => "infield_fly",
+        };
+
+        runner_movements.push(RunnerMovementInsert {
+            game_id: 0,
+            pa_seq: None,
+            game_event_id: None,
+            inning: state.inning,
+            half_inning: half_str.to_string(),
+            runner_id,
+            batter_order: order,
+            start_base,
+            end_base: "OUT",
+            advancement_type,
+            is_out: true,
+            scored: false,
+            is_earned: true,
+        });
+    }
+
+    for (target, _fielder, reached_base) in &normalized_fc {
+        let (runner_id, order, start_base) = match target {
+            DefensivePlayTarget::Batter => (Some(batter_id), batter_order, "BAT"),
+            DefensivePlayTarget::Runner(order) => {
+                (None, *order, runner_start_base_label(state, *order))
+            }
+        };
+
+        runner_movements.push(RunnerMovementInsert {
+            game_id: 0,
+            pa_seq: None,
+            game_event_id: None,
+            inning: state.inning,
+            half_inning: half_str.to_string(),
+            runner_id,
+            batter_order: order,
+            start_base,
+            end_base: runner_dest_to_base_label(*reached_base),
+            advancement_type: "fielders_choice",
+            is_out: false,
+            scored: matches!(reached_base, RunnerDest::Score),
+            is_earned: true,
+        });
+    }
+
+    let mut events_ui: Vec<UiEvent> = Vec::new();
+
+    for (target, out_kind) in &normalized_outs {
+        let line = match (target, out_kind) {
+            (DefensivePlayTarget::Batter, DefensiveOutKind::UnassistedOut { fielder }) => {
+                format!("Batter out unassisted by {}.", fielder)
+            }
+            (DefensivePlayTarget::Batter, DefensiveOutKind::GroundOut { sequence }) => {
+                format!("Batter grounded out {}.", sequence.as_hyphenated_string())
+            }
+            (
+                DefensivePlayTarget::Batter,
+                DefensiveOutKind::FlyOut {
+                    fielder,
+                    in_foul_territory: false,
+                },
+            ) => format!("Batter flied out to F{}.", fielder),
+            (
+                DefensivePlayTarget::Batter,
+                DefensiveOutKind::FlyOut {
+                    fielder,
+                    in_foul_territory: true,
+                },
+            ) => format!("Batter fouled out to FF{}.", fielder),
+            (DefensivePlayTarget::Batter, DefensiveOutKind::LineOut { fielder }) => {
+                format!("Batter lined out to L{}.", fielder)
+            }
+            (DefensivePlayTarget::Batter, DefensiveOutKind::InfieldFly { fielder }) => {
+                format!("Batter out on infield fly to IF{}.", fielder)
+            }
+
+            (DefensivePlayTarget::Runner(order), DefensiveOutKind::UnassistedOut { fielder }) => {
+                format!("Runner #{} out unassisted by {}.", order, fielder)
+            }
+            (DefensivePlayTarget::Runner(order), DefensiveOutKind::GroundOut { sequence }) => {
+                format!(
+                    "Runner #{} out on {}.",
+                    order,
+                    sequence.as_hyphenated_string()
+                )
+            }
+            (
+                DefensivePlayTarget::Runner(order),
+                DefensiveOutKind::FlyOut {
+                    fielder,
+                    in_foul_territory: false,
+                },
+            ) => format!("Runner #{} out on F{}.", order, fielder),
+            (
+                DefensivePlayTarget::Runner(order),
+                DefensiveOutKind::FlyOut {
+                    fielder,
+                    in_foul_territory: true,
+                },
+            ) => format!("Runner #{} out on FF{}.", order, fielder),
+            (DefensivePlayTarget::Runner(order), DefensiveOutKind::LineOut { fielder }) => {
+                format!("Runner #{} out on L{}.", order, fielder)
+            }
+            (DefensivePlayTarget::Runner(order), DefensiveOutKind::InfieldFly { fielder }) => {
+                format!("Runner #{} out on IF{}.", order, fielder)
+            }
+        };
+
+        events_ui.push(UiEvent::Line(line));
+    }
+
+    for (target, fielder, reached_base) in &normalized_fc {
+        let line = match target {
+            DefensivePlayTarget::Batter => format!(
+                "Batter safe on fielder's choice by {} to {}.",
+                fielder,
+                runner_dest_to_base_label(*reached_base)
+            ),
+            DefensivePlayTarget::Runner(order) => format!(
+                "Runner #{} safe on fielder's choice by {} to {}.",
+                order,
+                fielder,
+                runner_dest_to_base_label(*reached_base)
+            ),
+        };
+
+        events_ui.push(UiEvent::Line(line));
+    }
+
+    let mut applied: Vec<DomainEvent> = Vec::new();
+
+    if outs_gained > 0 {
+        applied.push(DomainEvent::OutRecorded(OutRecordedData {
+            outs_before,
+            outs_after,
+        }));
+    }
+
+    applied.push(DomainEvent::CountReset);
+
+    let plate_appearance = PlateAppearance {
+        inning: state.inning,
+        half: state.half,
+        batter_id,
+        batter_order,
+        pitcher_id,
+        pitches: pitches_in_pa,
+        pitches_sequence: final_sequence,
+        outcome: pa_outcome,
+        outs: outs_after,
+        runner_overrides: vec![],
+    };
+
+    ApplyResult {
+        events: events_ui,
+        persisted: vec![],
+        applied,
+        plate_appearance: Some(plate_appearance),
+        runner_movements,
+        exit: false,
+        status_change: None,
+        needs_next_at_bat: true,
+    }
+}
+
+fn runner_dest_to_base_label(dest: RunnerDest) -> &'static str {
+    match dest {
+        RunnerDest::First => "1B",
+        RunnerDest::Second => "2B",
+        RunnerDest::Third => "3B",
+        RunnerDest::Score => "HOME",
+    }
+}
+
+pub fn serialize_runner_dest(dest: RunnerDest) -> &'static str {
+    match dest {
+        RunnerDest::First => "1B",
+        RunnerDest::Second => "2B",
+        RunnerDest::Third => "3B",
+        RunnerDest::Score => "HOME",
+    }
+}
+
+pub fn apply_batter_fielders_choice(state: &mut GameState, batter_order: u8, reached_base: RunnerDest) {
+    match reached_base {
+        RunnerDest::First => {
+            // Force existing runners only as needed to free 1B.
+            if state.on_1b.is_some() {
+                if state.on_2b.is_some() {
+                    if state.on_3b.is_some() {
+                        // Runner on 3B is forced home.
+                        state.on_3b = None;
+                    }
+                    // Runner on 2B is forced to 3B.
+                    state.on_3b = state.on_2b;
+                }
+                // Runner on 1B is forced to 2B.
+                state.on_2b = state.on_1b;
+            }
+
+            state.on_1b = Some(batter_order);
+        }
+
+        RunnerDest::Second => {
+            // Clear destination and place batter there.
+            // No automatic force-chain here beyond the target base:
+            // caller is making an explicit scoring decision.
+            if state.on_2b.is_some() {
+                if state.on_3b.is_some() {
+                    state.on_3b = None;
+                }
+                state.on_3b = state.on_2b;
+            }
+
+            state.on_2b = Some(batter_order);
+        }
+
+        RunnerDest::Third => {
+            if state.on_3b.is_some() {
+                state.on_3b = None;
+            }
+
+            state.on_3b = Some(batter_order);
+        }
+
+        RunnerDest::Score => {
+            // Batter reaches home; base occupancy unchanged.
+        }
+    }
+}
+
+fn runner_start_base_label(state: &GameState, order: u8) -> &'static str {
+    if state.on_1b == Some(order) {
+        "1B"
+    } else if state.on_2b == Some(order) {
+        "2B"
+    } else if state.on_3b == Some(order) {
+        "3B"
+    } else {
+        "UNK"
     }
 }
