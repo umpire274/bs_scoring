@@ -1,3 +1,4 @@
+use crate::core::play_ball_apply::apply_batter_fielders_choice;
 use crate::core::runner_logic;
 use crate::db::plate_appearances::PlateAppearanceRow;
 use crate::engine::play_ball::{bump_order, parse_pa_sequence};
@@ -235,10 +236,12 @@ fn apply_plate_appearance_core(
 
                 PlateAppearanceStep::Strikeout
                 | PlateAppearanceStep::Out
+                | PlateAppearanceStep::UnassistedOut { .. }
                 | PlateAppearanceStep::GroundOut { .. }
                 | PlateAppearanceStep::FlyOut { .. }
                 | PlateAppearanceStep::LineOut { .. }
                 | PlateAppearanceStep::InfieldFly { .. }
+                | PlateAppearanceStep::FieldersChoice { .. }
                 | PlateAppearanceStep::Single
                 | PlateAppearanceStep::Double
                 | PlateAppearanceStep::Triple
@@ -257,7 +260,7 @@ fn apply_plate_appearance_core(
 
     state.current_pitcher_id = Some(pa.pitcher_id);
 
-    // Outcome effects — replay uses automatic advancement (no override data stored yet)
+    // Outcome effects — replay uses automatic advancement only for simple cases.
     match &pa.outcome {
         crate::models::plate_appearance::PlateAppearanceOutcome::Walk => {
             if apply_walk_base_advancement {
@@ -267,11 +270,20 @@ fn apply_plate_appearance_core(
 
         crate::models::plate_appearance::PlateAppearanceOutcome::Strikeout(_)
         | crate::models::plate_appearance::PlateAppearanceOutcome::Out
+        | crate::models::plate_appearance::PlateAppearanceOutcome::UnassistedOut { .. }
         | crate::models::plate_appearance::PlateAppearanceOutcome::GroundOut { .. }
         | crate::models::plate_appearance::PlateAppearanceOutcome::FlyOut { .. }
         | crate::models::plate_appearance::PlateAppearanceOutcome::LineOut { .. }
         | crate::models::plate_appearance::PlateAppearanceOutcome::InfieldFly { .. } => {
             state.outs = pa.outs;
+        }
+
+        crate::models::plate_appearance::PlateAppearanceOutcome::FieldersChoice {
+            reached_base,
+            ..
+        } => {
+            state.outs = pa.outs;
+            apply_batter_fielders_choice(state, pa.batter_order, *reached_base);
         }
 
         crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. } => {
@@ -488,6 +500,115 @@ pub fn apply_plate_appearance_row(state: &mut GameState, row: &PlateAppearanceRo
         "home_run" => {
             let data = parse_hit_outcome_data(row.outcome_data.as_deref());
             crate::models::plate_appearance::PlateAppearanceOutcome::HomeRun { zone: data.zone }
+        }
+
+        "ground_out" => {
+            let value: serde_json::Value =
+                serde_json::from_str(row.outcome_data.as_deref().unwrap_or("{}"))
+                    .unwrap_or_else(|_| serde_json::json!({}));
+
+            let sequence = value
+                .get("sequence")
+                .and_then(|v| v.as_str())
+                .unwrap_or("-")
+                .to_string();
+
+            crate::models::plate_appearance::PlateAppearanceOutcome::GroundOut { sequence }
+        }
+
+        "fly_out" => {
+            let value: serde_json::Value =
+                serde_json::from_str(row.outcome_data.as_deref().unwrap_or("{}"))
+                    .unwrap_or_else(|_| serde_json::json!({}));
+
+            let fielder = value
+                .get("fielder")
+                .and_then(|v| v.as_u64())
+                .and_then(|v| u8::try_from(v).ok())
+                .unwrap_or(0);
+
+            let in_foul_territory = value
+                .get("in_foul_territory")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            crate::models::plate_appearance::PlateAppearanceOutcome::FlyOut {
+                fielder,
+                in_foul_territory,
+            }
+        }
+
+        "line_out" => {
+            let value: serde_json::Value =
+                serde_json::from_str(row.outcome_data.as_deref().unwrap_or("{}"))
+                    .unwrap_or_else(|_| serde_json::json!({}));
+
+            let fielder = value
+                .get("fielder")
+                .and_then(|v| v.as_u64())
+                .and_then(|v| u8::try_from(v).ok())
+                .unwrap_or(0);
+
+            crate::models::plate_appearance::PlateAppearanceOutcome::LineOut { fielder }
+        }
+
+        "infield_fly" => {
+            let value: serde_json::Value =
+                serde_json::from_str(row.outcome_data.as_deref().unwrap_or("{}"))
+                    .unwrap_or_else(|_| serde_json::json!({}));
+
+            let fielder = value
+                .get("fielder")
+                .and_then(|v| v.as_u64())
+                .and_then(|v| u8::try_from(v).ok())
+                .unwrap_or(0);
+
+            crate::models::plate_appearance::PlateAppearanceOutcome::InfieldFly { fielder }
+        }
+
+        "unassisted_out" => {
+            let value: serde_json::Value =
+                serde_json::from_str(row.outcome_data.as_deref().unwrap_or("{}"))
+                    .unwrap_or_else(|_| serde_json::json!({}));
+
+            let fielder = value
+                .get("fielder")
+                .and_then(|v| v.as_u64())
+                .and_then(|v| u8::try_from(v).ok())
+                .unwrap_or(0);
+
+            crate::models::plate_appearance::PlateAppearanceOutcome::UnassistedOut { fielder }
+        }
+
+        "fielders_choice" => {
+            let value: serde_json::Value =
+                serde_json::from_str(row.outcome_data.as_deref().unwrap_or("{}"))
+                    .unwrap_or_else(|_| serde_json::json!({}));
+
+            let fielder = value
+                .get("fielder")
+                .and_then(|v| v.as_u64())
+                .and_then(|v| u8::try_from(v).ok())
+                .unwrap_or(0);
+
+            let reached_base = match value
+                .get("reached_base")
+                .and_then(|v| v.as_str())
+                .unwrap_or("1B")
+                .to_ascii_uppercase()
+                .as_str()
+            {
+                "1B" => RunnerDest::First,
+                "2B" => RunnerDest::Second,
+                "3B" => RunnerDest::Third,
+                "HOME" | "SC" => RunnerDest::Score,
+                _ => RunnerDest::First,
+            };
+
+            crate::models::plate_appearance::PlateAppearanceOutcome::FieldersChoice {
+                fielder,
+                reached_base,
+            }
         }
 
         _ => crate::models::plate_appearance::PlateAppearanceOutcome::Out,

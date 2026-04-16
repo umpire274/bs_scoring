@@ -1001,10 +1001,12 @@ fn outcome_symbol_from_row(pa: &PlateAppearanceRow) -> String {
         "double" | "2h" => "2H".to_string(),
         "triple" | "3h" => "3H".to_string(),
         "home_run" | "hr" => "HR".to_string(),
+        "unassisted_out" | "uo" => "UO".to_string(),
         "ground_out" | "go" => "GO".to_string(),
         "fly_out" | "fo" => "FO".to_string(),
         "line_out" | "lo" => "LO".to_string(),
         "infield_fly" | "if" => "IF".to_string(),
+        "fielders_choice" | "fc" => "FC".to_string(),
         _ => "OUT".to_string(),
     };
 
@@ -1019,6 +1021,16 @@ fn outcome_symbol_from_row(pa: &PlateAppearanceRow) -> String {
             }
             base
         }
+
+        "unassisted_out" => {
+            if let Some(v) = parse_outcome_json(pa.outcome_data.as_deref())
+                && let Some(fielder) = get_fielder(&v)
+            {
+                return format!("Unassisted out: {fielder}");
+            }
+            "Unassisted out".to_string()
+        }
+
         "ground_out" => {
             if let Some(v) = parse_outcome_json(pa.outcome_data.as_deref())
                 && let Some(sequence) = get_sequence(&v)
@@ -1060,6 +1072,16 @@ fn outcome_symbol_from_row(pa: &PlateAppearanceRow) -> String {
             }
             "Infield fly".to_string()
         }
+
+        "fielders_choice" => {
+            if let Some(v) = parse_outcome_json(pa.outcome_data.as_deref())
+                && let Some(fielder) = get_fielder(&v)
+            {
+                return format!("Fielder's choice: O{fielder}");
+            }
+            "Fielder's choice".to_string()
+        }
+
         _ => base,
     }
 }
@@ -1115,21 +1137,18 @@ fn replay_plate_appearances_and_log(
         }
         let order = rm.batter_order;
         match rm.start_base.as_str() {
-            "1B" => {
-                if state.on_1b == Some(order) {
-                    state.on_1b = None;
-                }
+            "1B" if state.on_1b == Some(order) => {
+                state.on_1b = None;
             }
-            "2B" => {
-                if state.on_2b == Some(order) {
-                    state.on_2b = None;
-                }
+
+            "2B" if state.on_2b == Some(order) => {
+                state.on_2b = None;
             }
-            "3B" => {
-                if state.on_3b == Some(order) {
-                    state.on_3b = None;
-                }
+
+            "3B" if state.on_3b == Some(order) => {
+                state.on_3b = None;
             }
+
             _ => {}
         }
         match rm.end_base.as_str() {
@@ -1165,7 +1184,7 @@ fn replay_plate_appearances_and_log(
             if rm.pa_seq == Some(pa.seq) {
                 apply_steal_state(state, rm);
                 pending_steal_logs.push(format!(
-                    "  [resume] [{}] ruba {}",
+                    "  [resume] [{}] steal {}",
                     rm.batter_order, rm.end_base
                 ));
                 sm_idx += 1;

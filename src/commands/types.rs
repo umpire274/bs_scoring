@@ -1,4 +1,5 @@
 use crate::core::scoring::BatterOutType;
+use crate::core::scoring::batter_outs::DefensivePlayCommand;
 use crate::models::field_zone::FieldZone;
 use crate::models::runner::RunnerOverride;
 use crate::models::types::GameStatus;
@@ -39,6 +40,8 @@ pub enum EngineCommand {
         order: BatterOrder,
         out_type: BatterOutType,
     },
+
+    DefensivePlay(DefensivePlayCommand),
 
     Unknown(String),
 }

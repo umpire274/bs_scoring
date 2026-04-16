@@ -27,19 +27,21 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 enum Focus {
     Log,
     Help,
+    Command,
 }
 
 /// Minimal TUI implementation:
-/// - scrollable output pane (above)
-/// - input prompt anchored at the bottom
-///
-/// This is a *structural* UI layer: the engine remains unchanged.
-/// Future steps can add richer styling, command history, better editing, etc.
+/// - scrollable output pane (left)
+/// - scoreboard + help on the right
+/// - one-line command input at the bottom
+/// - command history recall with Up/Down when Command has focus
 pub struct TuiUi {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     log: Vec<String>,
     input: String,
-    scroll: u16, // number of lines scrolled from the top
+    command_history: Vec<String>,
+    history_index: Option<usize>,
+    scroll: u16, // log scroll from top
     help_scroll: u16,
     focus: Focus,
     state: Option<GameState>,
@@ -104,6 +106,8 @@ impl TuiUi {
             terminal,
             log: Vec::new(),
             input: String::new(),
+            command_history: Vec::new(),
+            history_index: None,
             scroll: 0,
             help_scroll: 0,
             focus: Focus::Log,
@@ -114,13 +118,10 @@ impl TuiUi {
 
     fn push_line(&mut self, s: String) {
         self.log.push(s);
-        // auto-scroll to bottom (follow mode)
         self.scroll_to_bottom();
     }
 
     fn scroll_to_bottom(&mut self) {
-        // scroll is measured from the top; easiest is to clamp during render.
-        // Here we just keep it large; render will clamp to max.
         self.scroll = u16::MAX;
     }
 
@@ -178,6 +179,7 @@ impl TuiUi {
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(13), Constraint::Min(5)].as_ref())
             .split(right_pane);
+
         let help_viewport_h = right[1].height.saturating_sub(2);
         let help_lines = Self::help_line_count() as u16;
         let max_help_scroll = help_lines.saturating_sub(help_viewport_h);
@@ -186,6 +188,41 @@ impl TuiUi {
 
     pub fn set_state(&mut self, state: GameState) {
         self.state = Some(state);
+    }
+
+    fn recall_previous_command(&mut self) {
+        if self.command_history.is_empty() {
+            return;
+        }
+
+        let next_index = match self.history_index {
+            None => self.command_history.len().checked_sub(1),
+            Some(i) => i.checked_sub(1),
+        };
+
+        if let Some(i) = next_index {
+            self.history_index = Some(i);
+            self.input = self.command_history[i].clone();
+        }
+    }
+
+    fn recall_next_command(&mut self) {
+        if self.command_history.is_empty() {
+            return;
+        }
+
+        match self.history_index {
+            Some(i) if i + 1 < self.command_history.len() => {
+                let next = i + 1;
+                self.history_index = Some(next);
+                self.input = self.command_history[next].clone();
+            }
+            Some(_) => {
+                self.history_index = None;
+                self.input.clear();
+            }
+            None => {}
+        }
     }
 
     fn fit_two_columns(left: &str, right: &str, width: usize) -> String {
@@ -555,8 +592,8 @@ impl TuiUi {
         } else {
             (0, 0, 0)
         };
-        let pitcher_right = format!("(P {}: {}-{})", pitches, strikes, balls);
 
+        let pitcher_right = format!("(P {}: {}-{})", pitches, strikes, balls);
         let max_left = w.saturating_sub(Self::display_width(&pitcher_right) + 1);
 
         let pitcher_left = Self::format_player_name_for_scoreboard(
@@ -592,11 +629,11 @@ impl TuiUi {
     fn help_lines() -> Vec<Line<'static>> {
         vec![
             Line::from("Pitch commands"),
-            Line::from("  b   Ball"),
-            Line::from("  k   Called strike"),
-            Line::from("  s   Swinging strike"),
-            Line::from("  f   Foul"),
-            Line::from("  fl  Foul bunt"),
+            Line::from("  b          Ball"),
+            Line::from("  k          Called strike"),
+            Line::from("  s          Swinging strike"),
+            Line::from("  f          Foul"),
+            Line::from("  fl         Foul bunt"),
             Line::from(""),
             Line::from("Hit commands"),
             Line::from("  h  [zone]  Single"),
@@ -608,11 +645,30 @@ impl TuiUi {
             Line::from("  LL LF LC CF RC RF RL"),
             Line::from("  GLL LS MI RS GRL"),
             Line::from(""),
-            Line::from("Other commands"),
-            Line::from("  <n> st <base>  Steal (1 st 2b)"),
+            Line::from("Steal commands"),
+            Line::from("  <n> st <base>      Steal (1 st 2b, 3 st sc)"),
             Line::from(""),
-            Line::from("Tip"),
-            Line::from("  Commands are case-insensitive."),
+            Line::from("Out commands"),
+            Line::from("  <n> 63             Ground out"),
+            Line::from("  <n> 5              Unassisted out"),
+            Line::from("  <n> f8             Fly out"),
+            Line::from("  <n> ff2            Foul fly out"),
+            Line::from("  <n> l6             Line out"),
+            Line::from("  <n> if4            Infield fly"),
+            Line::from(""),
+            Line::from("Defensive play commands"),
+            Line::from("  63                 Batter implicit ground out"),
+            Line::from("  5                  Batter implicit unassisted out"),
+            Line::from("  f9                 Batter implicit fly out"),
+            Line::from("  l6                 Batter implicit line out"),
+            Line::from("  if4                Batter implicit infield fly"),
+            Line::from("  <n> o6 1b          Fielder's choice"),
+            Line::from("  9 64, 1 o6 1b      Multi-command defensive play"),
+            Line::from(""),
+            Line::from("Notes"),
+            Line::from("  - Commands are case-insensitive."),
+            Line::from("  - Fielder's choice requires an explicit base."),
+            Line::from("  - Infield fly is valid only with <2 outs and runners on 1B+2B."),
         ]
     }
 
@@ -625,6 +681,21 @@ impl TuiUi {
         let p = Paragraph::new(Text::from(Self::help_lines()))
             .wrap(Wrap { trim: false })
             .scroll((scroll, 0));
+
+        f.render_widget(p, inner);
+    }
+
+    fn render_command(f: &mut Frame, area: Rect, prompt: &str, input: &str, focused: bool) {
+        let title = if focused { "Command ►" } else { "Command" };
+        let block = Block::default().borders(Borders::ALL).title(title);
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let line = Line::from(format!("{prompt}{input}"));
+        let p = Paragraph::new(Text::from(vec![line]))
+            .wrap(Wrap { trim: false })
+            .style(Style::default());
+
         f.render_widget(p, inner);
     }
 
@@ -632,9 +703,11 @@ impl TuiUi {
         let focus_label = match focus {
             Focus::Log => "Log",
             Focus::Help => "Help",
+            Focus::Command => "Command",
         };
+
         let bar = format!(
-            " - focus on:{focus_label} - Tab:change focus ↑↓:scroll  PgUp/Dn:page  Home/End:top/bot"
+            " - focus on:{focus_label} - Tab:change focus ↑↓:scroll/history  PgUp/Dn:page  Home/End:top/bot"
         );
         let p = Paragraph::new(bar).style(Style::default());
         f.render_widget(p, area);
@@ -655,7 +728,6 @@ impl TuiUi {
         self.terminal.draw(move |f| {
             let size = f.area();
 
-            // Vertical split: main panels | shortcuts bar (1 line) | command box
             let outer = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints(
@@ -696,6 +768,7 @@ impl TuiUi {
             } else {
                 "Log"
             };
+
             let log_widget = Paragraph::new(text)
                 .block(Block::default().borders(Borders::ALL).title(log_title))
                 .wrap(Wrap { trim: false })
@@ -705,21 +778,15 @@ impl TuiUi {
             Self::render_scoreboard(ctx.as_ref(), state.as_ref(), f, scoreboard_area);
             Self::render_help(f, help_area, help_scroll, focus == Focus::Help);
             Self::render_shortcuts(f, shortcuts_area, focus);
+            Self::render_command(f, command_area, &prompt, &input, focus == Focus::Command);
 
-            let input_line = format!("{prompt}{input}");
+            let inner = Block::default().borders(Borders::ALL).inner(command_area);
+            let cursor_y = inner.y;
+            let cursor_x = inner.x + prompt.chars().count() as u16 + input.chars().count() as u16;
 
-            let input_widget = Paragraph::new(input_line)
-                .block(Block::default().borders(Borders::ALL).title("Command"))
-                .style(Style::default());
-
-            f.render_widget(input_widget, command_area);
-
-            let x =
-                command_area.x + 1 + prompt.chars().count() as u16 + input.chars().count() as u16;
-            let y = command_area.y + 1;
             f.set_cursor_position((
-                x.min(command_area.x + command_area.width.saturating_sub(2)),
-                y,
+                cursor_x.min(inner.x + inner.width.saturating_sub(1)),
+                cursor_y,
             ));
         })?;
 
@@ -746,6 +813,7 @@ impl Ui for TuiUi {
 
     fn read_command_line(&mut self, prompt: &str) -> Option<String> {
         self.input.clear();
+        self.history_index = None;
 
         loop {
             if self.render(prompt).is_err() {
@@ -775,54 +843,95 @@ impl Ui for TuiUi {
                     match code {
                         KeyCode::Enter => {
                             let line = self.input.trim().to_string();
+                            if !line.is_empty() {
+                                self.command_history.push(line.clone());
+                            }
+                            self.history_index = None;
                             return Some(line);
                         }
+
                         KeyCode::Backspace => {
                             self.input.pop();
+                            self.history_index = None;
                         }
-                        KeyCode::Char(c) => {
+
+                        KeyCode::Char(c)
                             if !modifiers.contains(KeyModifiers::CONTROL)
-                                && !modifiers.contains(KeyModifiers::ALT)
-                            {
-                                self.input.push(c);
-                            }
+                                && !modifiers.contains(KeyModifiers::ALT) =>
+                        {
+                            self.input.push(c);
+                            self.history_index = None;
                         }
+
                         KeyCode::Esc => {
                             self.input.clear();
+                            self.history_index = None;
                         }
+
                         KeyCode::Tab => {
                             self.focus = match self.focus {
                                 Focus::Log => Focus::Help,
-                                Focus::Help => Focus::Log,
+                                Focus::Help => Focus::Command,
+                                Focus::Command => Focus::Log,
                             };
                         }
+
                         KeyCode::Up => match self.focus {
                             Focus::Log => self.scroll_up(1),
-                            Focus::Help => self.help_scroll = self.help_scroll.saturating_sub(1),
+                            Focus::Help => {
+                                self.help_scroll = self.help_scroll.saturating_sub(1);
+                            }
+                            Focus::Command => self.recall_previous_command(),
                         },
+
                         KeyCode::Down => match self.focus {
                             Focus::Log => self.scroll_down(1),
-                            Focus::Help => self.help_scroll = self.help_scroll.saturating_add(1),
+                            Focus::Help => {
+                                self.help_scroll = self.help_scroll.saturating_add(1);
+                            }
+                            Focus::Command => self.recall_next_command(),
                         },
+
                         KeyCode::PageUp => match self.focus {
                             Focus::Log => self.scroll_up(10),
-                            Focus::Help => self.help_scroll = self.help_scroll.saturating_sub(10),
+                            Focus::Help => {
+                                self.help_scroll = self.help_scroll.saturating_sub(10);
+                            }
+                            Focus::Command => {}
                         },
+
                         KeyCode::PageDown => match self.focus {
                             Focus::Log => self.scroll_down(10),
-                            Focus::Help => self.help_scroll = self.help_scroll.saturating_add(10),
+                            Focus::Help => {
+                                self.help_scroll = self.help_scroll.saturating_add(10);
+                            }
+                            Focus::Command => {}
                         },
+
                         KeyCode::Home => match self.focus {
                             Focus::Log => self.scroll = 0,
                             Focus::Help => self.help_scroll = 0,
+                            Focus::Command => {
+                                if !self.command_history.is_empty() {
+                                    self.history_index = Some(0);
+                                    self.input = self.command_history[0].clone();
+                                }
+                            }
                         },
+
                         KeyCode::End => match self.focus {
                             Focus::Log => self.scroll_to_bottom(),
                             Focus::Help => self.help_scroll = u16::MAX,
+                            Focus::Command => {
+                                self.history_index = None;
+                                self.input.clear();
+                            }
                         },
+
                         _ => {}
                     }
                 }
+
                 Event::Resize(_, _) => {}
                 _ => {}
             }

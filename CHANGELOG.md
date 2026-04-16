@@ -5,6 +5,73 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.10.6] - 2026-04-16
+
+### Added
+
+- Added support for defensive out commands without explicit batting-order prefix for the current batter:
+    - `63`
+    - `5`
+    - `f9`
+    - `ff2`
+    - `l6`
+    - `if4`
+- Added support for unassisted outs (`UnassistedOut`) in parser, engine, persistence, resume, and TUI rendering.
+- Added support for fielder's choice commands with explicit destination base:
+    - `<order> o<n> <base>`
+    - examples: `1 o6 1b`, `1 o5 2b`
+- Added support for composed defensive-play commands, comma-separated, including out + fielder's choice combinations.
+- Added resume support for new defensive-play outcomes:
+    - ground out
+    - fly out
+    - foul fly out
+    - line out
+    - infield fly
+    - unassisted out
+    - fielder's choice
+- Added command history recall in the TUI Command input using arrow navigation when Command has focus.
+
+### Changed
+
+- Updated defensive-play engine flow to normalize explicit runner targets that match the current batter into
+  batter-target outcomes.
+- Updated `apply_defensive_play_command()` to build consistent plate appearances, runner movements, and UI log messages
+  for composed defensive plays.
+- Updated `apply_plate_appearance_core()` to replay `FieldersChoice` and `UnassistedOut` correctly during
+  resume/reconstruction.
+- Updated plate-appearance DB serialization/deserialization to support all newly introduced defensive outcomes.
+- Updated TUI help panel to document the currently supported command set.
+- Updated `SCORING_GUIDE.md` to reflect the actual v0.10.6 grammar and feature set.
+- Reworked TUI Command panel behavior:
+    - kept it as a single-line input
+    - added previous-command recall instead of multi-line visual history
+    - preserved Log/Help scrolling with focus switching via `Tab`
+
+### Fixed
+
+- Fixed defensive-play parsing for commands like `63`, which were previously misread as invalid explicit batting-order
+  prefixes.
+- Fixed resume/replay so `FieldersChoice` no longer falls back to generic `Out`.
+- Fixed scoreboard restoration after resume for fielder's-choice outcomes.
+- Fixed live scoreboard updates for batter fielder's choice with forced runner advancement.
+- Fixed inning-by-inning score updates for stolen home (`<order> st sc`) so both total score and inning partial score
+  are updated consistently.
+- Fixed resume consistency for stolen-home scoring.
+- Fixed infield-fly validation so `IF` is accepted only in valid rule situations:
+    - fewer than 2 outs
+    - runners on 1B and 2B
+- Fixed parser and engine support for legacy single-fielder outs such as `8 5`.
+- Fixed defensive-play handling so explicit batter references like `1 o6 1b` are recognized correctly when the current
+  batter is `#1`.
+
+### Notes
+
+- The current command grammar has grown significantly during v0.10.x.
+- A broader grammar/parser refactor is planned for `v0.11.0-alpha1`, with a cleaner canonical command model and
+  regex-assisted parsing.
+
+---
+
 ## [0.10.5-bugfix] - 2026-04-13
 
 ### 🐛 Fixes

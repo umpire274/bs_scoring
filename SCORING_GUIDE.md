@@ -1,6 +1,6 @@
-# ⚾ BS Scoring – Scoring Command Guide
+# ⚾ BS Scoring – Scoring Command Guide (v0.10.6)
 
-This document describes all commands available in the **Play Ball** engine (v0.9.1).
+This document describes all commands available in the **Play Ball** engine (v0.10.6).
 
 ---
 
@@ -12,11 +12,11 @@ The engine prompt is:
 
 Where:
 
-- `↑` / `↓` = Top / Bottom of the inning
-- Number = current inning
-- `OUTS` = outs in the current half-inning
-- `AWY` / `HOM` = team abbreviations
-- Score displayed as `AWY - HOM`
+* `↑` / `↓` = Top / Bottom of the inning
+* Number = current inning
+* `OUTS` = outs in the current half-inning
+* `AWY` / `HOM` = team abbreviations
+* Score displayed as `AWY - HOM`
 
 Multiple commands can be entered on the same line, comma-separated:
 
@@ -24,6 +24,7 @@ Multiple commands can be entered on the same line, comma-separated:
 b, b, f, k
 6 h, 5 2b
 k, 6 st 2b
+9 64, 1 o6 1b
 ```
 
 Commands are case-insensitive.
@@ -33,7 +34,7 @@ Commands are case-insensitive.
 ## 1) Engine control
 
 | Command          | Description                         |
-|------------------|-------------------------------------|
+| ---------------- | ----------------------------------- |
 | `exit` or `quit` | Exit engine and return to Main Menu |
 
 ---
@@ -41,7 +42,7 @@ Commands are case-insensitive.
 ## 2) Game start
 
 | Command    | Description                                                                 |
-|------------|-----------------------------------------------------------------------------|
+| ---------- | --------------------------------------------------------------------------- |
 | `playball` | Starts the game and loads the first at-bat (Away lineup, batting order #1). |
 
 `playball` is only allowed when the game has no previous events.
@@ -53,7 +54,7 @@ Commands are case-insensitive.
 Recorded for the **current plate appearance** (current batter vs current pitcher).
 
 | Command | Meaning                 |
-|---------|-------------------------|
+| ------- | ----------------------- |
 | `b`     | Ball                    |
 | `k`     | Called strike (looking) |
 | `s`     | Swinging strike         |
@@ -62,11 +63,11 @@ Recorded for the **current plate appearance** (current batter vs current pitcher
 
 Rules:
 
-- `k` and `s` always increment the strike count.
-- `f` increments strikes only if strikes < 2.
-- `fl` increments strikes even if strikes = 2 (foul bunt can be strike 3).
-- 4 balls → walk (BB); 3 strikes → strikeout (K).
-- After either outcome, the count resets and the engine advances to the next batter.
+* `k` and `s` always increment the strike count.
+* `f` increments strikes only if strikes < 2.
+* `fl` increments strikes even if strikes = 2 (foul bunt can be strike 3).
+* 4 balls → walk (BB); 3 strikes → strikeout (K).
+* After either outcome, the count resets and the engine advances to the next batter.
 
 ---
 
@@ -75,7 +76,7 @@ Rules:
 ### 4.1 Basic syntax
 
 | Command | Meaning     |
-|---------|-------------|
+| ------- | ----------- |
 | `h`     | Single (1B) |
 | `2h`    | Double (2B) |
 | `3h`    | Triple (3B) |
@@ -92,7 +93,7 @@ hr cf      → home run to center field
 ### 4.2 Field zones
 
 | Code  | Area                       |
-|-------|----------------------------|
+| ----- | -------------------------- |
 | `ll`  | Left line (down the line)  |
 | `lf`  | Left field                 |
 | `lc`  | Left-center                |
@@ -106,192 +107,191 @@ hr cf      → home run to center field
 | `rs`  | Right side infield         |
 | `grl` | Ground ball — right line   |
 
-Zone codes are case-insensitive (`LF`, `lf`, `Lf` are all valid).
-
-These commands also count as the **final pitch of the plate appearance** (pitch count +1).
+Zone codes are case-insensitive.
 
 ### 4.3 Batting-order prefix (optional)
 
-A batting-order number (1–9) can precede the hit command:
-
 ```
-6 h        → batter #6 hits a single
+6 h        → batter #6 singles
 4 2h lf    → batter #4 doubles to left field
 ```
 
-The prefix is informational context for the scorer; the engine identifies the current batter
-from the game state regardless.
-
 ### 4.4 Runner overrides
 
-By default, runners advance automatically based on the number of bases hit:
+Syntax:
 
-| Hit  | Automatic runner advancement |
-|------|------------------------------|
-| `h`  | All runners advance +1 base  |
-| `2h` | All runners advance +2 bases |
-| `3h` | All runners advance +3 bases |
-| `hr` | All runners score            |
-
-To override where a specific runner ends up, add **runner tokens** after the hit command,
-comma-separated. Runner tokens are identified by **batting order** (the order slot they
-occupied when they got on base).
-
-Syntax: `<batting_order> <destination>` or `<batting_order><destination>` (compact, no space)
+```
+<hit>, <order> <destination>
+```
 
 Valid destinations:
 
-| Destination            | Meaning                  |
-|------------------------|--------------------------|
-| `1b`                   | Stays / goes to 1st base |
-| `2b`                   | Stays / goes to 2nd base |
-| `3b`                   | Advances to 3rd base     |
-| `sc` / `score`/ `home` | Runner scores (run++)    |
+| Destination             | Meaning          |
+| ----------------------- | ---------------- |
+| `1b`                    | Goes to 1st base |
+| `2b`                    | Goes to 2nd base |
+| `3b`                    | Goes to 3rd base |
+| `sc` / `score` / `home` | Runner scores    |
 
-#### Examples
+Examples:
 
 ```
-h                          → single, all runners advance +1 automatically
-6 h, 5 2b                  → batter #6 singles; runner #5 stays on 2nd
-6 h, 5 2b, 3 sc            → batter #6 singles; runner #5 stays on 2nd; runner #3 scores
-6 h, 5 sc                  → batter #6 singles; runner #5 scores (aggressive read)
-4 2h, 2 sc                 → batter #4 doubles; runner #2 scores
-3h, 7 sc, 5 sc             → triple; both runners on base score
-9 h, 8 2b, 7sc, 6sc        → bases loaded single; #8→2B, #7 scores, #6 scores (compact)
-hr                         → home run; all runners and batter score automatically
+h
+6 h, 5 2b
+6 h, 5 2b, 3 sc
+4 2h, 2 sc
+hr
 ```
-
-**Notes:**
-
-- Any runner **not** mentioned in a runner token uses automatic advancement.
-- The batter cannot be listed as a runner override in the same command.
-- Two overrides cannot target the same base — the engine returns an error.
-- An override cannot target a base already occupied by a runner not listed in
-  the overrides — the engine returns an error with an explicit message.
-- Overrides are persisted in the plate appearance record and faithfully applied
-  when replaying the game state on resume.
 
 ---
 
-## 5) Steal command (v0.9.1)
+## 5) Steal commands
 
-Records a **successful stolen base** (safe outcome only). Caught stealing will
-be covered when the out commands are introduced.
-
-### Syntax
+Syntax:
 
 ```
 <order> st <destination>
 ```
 
-| Field           | Values                              |
-|-----------------|-------------------------------------|
-| `<order>`       | Batting order of the runner (1–9)   |
-| `st`            | Steal keyword (case-insensitive)    |
-| `<destination>` | `2b`, `3b`, `sc` / `score` / `home` |
-
-The runner must currently occupy the **expected source base**:
-
-| Destination | Required source |
-|-------------|-----------------|
-| `2b`        | Runner on 1B    |
-| `3b`        | Runner on 2B    |
-| `sc`        | Runner on 3B    |
-
-If the runner is not on the expected source base, the engine returns an error
-and the state is not modified.
-
-Stealing home (`sc`) increments the batting team's score by 1.
-
-### Examples
+Examples:
 
 ```
-6 st 2b              → runner #6 steals 2nd (must be on 1B)
-3 st 3b              → runner #3 steals 3rd (must be on 2B)
-7 st sc              → runner #7 steals home (must be on 3B)
-k, 6 st 2b           → called strike recorded, then runner #6 steals 2nd
-b, 6 st 2b           → ball recorded, then runner #6 steals 2nd
+6 st 2b
+3 st 3b
+7 st sc
 ```
 
-### Notes
+Rules:
 
-- `st 1b` is not a valid steal destination — the engine returns an error.
-- The steal command does **not** affect the current plate appearance count or
-  pitch sequence.
-- The steal is persisted as a `DomainEvent::StolenBase` and is replayed
-  faithfully on resume.
+* Runner must be on the correct base
+* `st sc` scores 1 run
+* Does not affect pitch count
 
 ---
 
-## 6) Game status commands
+## 6) Out commands (v0.10.6)
 
-These commands update the game status and **exit the engine**.
+### 6.1 Legacy batter-out syntax
 
-| Command   | New Status      | Description                    |
-|-----------|-----------------|--------------------------------|
-| `regular` | Regulation Game | Ends game as a regulation game |
-| `post`    | Postponed Game  | Marks game as postponed        |
-| `cancel`  | Cancelled Game  | Marks game as cancelled        |
-| `susp`    | Suspended Game  | Suspends the game              |
-| `forf`    | Forfeited Game  | Marks game as forfeited        |
-| `protest` | Protested Game  | Marks game as protested        |
+```
+<order> <out_token>
+```
+
+Examples:
+
+```
+6 63
+8 5
+7 f8
+7 ff2
+7 l6
+7 if4
+```
+
+### 6.2 Implicit batter syntax
+
+```
+63
+5
+f9
+l6
+if4
+```
+
+### 6.3 Fielder's choice
+
+```
+<order> o<fielder> <base>
+```
+
+Examples:
+
+```
+1 o6 1b
+1 o5 2b
+```
+
+Notes:
+
+* Base is mandatory
+
+### 6.4 Multi-command defensive plays
+
+Commands can be combined:
+
+```
+9 64, 1 o6 1b
+8 5, 9 54, 1 o5 1b
+l6, 1 64, 2 43
+```
+
+Rules:
+
+* Must include batter result
+* Cannot mix batter out and batter safe
+
+### 6.5 Infield fly rule
+
+Valid only when:
+
+* fewer than 2 outs
+* runner on 1B
+* runner on 2B
 
 ---
 
-## 7) Command format rules
+## 7) Game status commands
 
-- Commands are case-insensitive
-- Commands are comma-separated
-- Leading/trailing spaces are ignored
-- Unknown commands generate an error but do not stop execution
-- An unrecognisable token in a hit override sequence rejects the **entire** line
-  as `Unknown` (no silent data loss)
-
----
-
-## 8) Resume / replay behavior
-
-Game reconstruction is based on persisted **compact plate appearances** and
-**domain events**:
-
-- The game state is rebuilt deterministically from `plate_appearances`
-- Pitch sequences and outcomes are replayed from persisted data
-- Runner overrides entered during live scoring are stored in the plate appearance
-  record (`runner_overrides_json`) and faithfully applied on replay
-- Stolen base events are persisted as `DomainEvent::StolenBase` and replayed
-  to restore exact base state
-- Batting order and pitcher pitch counts are restored deterministically
-- An in-progress plate appearance is restored via the draft mechanism
+| Command   | Description |
+| --------- | ----------- |
+| `regular` | End game    |
+| `post`    | Postponed   |
+| `cancel`  | Cancelled   |
+| `susp`    | Suspended   |
+| `forf`    | Forfeit     |
+| `protest` | Protest     |
 
 ---
 
-## 9) Current scope (v0.9.1)
+## 8) Command format rules
 
-Supported commands:
+* Commands are case-insensitive
+* Commands are comma-separated
+* Unknown commands produce an error
 
-- Engine: `exit`, `quit`
-- Start: `playball`
-- Status: `regular`, `post`, `cancel`, `susp`, `forf`, `protest`
-- Pitching/count: `b`, `k`, `s`, `f`, `fl`
-- Hits: `h`, `2h`, `3h`, `hr` (with optional zone and runner overrides)
-- Base running: `<order> st <dest>` (steal — safe only)
+---
+
+## 9) Resume / replay behavior
+
+* Game reconstructed from `plate_appearances`
+* Runner movements replayed from DB
+* Scoreboard restored deterministically
+
+---
+
+## 10) Current scope (v0.10.6)
+
+Supported:
+
+* Pitch commands
+* Hits + overrides
+* Steals
+* Batter outs
+* Unassisted outs
+* Fly/line/infield outs
+* Fielder's choice
+* Defensive multi-commands
 
 Implemented:
 
-- Deterministic resume from compact plate appearances
-- Pitch sequence persistence
-- Automatic runner advancement for hits
-- Explicit runner overrides by batting order
-- Runner identity on bases (`Option<BatterOrder>`)
-- Scoreboard totals and inning-by-inning runs
-- Hit totals in the scoreboard
-- **Successful stolen base command** (v0.9.1)
+* Deterministic resume
+* Scoreboard (totals + innings)
+* Runner identity tracking
 
 Planned next steps:
 
-- Caught stealing (as part of out commands)
-- Hit-by-pitch (`hbp`)
-- Errors (`E`)
-- Fielder's choice
-- Sacrifice plays
-- Out on base (runner thrown out attempting to advance)
+* Grammar refactor (v0.11.0)
+* Regex-based parser
+* Caught stealing
+* Errors
+* Sacrifice plays
