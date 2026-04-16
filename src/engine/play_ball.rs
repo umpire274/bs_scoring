@@ -5,21 +5,21 @@ use crate::core::play_ball_reducer::{
     apply_domain_event, apply_live_plate_appearance, apply_plate_appearance_row,
 };
 use crate::db::at_bat_draft::{
-    AtBatDraftRow, clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft,
+    clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft, AtBatDraftRow,
 };
-use crate::db::game_events::{GameEventRow, append_game_event, list_game_events};
+use crate::db::game_events::{append_game_event, list_game_events, GameEventRow};
 use crate::db::game_queries::set_game_status;
 use crate::db::plate_appearances::{
-    PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
+    append_plate_appearance, list_plate_appearances, PlateAppearanceRow,
 };
 use crate::engine::{get_fielder, get_foul_flag, get_sequence, parse_outcome_json};
 use crate::models::events::{DomainEvent, SideChangeData};
 use crate::models::game_state::{BatterOrder, GameState};
 use crate::models::plate_appearance::PlateAppearanceStep;
-use crate::ui::Ui;
 use crate::ui::events::UiEvent;
+use crate::ui::Ui;
 use crate::{HalfInning, Pitch, Position};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 
 pub enum EngineExit {
     ExitToMenu,
@@ -1137,21 +1137,18 @@ fn replay_plate_appearances_and_log(
         }
         let order = rm.batter_order;
         match rm.start_base.as_str() {
-            "1B" => {
-                if state.on_1b == Some(order) {
-                    state.on_1b = None;
-                }
+            "1B" if state.on_1b == Some(order) => {
+                state.on_1b = None;
             }
-            "2B" => {
-                if state.on_2b == Some(order) {
-                    state.on_2b = None;
-                }
+
+            "2B" if state.on_2b == Some(order) => {
+                state.on_2b = None;
             }
-            "3B" => {
-                if state.on_3b == Some(order) {
-                    state.on_3b = None;
-                }
+
+            "3B" if state.on_3b == Some(order) => {
+                state.on_3b = None;
             }
+
             _ => {}
         }
         match rm.end_base.as_str() {

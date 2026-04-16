@@ -9,16 +9,16 @@ use crossterm::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
     },
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::layout::Rect;
 use ratatui::{
-    Frame, Terminal,
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    backend::CrosstermBackend, layout::{Constraint, Direction, Layout},
     style::Style,
     text::{Line, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
+    Frame,
+    Terminal,
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -855,13 +855,12 @@ impl Ui for TuiUi {
                             self.history_index = None;
                         }
 
-                        KeyCode::Char(c) => {
+                        KeyCode::Char(c)
                             if !modifiers.contains(KeyModifiers::CONTROL)
-                                && !modifiers.contains(KeyModifiers::ALT)
-                            {
-                                self.input.push(c);
-                                self.history_index = None;
-                            }
+                                && !modifiers.contains(KeyModifiers::ALT) =>
+                        {
+                            self.input.push(c);
+                            self.history_index = None;
                         }
 
                         KeyCode::Esc => {
