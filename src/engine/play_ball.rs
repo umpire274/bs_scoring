@@ -5,21 +5,21 @@ use crate::core::play_ball_reducer::{
     apply_domain_event, apply_live_plate_appearance, apply_plate_appearance_row,
 };
 use crate::db::at_bat_draft::{
-    clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft, AtBatDraftRow,
+    AtBatDraftRow, clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft,
 };
-use crate::db::game_events::{append_game_event, list_game_events, GameEventRow};
+use crate::db::game_events::{GameEventRow, append_game_event, list_game_events};
 use crate::db::game_queries::set_game_status;
 use crate::db::plate_appearances::{
-    append_plate_appearance, list_plate_appearances, PlateAppearanceRow,
+    PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
 };
 use crate::engine::{get_fielder, get_foul_flag, get_sequence, parse_outcome_json};
 use crate::models::events::{DomainEvent, SideChangeData};
 use crate::models::game_state::{BatterOrder, GameState};
 use crate::models::plate_appearance::PlateAppearanceStep;
-use crate::ui::events::UiEvent;
 use crate::ui::Ui;
+use crate::ui::events::UiEvent;
 use crate::{HalfInning, Pitch, Position};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 pub enum EngineExit {
     ExitToMenu,
