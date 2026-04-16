@@ -6,10 +6,11 @@
 
 use crate::commands::types::EngineCommand;
 use crate::core::runner_logic;
+use crate::core::runner_logic::add_runs_to_score;
+use crate::core::scoring::BatterOutType;
 use crate::core::scoring::batter_outs::{
     DefensiveOutKind, DefensivePlayCommand, DefensivePlayTarget,
 };
-use crate::core::scoring::BatterOutType;
 use crate::db::runner_movements::RunnerMovementInsert;
 use crate::models::events::{
     DomainEvent, OutRecordedData, PersistedEvent, StatusChangedData, StrikeoutKind,
@@ -22,7 +23,6 @@ use crate::models::runner::RunnerOverride;
 use crate::models::types::{GameStatus, Pitch};
 use crate::ui::events::UiEvent;
 use crate::{BatterOrder, HalfInning, RunnerDest};
-use crate::core::runner_logic::add_runs_to_score;
 // ─── Result type ──────────────────────────────────────────────────────────────
 
 #[derive(Default)]
@@ -528,7 +528,7 @@ fn apply_steal(
         RunnerDest::Score => add_runs_to_score(state, 1),
         RunnerDest::First => {}
     }
-    
+
     let rm = RunnerMovementInsert {
         game_id: 0,
         pa_seq: None,
@@ -1058,7 +1058,11 @@ pub fn serialize_runner_dest(dest: RunnerDest) -> &'static str {
     }
 }
 
-pub fn apply_batter_fielders_choice(state: &mut GameState, batter_order: u8, reached_base: RunnerDest) {
+pub fn apply_batter_fielders_choice(
+    state: &mut GameState,
+    batter_order: u8,
+    reached_base: RunnerDest,
+) {
     match reached_base {
         RunnerDest::First => {
             // Force existing runners only as needed to free 1B.
