@@ -129,6 +129,15 @@ its segment index, rather than the parser stopping at the first problem.
   The partition now uses an explicit whitelist of composite/defensive types
   (`ground_out`, `fly_out`, `line_out`, `infield_fly`, `unassisted_out`,
   `fielders_choice`) and discards all normal-PA movement rows.
+- **Inning-bucket not incremented for HOME composite/steal movements (#62)** —
+  Both `apply_composite_state` and `apply_steal_state` in the replay path
+  incremented `state.score.away` / `state.score.home` directly via
+  `saturating_add`, bypassing `add_runs_to_score`. As a result the
+  per-inning `away_innings` / `home_innings` buckets were never updated,
+  making the inning-by-inning line in the TUI inconsistent with the grand
+  total after any FC-safe scoring or stolen-base-to-home in a resumed game.
+  Both closures now call `add_runs_to_score(state, 1)`, which updates both
+  the total and the correct inning bucket atomically, matching the live path.
 
 ### Removed
 
