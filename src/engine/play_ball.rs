@@ -1,9 +1,3 @@
-use crate::engine::commands::parser::parse_engine_commands;
-use crate::engine::commands::types::EngineCommand;
-use crate::engine::apply::apply_engine_command;
-use crate::engine::reducer::{
-    apply_domain_event, apply_live_plate_appearance, apply_plate_appearance_row,
-};
 use crate::db::at_bat_draft::{
     AtBatDraftRow, clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft,
 };
@@ -11,6 +5,12 @@ use crate::db::game_events::{GameEventRow, append_game_event, list_game_events};
 use crate::db::game_queries::set_game_status;
 use crate::db::plate_appearances::{
     PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
+};
+use crate::engine::apply::apply_engine_command;
+use crate::engine::commands::parser::parse_engine_commands;
+use crate::engine::commands::types::EngineCommand;
+use crate::engine::reducer::{
+    apply_domain_event, apply_live_plate_appearance, apply_plate_appearance_row,
 };
 use crate::engine::{get_fielder, get_foul_flag, get_sequence, parse_outcome_json};
 use crate::models::events::{DomainEvent, SideChangeData};

@@ -1,5 +1,5 @@
-use crate::cli::screens::play_ball::play_ball;
 use crate::cli::menu::GameMenuChoice;
+use crate::cli::screens::play_ball::play_ball;
 use crate::db::game_events::refactor_batter_order;
 use crate::utils::term;
 use crate::{Database, Menu, Team};

@@ -85,7 +85,8 @@ pub fn parse_engine_commands(line: &str) -> Vec<EngineCommand> {
             return vec![cmd];
         }
 
-        if let Ok(def_play) = crate::engine::scoring::batter_outs::parse_defensive_play_command(line)
+        if let Ok(def_play) =
+            crate::engine::scoring::batter_outs::parse_defensive_play_command(line)
         {
             return vec![EngineCommand::DefensivePlay(def_play)];
         }
