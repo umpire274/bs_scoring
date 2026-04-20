@@ -52,8 +52,8 @@ pub fn run_play_ball_engine(
             has_events = !rows.is_empty();
             replay_admin_logs(ui, &rows);
 
-            // Load every runner_movements row for replay. Two kinds of
-            // rows drive state reconstruction here:
+            // Load every runner_movements row for replay. Three kinds of
+            // rows exist; only two are used for state reconstruction:
             //
             // - Steal rows (`advancement_type = "steal"`) are interlaced
             //   between plate appearances (they fire on pitches, not at
@@ -67,6 +67,11 @@ pub fn run_play_ball_engine(
             //   applied to the in-memory state when the matching PA is
             //   replayed, otherwise eliminated runners stay on base and
             //   FC-safe advances are missed.
+            //
+            // - Normal PA movement rows (`advancement_type` in
+            //   {`walk`, `hit_auto`, `hit_override`}) are intentionally
+            //   excluded: they are already applied by
+            //   apply_plate_appearance_row and must not be re-applied.
             let all_movements =
                 match crate::db::runner_movements::list_runner_movements(conn, game_pk) {
                     Ok(rms) => rms,
@@ -77,8 +82,31 @@ pub fn run_play_ball_engine(
                         vec![]
                     }
                 };
+            // Classify runner_movements rows into three buckets:
+            //
+            // • standalone_movements  — steals; interlaced between PAs.
+            // • composite_movements   — defensive-play rows that carry
+            //   per-runner segments of a composite play (ground-out,
+            //   fly-out, line-out, infield-fly, unassisted-out,
+            //   fielder's-choice). These must be re-applied when the
+            //   matching PA is replayed.
+            // • (discarded)           — "walk", "hit_auto", "hit_override"
+            //   rows that were already applied by apply_plate_appearance_row;
+            //   re-applying them would double-count scoring movements.
+            const COMPOSITE_TYPES: &[&str] = &[
+                "ground_out",
+                "fly_out",
+                "line_out",
+                "infield_fly",
+                "unassisted_out",
+                "fielders_choice",
+            ];
             let (standalone_movements, composite_movements): (Vec<_>, Vec<_>) = all_movements
                 .into_iter()
+                .filter(|r| {
+                    r.advancement_type == "steal"
+                        || COMPOSITE_TYPES.contains(&r.advancement_type.as_str())
+                })
                 .partition(|r| r.advancement_type == "steal");
 
             // 1) deterministic rebuild from plate appearances + interlaced standalone movements

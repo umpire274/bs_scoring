@@ -101,6 +101,34 @@ its segment index, rather than the parser stopping at the first problem.
   `FieldersChoice` branch was stripped to avoid double-applying the
   batter's placement on replay. Covered by 4 unit tests in
   `engine::apply::tests`.
+- **Steal + end-of-PA action mixing not rejected (#59)** — `check_mixing`
+  only blocked pitch + action combinations; a line such as `5 h, 3 st 2b`
+  was silently accepted, causing `build_commands` to emit both a hit and a
+  steal command and produce incorrect runner state. Added an explicit
+  `has_steal && has_end_of_pa_action` guard that rejects any steal
+  combined with a hit, batter-out, runner-out, fielder's-choice, or
+  advance segment, and renamed the helper variable to the more descriptive
+  `has_end_of_pa_action`. Covered by 3 new unit tests in
+  `engine::commands::validator::tests` (`hit_and_steal_rejected`,
+  `batter_out_and_steal_rejected`, `fc_and_steal_rejected`).
+- **Fielding-sequence lexer accepts illegal fielder 0 (#60)** — both
+  `RE_FIELDING_SEQ_COMPACT` (`^\d{2,}$`) and `RE_FIELDING_SEQ_DASHED`
+  (`^\d(-\d)+$`) matched digits 0–9, so inputs like `60` or `6-0` were
+  classified as valid `FieldingSeq` tokens and reached command-building
+  with a generic error instead of a segment-specific parse error. Changed
+  both patterns to `[1-9]` (`^[1-9]{2,}$` / `^[1-9](-[1-9])+$`). Also
+  updated the vocabulary table in the module doc-comment. Covered by 1 new
+  unit test `fielding_sequence_with_zero_is_unknown` in
+  `engine::commands::grammar::tokens::tests`.
+- **Resumed-game double-scoring on walk / hit movements (#61)** —
+  `run_play_ball_engine` partitioned every non-steal `runner_movements`
+  row into `composite_movements` and re-applied them through
+  `apply_composite_state` during replay. This unintentionally re-applied
+  `walk`, `hit_auto`, and `hit_override` rows that `apply_plate_appearance_row`
+  had already applied, causing runs to be counted twice in resumed games.
+  The partition now uses an explicit whitelist of composite/defensive types
+  (`ground_out`, `fly_out`, `line_out`, `infield_fly`, `unassisted_out`,
+  `fielders_choice`) and discards all normal-PA movement rows.
 
 ### Removed
 
