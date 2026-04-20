@@ -1,4 +1,4 @@
-use crate::cli::commands::{db, game, leagues, players, statistics, team, umpire_supervisor};
+use crate::cli::screens::{db, game, leagues, players, statistics, team, umpire_supervisor};
 use crate::{Database, MainMenuChoice, Menu};
 
 pub fn run_main_menu(db: &mut Database) {

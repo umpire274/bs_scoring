@@ -15,8 +15,6 @@
 //! ```
 
 pub mod cli;
-pub mod commands;
-pub mod core;
 pub mod db;
 pub mod engine;
 pub mod models;
@@ -32,11 +30,11 @@ pub use db::player::Player;
 pub use db::team::Team;
 
 // ─── Menu / CLI ───────────────────────────────────────────────────────────────
-pub use core::menu::{
+pub use cli::menu::{
     DBMenuChoice, GameMenuChoice, LeagueMenuChoice, MainMenuChoice, Menu, PlayerMenuChoice,
     TeamMenuChoice, UmpireSupervisorMenuChoice,
 };
-pub use core::parser::CommandParser;
+pub use engine::notation::CommandParser;
 
 // ─── Primitive domain types (engine + DB layers) ─────────────────────────────
 pub use models::types::{GameStatus, HalfInning, Pitch, PitchCount, Position, Score};

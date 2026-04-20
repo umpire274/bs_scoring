@@ -4,14 +4,13 @@
 //! describing what happened (UI events, domain events, PA record, runner movements).
 //! No DB access — the engine loop handles persistence.
 
-use crate::commands::types::EngineCommand;
-use crate::core::runner_logic;
-use crate::core::runner_logic::add_runs_to_score;
-use crate::core::scoring::BatterOutType;
-use crate::core::scoring::batter_outs::{
+use crate::db::runner_movements::RunnerMovementInsert;
+use crate::engine::commands::types::EngineCommand;
+use crate::engine::runners::add_runs_to_score;
+use crate::engine::scoring::BatterOutType;
+use crate::engine::scoring::batter_outs::{
     DefensiveOutKind, DefensivePlayCommand, DefensivePlayTarget,
 };
-use crate::db::runner_movements::RunnerMovementInsert;
 use crate::models::events::{
     DomainEvent, OutRecordedData, PersistedEvent, StatusChangedData, StrikeoutKind,
 };
@@ -408,7 +407,8 @@ fn apply_hit_command(
     let final_sequence = build_pa_sequence_with_terminal_step(state, final_step);
 
     // Validate runner overrides before touching state
-    if let Err(msg) = runner_logic::validate_runner_overrides(state, batter_order, runner_overrides)
+    if let Err(msg) =
+        crate::engine::runners::validate_runner_overrides(state, batter_order, runner_overrides)
     {
         return ApplyResult {
             events: vec![UiEvent::Error(msg)],

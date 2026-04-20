@@ -1,9 +1,9 @@
-use bs_scoring::cli::commands::main_menu;
+use bs_scoring::cli::screens::main_menu;
 use bs_scoring::utils::boot::{boot_screen_footer, boot_screen_header};
 use bs_scoring::{setup_db, utils};
 
 fn main() {
-    utils::cli::clear_screen();
+    utils::term::clear_screen();
     println!();
 
     boot_screen_header();
@@ -12,7 +12,7 @@ fn main() {
         Ok(v) => v,
         Err(e) => {
             eprintln!("\n❌ Boot failed:\n{e:#}");
-            utils::cli::wait_for_enter();
+            utils::term::wait_for_enter();
             std::process::exit(1);
         }
     };
@@ -20,7 +20,7 @@ fn main() {
     boot_screen_footer(&db_path, &status);
 
     // qui ha senso una pausa “umana”
-    utils::cli::wait_for_enter();
+    utils::term::wait_for_enter();
 
     main_menu::run_main_menu(&mut db);
 }

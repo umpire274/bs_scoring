@@ -82,7 +82,7 @@ impl Menu {
     /// Display main menu and get user choice
     pub fn show_main_menu() -> MainMenuChoice {
         loop {
-            utils::cli::clear_screen();
+            utils::term::clear_screen();
             println!("╔════════════════════════════════════════════╗");
             println!("║  ⚾  BASEBALL/SOFTBALL SCORER - MAIN MENU  ║");
             println!("╚════════════════════════════════════════════╝");
@@ -100,7 +100,7 @@ impl Menu {
             print!("Select an option (1-7 or 0): ");
             io::stdout().flush().unwrap();
 
-            let choice = utils::cli::read_choice();
+            let choice = utils::term::read_choice();
             match choice {
                 1 => return MainMenuChoice::ManageGames,
                 2 => return MainMenuChoice::ManageLeagues,
@@ -112,7 +112,7 @@ impl Menu {
                 0 => return MainMenuChoice::Exit,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
-                    utils::cli::wait_for_enter();
+                    utils::term::wait_for_enter();
                 }
             }
         }
@@ -121,7 +121,7 @@ impl Menu {
     /// Display game management menu
     pub fn show_game_menu() -> GameMenuChoice {
         loop {
-            utils::cli::clear_screen();
+            utils::term::clear_screen();
             println!("╔════════════════════════════════════════════╗");
             println!("║           🎮  GAME MANAGEMENT              ║");
             println!("╚════════════════════════════════════════════╝");
@@ -137,7 +137,7 @@ impl Menu {
             print!("Select an option (1-4 or 0): ");
             io::stdout().flush().unwrap();
 
-            let choice = utils::cli::read_choice();
+            let choice = utils::term::read_choice();
             match choice {
                 1 => return GameMenuChoice::NewGame,
                 2 => return GameMenuChoice::ListGames,
@@ -147,7 +147,7 @@ impl Menu {
                 0 => return GameMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
-                    utils::cli::wait_for_enter();
+                    utils::term::wait_for_enter();
                 }
             }
         }
@@ -156,7 +156,7 @@ impl Menu {
     /// Display league management menu
     pub fn show_league_menu() -> LeagueMenuChoice {
         loop {
-            utils::cli::clear_screen();
+            utils::term::clear_screen();
             println!("╔═════════════════════════════════════════════╗");
             println!("║          🏆  LEAGUES MANAGEMENT             ║");
             println!("╚═════════════════════════════════════════════╝");
@@ -171,7 +171,7 @@ impl Menu {
             print!("Select an option (1-4 or 0): ");
             io::stdout().flush().unwrap();
 
-            let choice = utils::cli::read_choice();
+            let choice = utils::term::read_choice();
             match choice {
                 1 => return LeagueMenuChoice::CreateLeague,
                 2 => return LeagueMenuChoice::ViewLeagues,
@@ -180,7 +180,7 @@ impl Menu {
                 0 => return LeagueMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
-                    utils::cli::wait_for_enter();
+                    utils::term::wait_for_enter();
                 }
             }
         }
@@ -189,7 +189,7 @@ impl Menu {
     /// Display team management menu
     pub fn show_team_menu() -> TeamMenuChoice {
         loop {
-            utils::cli::clear_screen();
+            utils::term::clear_screen();
             println!("╔════════════════════════════════════════════╗");
             println!("║           ⚾  TEAMS MANAGEMENT             ║");
             println!("╚════════════════════════════════════════════╝");
@@ -205,7 +205,7 @@ impl Menu {
             print!("Select an option (1-5 or 0): ");
             io::stdout().flush().unwrap();
 
-            let choice = utils::cli::read_choice();
+            let choice = utils::term::read_choice();
             match choice {
                 1 => return TeamMenuChoice::CreateTeam,
                 2 => return TeamMenuChoice::ViewTeams,
@@ -215,7 +215,7 @@ impl Menu {
                 0 => return TeamMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
-                    utils::cli::wait_for_enter();
+                    utils::term::wait_for_enter();
                 }
             }
         }
@@ -224,7 +224,7 @@ impl Menu {
     /// Display player management menu
     pub fn show_player_menu() -> PlayerMenuChoice {
         loop {
-            utils::cli::clear_screen();
+            utils::term::clear_screen();
             println!("╔════════════════════════════════════════════╗");
             println!("║          👥  PLAYER MANAGEMENT             ║");
             println!("╚════════════════════════════════════════════╝");
@@ -241,7 +241,7 @@ impl Menu {
             print!("Select an option (1-6 or 0): ");
             io::stdout().flush().unwrap();
 
-            let choice = utils::cli::read_choice();
+            let choice = utils::term::read_choice();
             match choice {
                 1 => return PlayerMenuChoice::AddPlayer,
                 2 => return PlayerMenuChoice::ListPlayers,
@@ -252,7 +252,7 @@ impl Menu {
                 0 => return PlayerMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
-                    utils::cli::wait_for_enter();
+                    utils::term::wait_for_enter();
                 }
             }
         }
@@ -261,7 +261,7 @@ impl Menu {
     /// Display umpire supervisor menu
     pub fn show_umpire_supervisor_menu() -> UmpireSupervisorMenuChoice {
         loop {
-            utils::cli::clear_screen();
+            utils::term::clear_screen();
             println!("╔════════════════════════════════════════════╗");
             println!("║        🧑‍⚖️  UMPIRE SUPERVISOR               ║");
             println!("╚════════════════════════════════════════════╝");
@@ -277,7 +277,7 @@ impl Menu {
             print!("Select an option (1-4 or 0): ");
             io::stdout().flush().unwrap();
 
-            let choice = utils::cli::read_choice();
+            let choice = utils::term::read_choice();
             match choice {
                 1 => return UmpireSupervisorMenuChoice::ManageUmpires,
                 2 => return UmpireSupervisorMenuChoice::AssignToGame,
@@ -287,7 +287,7 @@ impl Menu {
                 0 => return UmpireSupervisorMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
-                    utils::cli::wait_for_enter();
+                    utils::term::wait_for_enter();
                 }
             }
         }
@@ -295,7 +295,7 @@ impl Menu {
 
     pub fn show_db_menu() -> DBMenuChoice {
         loop {
-            utils::cli::clear_screen();
+            utils::term::clear_screen();
             println!("╔════════════════════════════════════════════╗");
             println!("║          💾  DATABASE MANAGEMENT           ║");
             println!("╚════════════════════════════════════════════╝");
@@ -314,7 +314,7 @@ impl Menu {
             print!("Select an option (1-8 or 0): ");
             io::stdout().flush().unwrap();
 
-            let choice = utils::cli::read_choice();
+            let choice = utils::term::read_choice();
             match choice {
                 1 => return DBMenuChoice::ViewInfo,
                 2 => return DBMenuChoice::ViewStatus,
@@ -327,7 +327,7 @@ impl Menu {
                 0 => return DBMenuChoice::Back,
                 _ => {
                     println!("\n❌ Invalid choice. Press ENTER to continue...");
-                    utils::cli::wait_for_enter();
+                    utils::term::wait_for_enter();
                 }
             }
         }

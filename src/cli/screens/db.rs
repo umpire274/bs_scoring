@@ -1,6 +1,6 @@
-use crate::core::menu::DBMenuChoice;
+use crate::cli::menu::DBMenuChoice;
 use crate::db::migrations;
-use crate::utils::cli;
+use crate::utils::term;
 use crate::{Database, Menu, get_db_path, get_db_path_display};
 use chrono::Local;
 use std::fs;
@@ -23,7 +23,7 @@ pub fn handle_db_menu(db: &Database) {
 }
 
 fn view_db_info(db: &Database) {
-    cli::show_header("DATABASE INFO");
+    term::show_header("DATABASE INFO");
 
     println!("📁 Location: {}", get_db_path_display());
 
@@ -69,11 +69,11 @@ fn view_db_info(db: &Database) {
         println!("\n💾 Database size: {} KB", size_kb);
     }
 
-    cli::wait_for_enter();
+    term::wait_for_enter();
 }
 
 fn view_db_status(db: &Database) {
-    cli::show_header("DATABASE STATUS");
+    term::show_header("DATABASE STATUS");
 
     let conn = db.get_connection();
 
@@ -173,11 +173,11 @@ fn view_db_status(db: &Database) {
         println!("     Consider running VACUUM to reclaim space.");
     }
 
-    cli::wait_for_enter();
+    term::wait_for_enter();
 }
 
 fn run_migrations_manual(db: &Database) {
-    cli::show_header("DATABASE MIGRATIONS");
+    term::show_header("DATABASE MIGRATIONS");
 
     let conn = db.get_connection();
 
@@ -185,7 +185,7 @@ fn run_migrations_manual(db: &Database) {
     let info = match migrations::get_migration_info(conn) {
         Ok(info) => info,
         Err(e) => {
-            cli::show_error(&format!("Failed to get migration info: {}", e));
+            term::show_error(&format!("Failed to get migration info: {}", e));
             return;
         }
     };
@@ -209,7 +209,7 @@ fn run_migrations_manual(db: &Database) {
     if info.pending_count == 0 {
         println!("✅ Database schema is up to date!");
         println!();
-        cli::wait_for_enter();
+        term::wait_for_enter();
         return;
     }
 
@@ -225,18 +225,18 @@ fn run_migrations_manual(db: &Database) {
     }
     println!();
 
-    if cli::confirm("Run pending migrations?") {
+    if term::confirm("Run pending migrations?") {
         println!("\n🔄 Running migrations...\n");
 
         match migrations::run_migrations(conn, info.current_version) {
             Ok(new_version) => {
-                cli::show_success(&format!(
+                term::show_success(&format!(
                     "Migrations completed!\n   Schema updated: v{} → v{}",
                     info.current_version, new_version
                 ));
             }
             Err(e) => {
-                cli::show_error(&format!(
+                term::show_error(&format!(
                     "Migration failed: {}\n\n⚠️  Database may be in inconsistent state!\nConsider restoring from backup.",
                     e
                 ));
@@ -244,23 +244,23 @@ fn run_migrations_manual(db: &Database) {
         }
     } else {
         println!("\n❌ Migrations cancelled");
-        cli::wait_for_enter();
+        term::wait_for_enter();
     }
 }
 
 fn backup_database() {
-    cli::show_header("BACKUP DATABASE");
+    term::show_header("BACKUP DATABASE");
 
     let db_path = match get_db_path() {
         Ok(path) => path,
         Err(e) => {
-            cli::show_error(&format!("Cannot determine database path: {}", e));
+            term::show_error(&format!("Cannot determine database path: {}", e));
             return;
         }
     };
 
     if !db_path.exists() {
-        cli::show_error("Database file does not exist");
+        term::show_error("Database file does not exist");
         return;
     }
 
@@ -274,7 +274,7 @@ fn backup_database() {
     println!("📁 Backup: {}", backup_path.display());
     println!();
 
-    if cli::confirm("Create backup?") {
+    if term::confirm("Create backup?") {
         match fs::copy(&db_path, &backup_path) {
             Ok(bytes) => {
                 // Update meta table
@@ -284,28 +284,28 @@ fn backup_database() {
                 }
 
                 let kb = bytes / 1024;
-                cli::show_success(&format!(
+                term::show_success(&format!(
                     "Backup created successfully!\n   File: {}\n   Size: {} KB",
                     backup_name, kb
                 ));
             }
             Err(e) => {
-                cli::show_error(&format!("Failed to create backup: {}", e));
+                term::show_error(&format!("Failed to create backup: {}", e));
             }
         }
     } else {
         println!("\n❌ Backup cancelled");
-        cli::wait_for_enter();
+        term::wait_for_enter();
     }
 }
 
 fn restore_database() {
-    cli::show_header("RESTORE DATABASE");
+    term::show_header("RESTORE DATABASE");
 
     let db_path = match get_db_path() {
         Ok(path) => path,
         Err(e) => {
-            cli::show_error(&format!("Cannot determine database path: {}", e));
+            term::show_error(&format!("Cannot determine database path: {}", e));
             return;
         }
     };
@@ -316,11 +316,11 @@ fn restore_database() {
     let backups = match list_backup_files(db_dir) {
         Ok(backups) if !backups.is_empty() => backups,
         Ok(_) => {
-            cli::show_error("No backup files found");
+            term::show_error("No backup files found");
             return;
         }
         Err(e) => {
-            cli::show_error(&format!("Error listing backups: {}", e));
+            term::show_error(&format!("Error listing backups: {}", e));
             return;
         }
     };
@@ -331,15 +331,15 @@ fn restore_database() {
     }
     println!();
 
-    if let Some(choice) = cli::read_i64("Select backup to restore (0 to cancel): ") {
+    if let Some(choice) = term::read_i64("Select backup to restore (0 to cancel): ") {
         if choice == 0 {
             println!("\n❌ Restore cancelled");
-            cli::wait_for_enter();
+            term::wait_for_enter();
             return;
         }
 
         if choice < 1 || choice as usize > backups.len() {
-            cli::show_error("Invalid selection");
+            term::show_error("Invalid selection");
             return;
         }
 
@@ -350,7 +350,7 @@ fn restore_database() {
         println!("Current database will be backed up first as a safety measure.");
         println!();
 
-        if cli::confirm("Are you sure you want to restore from this backup?") {
+        if term::confirm("Are you sure you want to restore from this backup?") {
             // Safety backup of current DB
             let safety_backup = format!(
                 "baseball_scorer_before_restore_{}.db",
@@ -360,7 +360,7 @@ fn restore_database() {
 
             if db_path.exists() {
                 if let Err(e) = fs::copy(&db_path, &safety_path) {
-                    cli::show_error(&format!("Failed to create safety backup: {}", e));
+                    term::show_error(&format!("Failed to create safety backup: {}", e));
                     return;
                 }
                 println!("✅ Safety backup created: {}", safety_backup);
@@ -376,18 +376,18 @@ fn restore_database() {
                             migrations::set_meta_value(db.get_connection(), "last_restore", &now);
                     }
 
-                    cli::show_success(&format!(
+                    term::show_success(&format!(
                         "Database restored successfully!\n   From: {}\n   Safety backup: {}",
                         backup_name, safety_backup
                     ));
                 }
                 Err(e) => {
-                    cli::show_error(&format!("Failed to restore: {}", e));
+                    term::show_error(&format!("Failed to restore: {}", e));
                 }
             }
         } else {
             println!("\n❌ Restore cancelled");
-            cli::wait_for_enter();
+            term::wait_for_enter();
         }
     }
 }
@@ -417,7 +417,7 @@ fn list_backup_files(dir: &Path) -> std::io::Result<Vec<(String, u64)>> {
 }
 
 fn vacuum_database(db: &Database) {
-    cli::show_header("VACUUM DATABASE");
+    term::show_header("VACUUM DATABASE");
 
     let conn = db.get_connection();
 
@@ -451,7 +451,7 @@ fn vacuum_database(db: &Database) {
     println!("⚠️  This may take a few seconds for large databases.");
     println!();
 
-    if cli::confirm("Run VACUUM?") {
+    if term::confirm("Run VACUUM?") {
         println!("\n🔄 Running VACUUM...");
 
         match conn.execute("VACUUM", []) {
@@ -470,7 +470,7 @@ fn vacuum_database(db: &Database) {
                 };
 
                 println!();
-                cli::show_success(&format!(
+                term::show_success(&format!(
                     "VACUUM completed successfully!\n\n\
                     📊 Results:\n\
                     \n   Before:  {} KB\
@@ -480,23 +480,23 @@ fn vacuum_database(db: &Database) {
                 ));
             }
             Err(e) => {
-                cli::show_error(&format!("VACUUM failed: {}", e));
+                term::show_error(&format!("VACUUM failed: {}", e));
             }
         }
     } else {
         println!("\n❌ VACUUM cancelled");
-        cli::wait_for_enter();
+        term::wait_for_enter();
     }
 }
 
 fn clear_all_data(db: &Database) {
-    cli::show_header("CLEAR ALL DATA");
+    term::show_header("CLEAR ALL DATA");
 
     println!("⚠️  WARNING: This will delete ALL data from the database!");
     println!("This action CANNOT be undone.\n");
 
-    if cli::confirm("Are you sure you want to clear all data?") {
-        if cli::confirm("Are you REALLY sure? Type 'y' again to confirm") {
+    if term::confirm("Are you sure you want to clear all data?") {
+        if term::confirm("Are you REALLY sure? Type 'y' again to confirm") {
             let conn = db.get_connection();
 
             match conn.execute("DELETE FROM base_runners", []) {
@@ -529,19 +529,19 @@ fn clear_all_data(db: &Database) {
                 Err(e) => println!("Error clearing leagues: {}", e),
             }
 
-            cli::show_success("All data cleared successfully!");
+            term::show_success("All data cleared successfully!");
         } else {
             println!("\n❌ Operation cancelled.");
-            cli::wait_for_enter();
+            term::wait_for_enter();
         }
     } else {
         println!("\n❌ Operation cancelled.");
-        cli::wait_for_enter();
+        term::wait_for_enter();
     }
 }
 
 fn export_game(db: &Database) {
-    cli::show_header("EXPORT GAME");
+    term::show_header("EXPORT GAME");
 
     let conn = db.get_connection();
 
@@ -573,7 +573,7 @@ fn export_game(db: &Database) {
     };
 
     if games.is_empty() {
-        cli::show_error("No games found to export");
+        term::show_error("No games found to export");
         return;
     }
 
@@ -592,15 +592,15 @@ fn export_game(db: &Database) {
     }
     println!();
 
-    if let Some(choice) = cli::read_i64("Select game to export (0 to cancel): ") {
+    if let Some(choice) = term::read_i64("Select game to export (0 to cancel): ") {
         if choice == 0 {
             println!("\n❌ Export cancelled");
-            cli::wait_for_enter();
+            term::wait_for_enter();
             return;
         }
 
         if choice < 1 || choice as usize > games.len() {
-            cli::show_error("Invalid selection");
+            term::show_error("Invalid selection");
             return;
         }
 
@@ -613,16 +613,16 @@ fn export_game(db: &Database) {
         println!("  0. Cancel");
         println!();
 
-        let format_choice = cli::read_choice();
+        let format_choice = term::read_choice();
         match format_choice {
             1 => export_game_json(db, *game_db_id, game_id),
             2 => export_game_csv(db, *game_db_id, game_id),
             0 => {
                 println!("\n❌ Export cancelled");
-                cli::wait_for_enter();
+                term::wait_for_enter();
             }
             _ => {
-                cli::show_error("Invalid format selection");
+                term::show_error("Invalid format selection");
             }
         }
     }
@@ -650,13 +650,13 @@ fn export_game_json(db: &Database, game_id: i64, game_id_str: &str) {
 
     match fs::write(&file_path, game_data) {
         Ok(_) => {
-            cli::show_success(&format!(
+            term::show_success(&format!(
                 "Game exported to JSON!\n   File: {}",
                 file_path.display()
             ));
         }
         Err(e) => {
-            cli::show_error(&format!("Failed to export: {}", e));
+            term::show_error(&format!("Failed to export: {}", e));
         }
     }
 }
@@ -696,13 +696,13 @@ fn export_game_csv(db: &Database, game_id: i64, game_id_str: &str) {
 
     match fs::write(&file_path, csv_data) {
         Ok(_) => {
-            cli::show_success(&format!(
+            term::show_success(&format!(
                 "Game exported to CSV!\n   File: {}",
                 file_path.display()
             ));
         }
         Err(e) => {
-            cli::show_error(&format!("Failed to export: {}", e));
+            term::show_error(&format!("Failed to export: {}", e));
         }
     }
 }

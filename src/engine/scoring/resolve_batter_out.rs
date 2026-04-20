@@ -79,7 +79,7 @@ pub fn resolve_batter_out(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::scoring::batter_outs::{BatterOutType, parse_batter_out_command};
+    use crate::engine::scoring::batter_outs::{BatterOutType, parse_batter_out_command};
 
     #[test]
     fn resolve_regular_batter_out() {

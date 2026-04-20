@@ -7,11 +7,11 @@ use crate::utils;
 use crate::{Database, Menu, UmpireSupervisorMenuChoice};
 use std::collections::HashMap;
 
-use crate::cli::commands::export::{
+use crate::cli::screens::export::{
     build_umpire_export_rows, export_umpire_reports_csv, export_umpire_reports_json,
 };
-use crate::cli::commands::game::{GameInfo, get_game_by_id};
-use crate::utils::cli::prompt_export_directory;
+use crate::cli::screens::game::{GameInfo, get_game_by_id};
+use crate::utils::term::prompt_export_directory;
 use rusqlite::Connection;
 use std::io::{self, Write};
 // ─── Menu dispatcher ──────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ pub fn handle_umpire_supervisor_menu(db: &mut Database) {
 
 fn handle_manage_umpires(db: &mut Database) {
     loop {
-        utils::cli::clear_screen();
+        utils::term::clear_screen();
         println!("╔════════════════════════════════════════════╗");
         println!("║          👤  MANAGE UMPIRES                ║");
         println!("╚════════════════════════════════════════════╝");
@@ -48,7 +48,7 @@ fn handle_manage_umpires(db: &mut Database) {
         print!("Select an option (1-4 or 0): ");
         io::stdout().flush().unwrap();
 
-        let choice = utils::cli::read_choice();
+        let choice = utils::term::read_choice();
         match choice {
             1 => add_umpire(db),
             2 => list_umpires(db),
@@ -57,34 +57,34 @@ fn handle_manage_umpires(db: &mut Database) {
             0 => return,
             _ => {
                 println!("\n❌ Invalid choice. Press ENTER to continue...");
-                utils::cli::wait_for_enter();
+                utils::term::wait_for_enter();
             }
         }
     }
 }
 
 fn add_umpire(db: &mut Database) {
-    utils::cli::clear_screen();
+    utils::term::clear_screen();
     println!("═══ Add New Umpire ═══\n");
 
-    let first_name = utils::cli::read_string("First name: ");
+    let first_name = utils::term::read_string("First name: ");
     if first_name.is_empty() {
         println!("❌ First name cannot be empty.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     }
-    let last_name = utils::cli::read_string("Last name: ");
+    let last_name = utils::term::read_string("Last name: ");
     if last_name.is_empty() {
         println!("❌ Last name cannot be empty.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     }
 
-    let license_number = utils::cli::read_optional_string("License number (or ENTER to skip): ");
-    let level = utils::cli::read_optional_string("Level/Classification (or ENTER to skip): ");
-    let email = utils::cli::read_optional_string("Email (or ENTER to skip): ");
-    let phone = utils::cli::read_optional_string("Phone (or ENTER to skip): ");
-    let notes = utils::cli::read_optional_string("Notes (or ENTER to skip): ");
+    let license_number = utils::term::read_optional_string("License number (or ENTER to skip): ");
+    let level = utils::term::read_optional_string("Level/Classification (or ENTER to skip): ");
+    let email = utils::term::read_optional_string("Email (or ENTER to skip): ");
+    let phone = utils::term::read_optional_string("Phone (or ENTER to skip): ");
+    let notes = utils::term::read_optional_string("Notes (or ENTER to skip): ");
 
     // ── League association ────────────────────────────────────────────────
     let conn = db.get_connection();
@@ -110,7 +110,7 @@ fn add_umpire(db: &mut Database) {
         }
         Err(e) => println!("\n❌ Failed to create umpire: {e}"),
     }
-    utils::cli::wait_for_enter();
+    utils::term::wait_for_enter();
 }
 
 /// Show all available leagues and let the user pick one or more.
@@ -174,7 +174,7 @@ fn select_leagues(conn: &rusqlite::Connection) -> Vec<i64> {
 }
 
 fn list_umpires(db: &mut Database) {
-    utils::cli::clear_screen();
+    utils::term::clear_screen();
     println!("═══ All Umpires ═══\n");
 
     let conn = db.get_connection();
@@ -214,11 +214,11 @@ fn list_umpires(db: &mut Database) {
         }
         Err(e) => println!("❌ Failed to load umpires: {e}"),
     }
-    utils::cli::wait_for_enter();
+    utils::term::wait_for_enter();
 }
 
 fn edit_umpire(db: &mut Database) {
-    utils::cli::clear_screen();
+    utils::term::clear_screen();
     println!("═══ Edit Umpire ═══\n");
 
     let conn = db.get_connection();
@@ -244,23 +244,23 @@ fn edit_umpire(db: &mut Database) {
         }
         Ok(_) => {
             println!("  No umpires registered yet.");
-            utils::cli::wait_for_enter();
+            utils::term::wait_for_enter();
             return;
         }
         Err(e) => {
             println!("❌ Failed to load umpires: {e}");
-            utils::cli::wait_for_enter();
+            utils::term::wait_for_enter();
             return;
         }
     }
 
-    let id = utils::cli::read_i64_required("Umpire ID to edit: ");
+    let id = utils::term::read_i64_required("Umpire ID to edit: ");
 
     let mut umpire = match Umpire::get_by_id(conn, id) {
         Ok(u) => u,
         Err(_) => {
             println!("❌ Umpire not found.");
-            utils::cli::wait_for_enter();
+            utils::term::wait_for_enter();
             return;
         }
     };
@@ -268,30 +268,30 @@ fn edit_umpire(db: &mut Database) {
     println!("\nEditing: {} (ID: {id})", umpire.full_name());
     println!("(Press ENTER to keep current value)\n");
 
-    let new_first = utils::cli::read_string_with_default(
+    let new_first = utils::term::read_string_with_default(
         &format!("First name [{}]: ", umpire.first_name),
         &umpire.first_name,
     );
-    let new_last = utils::cli::read_string_with_default(
+    let new_last = utils::term::read_string_with_default(
         &format!("Last name [{}]: ", umpire.last_name),
         &umpire.last_name,
     );
-    let new_license = utils::cli::read_optional_string_with_default(
+    let new_license = utils::term::read_optional_string_with_default(
         &format!(
             "License [{}]: ",
             umpire.license_number.as_deref().unwrap_or("-")
         ),
         umpire.license_number.as_deref(),
     );
-    let new_level = utils::cli::read_optional_string_with_default(
+    let new_level = utils::term::read_optional_string_with_default(
         &format!("Level [{}]: ", umpire.level.as_deref().unwrap_or("-")),
         umpire.level.as_deref(),
     );
-    let new_email = utils::cli::read_optional_string_with_default(
+    let new_email = utils::term::read_optional_string_with_default(
         &format!("Email [{}]: ", umpire.email.as_deref().unwrap_or("-")),
         umpire.email.as_deref(),
     );
-    let new_phone = utils::cli::read_optional_string_with_default(
+    let new_phone = utils::term::read_optional_string_with_default(
         &format!("Phone [{}]: ", umpire.phone.as_deref().unwrap_or("-")),
         umpire.phone.as_deref(),
     );
@@ -330,7 +330,7 @@ fn edit_umpire(db: &mut Database) {
         println!("  (Leagues unchanged)");
     }
 
-    utils::cli::wait_for_enter();
+    utils::term::wait_for_enter();
 }
 
 /// Fetch an umpire by id, printing an error and pausing if not found.
@@ -340,17 +340,17 @@ pub fn fetch_umpire_or_notify(conn: &Connection, id: i64) -> Option<Umpire> {
         Ok(u) => Some(u),
         Err(_) => {
             println!("❌ Umpire not found.");
-            utils::cli::wait_for_enter();
+            utils::term::wait_for_enter();
             None
         }
     }
 }
 
 fn delete_umpire(db: &mut Database) {
-    utils::cli::clear_screen();
+    utils::term::clear_screen();
     println!("═══ Delete Umpire ═══\n");
 
-    let id = utils::cli::read_i64_required("Umpire ID to delete: ");
+    let id = utils::term::read_i64_required("Umpire ID to delete: ");
     let conn = db.get_connection();
 
     let Some(umpire) = fetch_umpire_or_notify(conn, id) else {
@@ -361,7 +361,7 @@ fn delete_umpire(db: &mut Database) {
         "\n⚠️  Delete {} (ID: {id})? This will also remove all assignments and evaluations.",
         umpire.full_name()
     );
-    let confirm = utils::cli::read_string("Type 'yes' to confirm: ");
+    let confirm = utils::term::read_string("Type 'yes' to confirm: ");
     if confirm.eq_ignore_ascii_case("yes") {
         match Umpire::delete(conn, id) {
             Ok(_) => println!("\n✅ Umpire deleted."),
@@ -370,7 +370,7 @@ fn delete_umpire(db: &mut Database) {
     } else {
         println!("\n↩️  Cancelled.");
     }
-    utils::cli::wait_for_enter();
+    utils::term::wait_for_enter();
 }
 
 // ─── Shared: game picker (same criteria as Play Ball) ─────────────────────────
@@ -383,14 +383,14 @@ fn select_game(db: &mut Database, header: &str) -> Option<PlayBallGameContext> {
     let games = match list_playable_games(conn) {
         Ok(v) => v,
         Err(e) => {
-            utils::cli::show_error(&format!("Error querying games: {e}"));
+            utils::term::show_error(&format!("Error querying games: {e}"));
             return None;
         }
     };
 
     if games.is_empty() {
         println!("📭 No available games found.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return None;
     }
 
@@ -407,11 +407,11 @@ fn select_game(db: &mut Database, header: &str) -> Option<PlayBallGameContext> {
         println!();
     }
 
-    let choice = match utils::cli::read_i64("Select game (number, 0 to cancel): ") {
+    let choice = match utils::term::read_i64("Select game (number, 0 to cancel): ") {
         Some(0) | None => return None,
         Some(c) if c > 0 && (c as usize) <= games.len() => c as usize,
         _ => {
-            utils::cli::show_error("Invalid selection");
+            utils::term::show_error("Invalid selection");
             return None;
         }
     };
@@ -422,7 +422,7 @@ fn select_game(db: &mut Database, header: &str) -> Option<PlayBallGameContext> {
 // ─── 2. Assign Umpires to Game ────────────────────────────────────────────────
 
 fn handle_assign_to_game(db: &mut Database) {
-    utils::cli::clear_screen();
+    utils::term::clear_screen();
     println!("═══ Assign Umpires to Game ═══\n");
 
     let game = match select_game(db, "Available Games") {
@@ -453,12 +453,12 @@ fn handle_assign_to_game(db: &mut Database) {
     }
 
     // Crew size
-    let crew_size = utils::cli::read_i64_required("\nSelect crew size (2,3,4,6): ") as u8;
+    let crew_size = utils::term::read_i64_required("\nSelect crew size (2,3,4,6): ") as u8;
     let positions = UmpirePosition::crew(crew_size);
 
     if positions.is_empty() {
         println!("❌ Invalid crew size.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     }
 
@@ -467,14 +467,14 @@ fn handle_assign_to_game(db: &mut Database) {
         Ok(u) => u,
         Err(e) => {
             println!("❌ Failed to load umpires: {e}");
-            utils::cli::wait_for_enter();
+            utils::term::wait_for_enter();
             return;
         }
     };
 
     if umpires.is_empty() {
         println!("\n❌ No active umpires registered. Add umpires first.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     }
 
@@ -494,7 +494,7 @@ fn handle_assign_to_game(db: &mut Database) {
     println!();
     for pos in &positions {
         let prompt = format!("  Umpire ID for {} (or 0 to skip): ", pos);
-        let ump_id = utils::cli::read_i64_required(&prompt);
+        let ump_id = utils::term::read_i64_required(&prompt);
         if ump_id == 0 {
             continue;
         }
@@ -505,13 +505,13 @@ fn handle_assign_to_game(db: &mut Database) {
     }
 
     println!("\n✅ Crew assignment complete.");
-    utils::cli::wait_for_enter();
+    utils::term::wait_for_enter();
 }
 
 // ─── 3. Evaluate Game (Report Card) ──────────────────────────────────────────
 
 fn handle_evaluate_game(db: &mut Database) {
-    utils::cli::clear_screen();
+    utils::term::clear_screen();
     println!("═══ Evaluate Game — Umpire Report Card ═══\n");
 
     let game = match select_game(db, "Select Game to Evaluate") {
@@ -527,18 +527,18 @@ fn handle_evaluate_game(db: &mut Database) {
         Ok(a) => a,
         Err(e) => {
             println!("❌ Failed to load crew: {e}");
-            utils::cli::wait_for_enter();
+            utils::term::wait_for_enter();
             return;
         }
     };
 
     if assignments.is_empty() {
         println!("❌ No umpires assigned to this game. Assign umpires first.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     }
 
-    let evaluator = utils::cli::read_optional_string("Evaluator name (or ENTER to skip): ");
+    let evaluator = utils::term::read_optional_string("Evaluator name (or ENTER to skip): ");
 
     for a in &assignments {
         let pos = UmpirePosition::parse(&a.position).unwrap_or(UmpirePosition::HomePlate);
@@ -576,9 +576,9 @@ fn handle_evaluate_game(db: &mut Database) {
             eval.overall_score = eval.calculated_average().map(|a| a.round() as i32);
         }
 
-        eval.strengths = utils::cli::read_optional_string("  Strengths: ");
-        eval.areas_to_improve = utils::cli::read_optional_string("  Areas to improve: ");
-        eval.notes = utils::cli::read_optional_string("  Notes: ");
+        eval.strengths = utils::term::read_optional_string("  Strengths: ");
+        eval.areas_to_improve = utils::term::read_optional_string("  Areas to improve: ");
+        eval.notes = utils::term::read_optional_string("  Notes: ");
 
         match eval.save(conn) {
             Ok(_) => println!("  ✅ Evaluation saved for {name}."),
@@ -587,7 +587,7 @@ fn handle_evaluate_game(db: &mut Database) {
     }
 
     println!("\n✅ Game evaluation complete.");
-    utils::cli::wait_for_enter();
+    utils::term::wait_for_enter();
 }
 
 fn read_score(prompt: &str) -> Option<i32> {
@@ -639,7 +639,7 @@ fn handle_umpire_history(db: &mut Database) {
     use std::collections::HashMap;
     use std::io::{self, Write};
 
-    utils::cli::clear_screen();
+    utils::term::clear_screen();
     println!("═══ Umpire History / Statistics ═══\n");
 
     let conn = db.get_connection();
@@ -668,7 +668,7 @@ fn handle_umpire_history(db: &mut Database) {
 
     if filtered_umpires.is_empty() {
         println!("\n  No umpires found for the selected filter.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     }
 
@@ -685,7 +685,7 @@ fn handle_umpire_history(db: &mut Database) {
     }
     println!();
 
-    let umpire_id = utils::cli::read_i64_required("Umpire ID: ");
+    let umpire_id = utils::term::read_i64_required("Umpire ID: ");
 
     let Some(umpire) = filtered_umpires
         .iter()
@@ -693,7 +693,7 @@ fn handle_umpire_history(db: &mut Database) {
         .cloned()
     else {
         println!("❌ Umpire not found in the selected list.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     };
 
@@ -701,7 +701,7 @@ fn handle_umpire_history(db: &mut Database) {
         Ok(e) => e,
         Err(e) => {
             println!("\n❌ Failed to load evaluations: {e}");
-            utils::cli::wait_for_enter();
+            utils::term::wait_for_enter();
             return;
         }
     };
@@ -709,7 +709,7 @@ fn handle_umpire_history(db: &mut Database) {
     if evals.is_empty() {
         print_umpire_header(&umpire);
         println!("\n  No evaluations recorded yet.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     }
 
@@ -724,7 +724,7 @@ fn handle_umpire_history(db: &mut Database) {
     }
 
     loop {
-        utils::cli::clear_screen();
+        utils::term::clear_screen();
         println!("═══ Umpire History / Statistics ═══\n");
 
         print_umpire_header(&umpire);
@@ -739,7 +739,7 @@ fn handle_umpire_history(db: &mut Database) {
         let mut choice = String::new();
         if io::stdin().read_line(&mut choice).is_err() {
             println!("\n❌ Failed to read input.");
-            utils::cli::wait_for_enter();
+            utils::term::wait_for_enter();
             continue;
         }
 
@@ -747,22 +747,22 @@ fn handle_umpire_history(db: &mut Database) {
             "" | "E" | "X" => break,
 
             "V" => {
-                let game_id = utils::cli::read_i64_required("\n  Game ID: ");
+                let game_id = utils::term::read_i64_required("\n  Game ID: ");
 
                 let Some(report) = evals.iter().find(|ev| ev.game_id == game_id) else {
                     println!("❌ No report found for the selected Game ID.");
-                    utils::cli::wait_for_enter();
+                    utils::term::wait_for_enter();
                     continue;
                 };
 
-                utils::cli::clear_screen();
+                utils::term::clear_screen();
                 print_umpire_evaluation_detail(&umpire, report, &game_map);
-                utils::cli::wait_for_enter();
+                utils::term::wait_for_enter();
             }
 
             _ => {
                 println!("❌ Invalid choice.");
-                utils::cli::wait_for_enter();
+                utils::term::wait_for_enter();
             }
         }
     }
@@ -920,7 +920,7 @@ fn handle_export_umpire_reports(db: &mut Database) {
     use std::collections::HashMap;
     use std::io::{self, Write};
 
-    utils::cli::clear_screen();
+    utils::term::clear_screen();
     println!("═══ Export Umpire Reports ═══\n");
 
     let conn = db.get_connection();
@@ -949,7 +949,7 @@ fn handle_export_umpire_reports(db: &mut Database) {
 
     if filtered_umpires.is_empty() {
         println!("  No umpires found for the selected filter.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     }
 
@@ -966,7 +966,7 @@ fn handle_export_umpire_reports(db: &mut Database) {
     }
     println!();
 
-    let umpire_id = utils::cli::read_i64_required("Umpire ID: ");
+    let umpire_id = utils::term::read_i64_required("Umpire ID: ");
 
     let Some(umpire) = filtered_umpires
         .iter()
@@ -974,7 +974,7 @@ fn handle_export_umpire_reports(db: &mut Database) {
         .cloned()
     else {
         println!("❌ Umpire not found in the selected list.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     };
 
@@ -982,7 +982,7 @@ fn handle_export_umpire_reports(db: &mut Database) {
         Ok(e) => e,
         Err(e) => {
             println!("\n❌ Failed to load evaluations: {e}");
-            utils::cli::wait_for_enter();
+            utils::term::wait_for_enter();
             return;
         }
     };
@@ -992,7 +992,7 @@ fn handle_export_umpire_reports(db: &mut Database) {
             "\n  No evaluations recorded yet for {}.",
             umpire.full_name()
         );
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     }
 
@@ -1025,7 +1025,7 @@ fn handle_export_umpire_reports(db: &mut Database) {
     let mut choice = String::new();
     if io::stdin().read_line(&mut choice).is_err() {
         println!("\n❌ Failed to read input.");
-        utils::cli::wait_for_enter();
+        utils::term::wait_for_enter();
         return;
     }
 
@@ -1044,7 +1044,7 @@ fn handle_export_umpire_reports(db: &mut Database) {
         "2" => export_umpire_reports_json(&rows, &umpire.full_name(), &output_dir),
         _ => {
             println!("\n❌ Invalid choice.");
-            utils::cli::wait_for_enter();
+            utils::term::wait_for_enter();
             return;
         }
     };
@@ -1059,5 +1059,5 @@ fn handle_export_umpire_reports(db: &mut Database) {
         }
     }
 
-    utils::cli::wait_for_enter();
+    utils::term::wait_for_enter();
 }
