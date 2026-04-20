@@ -1,10 +1,10 @@
 use crate::db::at_bat_draft::{
-    AtBatDraftRow, clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft,
+    clear_at_bat_draft, load_at_bat_draft, upsert_at_bat_draft, AtBatDraftRow,
 };
-use crate::db::game_events::{GameEventRow, append_game_event, list_game_events};
+use crate::db::game_events::{append_game_event, list_game_events, GameEventRow};
 use crate::db::game_queries::set_game_status;
 use crate::db::plate_appearances::{
-    PlateAppearanceRow, append_plate_appearance, list_plate_appearances,
+    append_plate_appearance, list_plate_appearances, PlateAppearanceRow,
 };
 use crate::engine::apply::apply_engine_command;
 use crate::engine::commands::parser::parse_engine_commands;
@@ -12,14 +12,15 @@ use crate::engine::commands::types::EngineCommand;
 use crate::engine::reducer::{
     apply_domain_event, apply_live_plate_appearance, apply_plate_appearance_row,
 };
+use crate::engine::runners::add_runs_to_score;
 use crate::engine::{get_fielder, get_foul_flag, get_sequence, parse_outcome_json};
 use crate::models::events::{DomainEvent, SideChangeData};
 use crate::models::game_state::{BatterOrder, GameState};
 use crate::models::plate_appearance::PlateAppearanceStep;
-use crate::ui::Ui;
 use crate::ui::events::UiEvent;
+use crate::ui::Ui;
 use crate::{HalfInning, Pitch, Position};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 
 pub enum EngineExit {
     ExitToMenu,
@@ -1216,11 +1217,7 @@ fn replay_plate_appearances_and_log(
             "2B" => state.on_2b = Some(order),
             "3B" => state.on_3b = Some(order),
             "HOME" => {
-                if rm.half_inning == "Top" {
-                    state.score.away = state.score.away.saturating_add(1);
-                } else {
-                    state.score.home = state.score.home.saturating_add(1);
-                }
+                add_runs_to_score(state, 1);
             }
             _ => {}
         }
@@ -1272,11 +1269,10 @@ fn replay_plate_appearances_and_log(
             "2B" => state.on_2b = Some(order),
             "3B" => state.on_3b = Some(order),
             "HOME" => {
-                if rm.half_inning == "Top" {
-                    state.score.away = state.score.away.saturating_add(1);
-                } else {
-                    state.score.home = state.score.home.saturating_add(1);
-                }
+                // Use add_runs_to_score so that away_innings / home_innings
+                // buckets are updated in the same way as the live path,
+                // keeping per-inning totals consistent with the grand total.
+                add_runs_to_score(state, 1);
             }
             _ => {}
         }
