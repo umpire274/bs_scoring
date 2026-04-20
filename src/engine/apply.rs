@@ -915,6 +915,42 @@ fn apply_defensive_play_command(state: &mut GameState, play: DefensivePlayComman
         });
     }
 
+    // ─── Apply the composite play to the in-memory state ────────────────────
+    //
+    // `runner_movements` above is persisted to the DB and is authoritative
+    // for replay. The GameState in memory must be kept in sync with it, or
+    // the live scoreboard and the base diamond will disagree with what the
+    // scorer just entered.
+    //
+    // Order of operations matters:
+    //   1. Clear every runner-out from its base (so the slot frees up).
+    //   2. Place every FC-safe advance on its destination (runner first,
+    //      so a forced batter-on-FC that targets the same base finds it
+    //      empty if needed; in practice the validator already forbids
+    //      duplicate subjects so this is defensive).
+    //   3. Move the batter: either via `apply_batter_fielders_choice` for
+    //      FC or — when the batter is out — no in-memory placement is
+    //      required (the batter was never on base).
+    //
+    // Note on FC-safe advances that target `Score`: `place_runner_on_base`
+    // credits one run to the batting team, matching the behaviour of
+    // `apply_batter_fielders_choice` in the same case.
+    for (target, _) in &normalized_outs {
+        if let DefensivePlayTarget::Runner(order) = target {
+            clear_runner_from_bases(state, *order);
+        }
+    }
+    for (target, _fielder, reached_base) in &normalized_fc {
+        match target {
+            DefensivePlayTarget::Runner(order) => {
+                place_runner_on_base(state, *order, *reached_base);
+            }
+            DefensivePlayTarget::Batter => {
+                apply_batter_fielders_choice(state, batter_order, *reached_base);
+            }
+        }
+    }
+
     let mut events_ui: Vec<UiEvent> = Vec::new();
 
     for (target, out_kind) in &normalized_outs {
@@ -1100,6 +1136,7 @@ pub fn apply_batter_fielders_choice(
         }
 
         RunnerDest::Score => {
+            add_runs_to_score(state, 1);
             // Batter reaches home; base occupancy unchanged.
         }
     }
@@ -1114,5 +1151,336 @@ fn runner_start_base_label(state: &GameState, order: u8) -> &'static str {
         "3B"
     } else {
         "UNK"
+    }
+}
+
+/// Remove a runner identified by batting-order slot from every base.
+///
+/// No-op when the runner is not on any base. Used when a runner is put out
+/// on a composite defensive play (e.g. `9 64, 1 o6 1b`) so that the
+/// in-memory base state matches what is persisted to `runner_movements`.
+fn clear_runner_from_bases(state: &mut GameState, order: u8) {
+    if state.on_1b == Some(order) {
+        state.on_1b = None;
+    }
+    if state.on_2b == Some(order) {
+        state.on_2b = None;
+    }
+    if state.on_3b == Some(order) {
+        state.on_3b = None;
+    }
+}
+
+/// Place a runner (identified by batting-order slot) on the given
+/// destination base, removing them first from any base they currently
+/// occupy. If the destination is `Score`, the run is credited to the
+/// batting team and no base is updated.
+///
+/// Used to mirror the FC-safe advance of a runner to the in-memory state
+/// when applying a composite defensive play.
+fn place_runner_on_base(state: &mut GameState, order: u8, dest: RunnerDest) {
+    clear_runner_from_bases(state, order);
+    match dest {
+        RunnerDest::First => state.on_1b = Some(order),
+        RunnerDest::Second => state.on_2b = Some(order),
+        RunnerDest::Third => state.on_3b = Some(order),
+        RunnerDest::Score => add_runs_to_score(state, 1),
+    }
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::game_state::GameState;
+    use crate::models::runner::RunnerDest;
+    use crate::models::types::HalfInning;
+
+    /// Regression test for the FC-to-home run-credit bug.
+    ///
+    /// Before v0.11.0-alpha2 the `RunnerDest::Score` branch of
+    /// `apply_batter_fielders_choice` was a no-op: it left the base
+    /// occupancy unchanged (correctly) but forgot to add the run, so
+    /// commands like `o6 sc` recorded a completed plate appearance with
+    /// `scored=true` in `runner_movements` while `GameState.score`
+    /// remained unchanged. The scoreboard lagged by one run and the
+    /// deterministic resume reproduced the same error.
+    #[test]
+    fn fc_to_home_adds_run_to_away_when_top_half() {
+        let mut state = GameState::new();
+        state.half = HalfInning::Top;
+        state.inning = 1;
+        assert_eq!(state.score.away, 0);
+
+        apply_batter_fielders_choice(&mut state, 5, RunnerDest::Score);
+
+        assert_eq!(state.score.away, 1, "away total score must increase");
+        assert_eq!(
+            state.score.away_innings[0], 1,
+            "away inning-by-inning line score must increase for inning 1"
+        );
+        assert_eq!(state.score.home, 0, "home score must not change");
+    }
+
+    #[test]
+    fn fc_to_home_adds_run_to_home_when_bottom_half() {
+        let mut state = GameState::new();
+        state.half = HalfInning::Bottom;
+        state.inning = 3;
+
+        apply_batter_fielders_choice(&mut state, 4, RunnerDest::Score);
+
+        assert_eq!(state.score.home, 1, "home total score must increase");
+        assert_eq!(
+            state.score.home_innings[2], 1,
+            "home inning-by-inning line score must increase for inning 3"
+        );
+        assert_eq!(state.score.away, 0, "away score must not change");
+    }
+
+    #[test]
+    fn fc_to_home_leaves_base_occupancy_unchanged() {
+        // Bases loaded scenario: batter's FC to home scores *the batter*
+        // directly (unusual but grammatically legal). Runners on 1B/2B/3B
+        // are undisturbed.
+        let mut state = GameState::new();
+        state.half = HalfInning::Top;
+        state.on_1b = Some(7);
+        state.on_2b = Some(8);
+        state.on_3b = Some(9);
+
+        apply_batter_fielders_choice(&mut state, 5, RunnerDest::Score);
+
+        assert_eq!(state.on_1b, Some(7));
+        assert_eq!(state.on_2b, Some(8));
+        assert_eq!(state.on_3b, Some(9));
+        assert_eq!(state.score.away, 1);
+    }
+
+    // ── Non-regression for the other three destinations: they must
+    //    never touch the score. ────────────────────────────────────────
+    #[test]
+    fn fc_to_first_does_not_change_score() {
+        let mut state = GameState::new();
+        state.half = HalfInning::Top;
+        apply_batter_fielders_choice(&mut state, 5, RunnerDest::First);
+        assert_eq!(state.score.away, 0);
+        assert_eq!(state.score.home, 0);
+        assert_eq!(state.on_1b, Some(5));
+    }
+
+    #[test]
+    fn fc_to_second_does_not_change_score() {
+        let mut state = GameState::new();
+        state.half = HalfInning::Bottom;
+        apply_batter_fielders_choice(&mut state, 5, RunnerDest::Second);
+        assert_eq!(state.score.home, 0);
+        assert_eq!(state.on_2b, Some(5));
+    }
+
+    #[test]
+    fn fc_to_third_does_not_change_score() {
+        let mut state = GameState::new();
+        state.half = HalfInning::Top;
+        apply_batter_fielders_choice(&mut state, 5, RunnerDest::Third);
+        assert_eq!(state.score.away, 0);
+        assert_eq!(state.on_3b, Some(5));
+    }
+
+    // ─── Tests for issue #55 ─────────────────────────────────────────────
+    //
+    // Composite defensive plays (multiple outs / FC-on-runner / batter
+    // safe on FC combined in one line) must update the in-memory
+    // GameState.on_1b/on_2b/on_3b to match the runner_movements rows
+    // persisted to the DB. Before the fix, only the DB was updated and
+    // the scoreboard/base diamond drifted away from the scored play.
+
+    use crate::engine::scoring::batter_outs::{
+        DefensiveOutKind, DefensiveOutRecord, DefensivePlayCommand, DefensivePlayTarget,
+        FielderChoiceAdvance, FieldingSequence,
+    };
+
+    /// Build a minimal `GameState` with just enough batter/pitcher/side
+    /// context to satisfy `require_batter!` inside
+    /// `apply_defensive_play_command`. Bases are left empty by default.
+    fn fixture_state(batter_order: u8, inning: u32, half: HalfInning) -> GameState {
+        let mut s = GameState::new();
+        s.inning = inning;
+        s.half = half;
+        s.current_batter_id = Some(1000 + batter_order as i64);
+        s.current_batter_order = Some(batter_order);
+        s.current_pitcher_id = Some(9000);
+        s
+    }
+
+    /// Build a `DefensivePlayCommand` for `9 64, 1 o6 1b` — the example
+    /// given in issue #55: runner #9 is out 6-4 on a force, batter #1
+    /// is safe at 1B on the fielder's choice.
+    fn play_runner_out_plus_batter_fc() -> DefensivePlayCommand {
+        DefensivePlayCommand {
+            outs: vec![DefensiveOutRecord {
+                target: DefensivePlayTarget::Runner(9),
+                kind: DefensiveOutKind::GroundOut {
+                    sequence: FieldingSequence::new(vec![6, 4]).unwrap(),
+                },
+            }],
+            safe_advances: vec![FielderChoiceAdvance {
+                target: DefensivePlayTarget::Batter,
+                fielder: 6,
+                reached_base: RunnerDest::First,
+            }],
+        }
+    }
+
+    /// Build a `DefensivePlayCommand` for `5 l6, 3 64, 4 43` — a triple
+    /// play: batter #5 lines out to SS, runner #3 is out 6-4, runner #4
+    /// is out 4-3.
+    fn play_triple_play() -> DefensivePlayCommand {
+        DefensivePlayCommand {
+            outs: vec![
+                DefensiveOutRecord {
+                    target: DefensivePlayTarget::Batter,
+                    kind: DefensiveOutKind::LineOut { fielder: 6 },
+                },
+                DefensiveOutRecord {
+                    target: DefensivePlayTarget::Runner(3),
+                    kind: DefensiveOutKind::GroundOut {
+                        sequence: FieldingSequence::new(vec![6, 4]).unwrap(),
+                    },
+                },
+                DefensiveOutRecord {
+                    target: DefensivePlayTarget::Runner(4),
+                    kind: DefensiveOutKind::GroundOut {
+                        sequence: FieldingSequence::new(vec![4, 3]).unwrap(),
+                    },
+                },
+            ],
+            safe_advances: vec![],
+        }
+    }
+
+    #[test]
+    fn composite_fc_clears_runner_out_and_places_batter() {
+        // Scenario: runner #9 on 1B, batter #1 at the plate.
+        // Input: `9 64, 1 o6 1b`
+        // Expected after apply: runner #9 gone (out), batter #1 on 1B,
+        // on_2b/on_3b empty. Before the fix, `apply_batter_fielders_choice`
+        // observed on_1b = Some(9) and "forced" #9 to 2B before placing
+        // #1, resulting in on_1b=Some(1), on_2b=Some(9) — wrong.
+        //
+        // Note: `apply_defensive_play_command` returns an `ApplyResult`
+        // whose `applied` list contains a `DomainEvent::OutRecorded`;
+        // `state.outs` itself is updated when the caller (the live game
+        // loop) applies that event via `apply_domain_event`. This test
+        // exercises the unit directly and asserts on base state only;
+        // out-count bookkeeping is covered by integration paths.
+        let mut state = fixture_state(1, 3, HalfInning::Top);
+        state.on_1b = Some(9);
+
+        let _ = apply_defensive_play_command(&mut state, play_runner_out_plus_batter_fc());
+
+        assert_eq!(state.on_1b, Some(1), "batter #1 must be safe at 1B on FC");
+        assert_eq!(
+            state.on_2b, None,
+            "runner #9 is OUT, must not be pushed to 2B"
+        );
+        assert_eq!(state.on_3b, None);
+    }
+
+    #[test]
+    fn composite_triple_play_clears_all_runners() {
+        // Scenario: runners on 1B (#3) and 2B (#4), batter #5 at the
+        // plate, no outs. Input: `5 l6, 3 64, 4 43`. Expected after
+        // apply: all bases empty. (Out count bookkeeping happens in the
+        // caller when applying the returned `DomainEvent::OutRecorded`.)
+        let mut state = fixture_state(5, 1, HalfInning::Bottom);
+        state.on_1b = Some(3);
+        state.on_2b = Some(4);
+
+        let result = apply_defensive_play_command(&mut state, play_triple_play());
+
+        assert_eq!(state.on_1b, None, "runner #3 out 6-4 must leave 1B");
+        assert_eq!(state.on_2b, None, "runner #4 out 4-3 must leave 2B");
+        assert_eq!(state.on_3b, None);
+
+        // Sanity check that the result carries the outs upstream.
+        let out_event = result.applied.iter().find_map(|ev| match ev {
+            DomainEvent::OutRecorded(d) => Some(d),
+            _ => None,
+        });
+        let out_data = out_event.expect("OutRecorded event present");
+        assert_eq!(out_data.outs_before, 0);
+        assert_eq!(out_data.outs_after, 3);
+    }
+
+    #[test]
+    fn composite_fc_with_runner_safe_advance_places_runner_on_destination() {
+        // Scenario: runner #7 on 1B, batter #8 at the plate.
+        // Synthetic command: runner #7 safe at 2B on FC by SS, batter
+        // #8 safe at 1B on FC by SS (both safe, 0 outs — unusual but
+        // exercises the "runner FC advance to non-scoring base" path
+        // that the grammar allows but the validator currently rejects
+        // in real input; we construct the command directly here).
+        let mut state = fixture_state(8, 1, HalfInning::Top);
+        state.on_1b = Some(7);
+
+        let play = DefensivePlayCommand {
+            outs: vec![],
+            safe_advances: vec![
+                FielderChoiceAdvance {
+                    target: DefensivePlayTarget::Runner(7),
+                    fielder: 6,
+                    reached_base: RunnerDest::Second,
+                },
+                FielderChoiceAdvance {
+                    target: DefensivePlayTarget::Batter,
+                    fielder: 6,
+                    reached_base: RunnerDest::First,
+                },
+            ],
+        };
+
+        // This play has no outs; apply_defensive_play_command requires
+        // a batter result (out or FC) — the batter FC satisfies that.
+        let _ = apply_defensive_play_command(&mut state, play);
+
+        assert_eq!(state.on_1b, Some(8), "batter #8 on 1B");
+        assert_eq!(state.on_2b, Some(7), "runner #7 advanced to 2B");
+        assert_eq!(state.on_3b, None);
+    }
+
+    #[test]
+    fn composite_simple_batter_out_leaves_runners_untouched() {
+        // Non-regression: the fix must not disturb the pure-batter-out
+        // composite path (a single batter out with no runner segments).
+        // Scenario: runners on 1B and 3B, batter #5 grounds out 6-3.
+        let mut state = fixture_state(5, 4, HalfInning::Top);
+        state.on_1b = Some(2);
+        state.on_3b = Some(3);
+
+        let result = apply_defensive_play_command(
+            &mut state,
+            DefensivePlayCommand {
+                outs: vec![DefensiveOutRecord {
+                    target: DefensivePlayTarget::Batter,
+                    kind: DefensiveOutKind::GroundOut {
+                        sequence: FieldingSequence::new(vec![6, 3]).unwrap(),
+                    },
+                }],
+                safe_advances: vec![],
+            },
+        );
+
+        assert_eq!(state.on_1b, Some(2), "runner #2 undisturbed");
+        assert_eq!(state.on_3b, Some(3), "runner #3 undisturbed");
+
+        // The returned event carries the +1 out for the caller to apply.
+        let out_event = result.applied.iter().find_map(|ev| match ev {
+            DomainEvent::OutRecorded(d) => Some(d),
+            _ => None,
+        });
+        let out_data = out_event.expect("OutRecorded event present");
+        assert_eq!(out_data.outs_after - out_data.outs_before, 1);
     }
 }

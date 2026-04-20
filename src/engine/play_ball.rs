@@ -52,13 +52,24 @@ pub fn run_play_ball_engine(
             has_events = !rows.is_empty();
             replay_admin_logs(ui, &rows);
 
-            // Load steal movements for replay — now stored with pa_seq = last PA seq.
-            let standalone_movements =
+            // Load every runner_movements row for replay. Two kinds of
+            // rows drive state reconstruction here:
+            //
+            // - Steal rows (`advancement_type = "steal"`) are interlaced
+            //   between plate appearances (they fire on pitches, not at
+            //   the end of a PA).
+            //
+            // - Composite-defensive rows (`advancement_type` in
+            //   {`ground_out`, `fly_out`, `line_out`, `infield_fly`,
+            //   `unassisted_out`, `fielders_choice`}) carry the
+            //   per-runner segments of a composite play such as
+            //   `5 l6, 3 64, 4 43` or `9 64, 1 o6 1b`. They must be
+            //   applied to the in-memory state when the matching PA is
+            //   replayed, otherwise eliminated runners stay on base and
+            //   FC-safe advances are missed.
+            let all_movements =
                 match crate::db::runner_movements::list_runner_movements(conn, game_pk) {
-                    Ok(rms) => rms
-                        .into_iter()
-                        .filter(|r| r.advancement_type == "steal")
-                        .collect::<Vec<_>>(),
+                    Ok(rms) => rms,
                     Err(e) => {
                         ui.emit(UiEvent::Error(format!(
                             "Failed to load runner movements: {e}"
@@ -66,6 +77,9 @@ pub fn run_play_ball_engine(
                         vec![]
                     }
                 };
+            let (standalone_movements, composite_movements): (Vec<_>, Vec<_>) = all_movements
+                .into_iter()
+                .partition(|r| r.advancement_type == "steal");
 
             // 1) deterministic rebuild from plate appearances + interlaced standalone movements
             match list_plate_appearances(conn, game_pk) {
@@ -73,7 +87,13 @@ pub fn run_play_ball_engine(
                     if !pas.is_empty() {
                         has_events = true;
                     }
-                    replay_plate_appearances_and_log(ui, &mut state, &pas, &standalone_movements);
+                    replay_plate_appearances_and_log(
+                        ui,
+                        &mut state,
+                        &pas,
+                        &standalone_movements,
+                        &composite_movements,
+                    );
                 }
                 Err(e) => ui.emit(UiEvent::Error(format!(
                     "Failed to load plate appearances: {e}"
@@ -1132,6 +1152,7 @@ fn replay_plate_appearances_and_log(
     state: &mut GameState,
     pas: &[PlateAppearanceRow],
     standalone_movements: &[crate::db::runner_movements::RunnerMovementRow],
+    composite_movements: &[crate::db::runner_movements::RunnerMovementRow],
 ) {
     use crate::db::runner_movements::RunnerMovementRow;
 
@@ -1177,6 +1198,62 @@ fn replay_plate_appearances_and_log(
         }
     };
 
+    // Apply a composite defensive-play movement (runner-out, FC-safe
+    // advance, etc.) to the in-memory state. Mirror of the in-memory
+    // updates done by `apply_defensive_play_command` on the live path, so
+    // that replay converges on the same GameState.
+    //
+    // The row's `start_base` is NOT used as an authoritative source to
+    // clear the previous base, because the row only represents the
+    // runner's starting base at the time the play was recorded. If the
+    // runner has been subsequently moved (impossible today but defensive
+    // against future features like caught stealing followed by an FC on
+    // the same line), we always clear the slot from every base before
+    // applying the destination — matching `place_runner_on_base` in
+    // apply.rs.
+    let apply_composite_state = |state: &mut GameState, rm: &RunnerMovementRow| {
+        let order = rm.batter_order;
+
+        // Runner-out row: clear the slot from every base and be done.
+        if rm.is_out {
+            if state.on_1b == Some(order) {
+                state.on_1b = None;
+            }
+            if state.on_2b == Some(order) {
+                state.on_2b = None;
+            }
+            if state.on_3b == Some(order) {
+                state.on_3b = None;
+            }
+            return;
+        }
+
+        // FC-safe advance: first clear the slot, then place on
+        // destination.
+        if state.on_1b == Some(order) {
+            state.on_1b = None;
+        }
+        if state.on_2b == Some(order) {
+            state.on_2b = None;
+        }
+        if state.on_3b == Some(order) {
+            state.on_3b = None;
+        }
+        match rm.end_base.as_str() {
+            "1B" => state.on_1b = Some(order),
+            "2B" => state.on_2b = Some(order),
+            "3B" => state.on_3b = Some(order),
+            "HOME" => {
+                if rm.half_inning == "Top" {
+                    state.score.away = state.score.away.saturating_add(1);
+                } else {
+                    state.score.home = state.score.home.saturating_add(1);
+                }
+            }
+            _ => {}
+        }
+    };
+
     // Helper: apply a standalone movement (steal) to state and log it.
     // pending_steal_logs: messaggi di steal da emettere prima della prossima riga PA
     let mut pending_steal_logs: Vec<String> = vec![];
@@ -1188,6 +1265,28 @@ fn replay_plate_appearances_and_log(
 
         // applica PA (ricostruisce lo stato)
         apply_plate_appearance_row(state, pa);
+
+        // Apply composite-defensive movements linked to this PA (runner
+        // outs and FC-safe advances recorded in runner_movements rows
+        // with pa_seq == pa.seq and advancement_type != "steal"). This is
+        // the replay mirror of the in-memory state mutation performed by
+        // `apply_defensive_play_command` on the live path.
+        //
+        // Ordering: clear every runner-out before placing any FC-safe
+        // advance, so that a runner advancing to a base just vacated by
+        // another runner who was put out sees an empty slot.
+        for rm in composite_movements
+            .iter()
+            .filter(|r| r.pa_seq == Some(pa.seq) && r.is_out)
+        {
+            apply_composite_state(state, rm);
+        }
+        for rm in composite_movements
+            .iter()
+            .filter(|r| r.pa_seq == Some(pa.seq) && !r.is_out)
+        {
+            apply_composite_state(state, rm);
+        }
 
         // Applica steal linkati a questa PA allo stato; accumula i log
         while sm_idx < standalone_movements.len() {

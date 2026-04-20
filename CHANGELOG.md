@@ -76,6 +76,32 @@ its segment index, rather than the parser stopping at the first problem.
 - Runner-advance overrides (`<n> <base>`) now require a triggering play
   (hit or FC) on the same line; a bare advance with no trigger is rejected.
 
+### Fixed
+
+- **FC-to-home run credit (#56)** — `apply_batter_fielders_choice` was
+  a no-op for `RunnerDest::Score`, so a command like `5 o6 sc` recorded
+  the plate appearance with `scored=true` in `runner_movements` but
+  left `GameState.score` unchanged. The live scoreboard lagged by one
+  run and deterministic replay reproduced the same error. Fix adds the
+  run to the batting team's total and inning partial; base occupancy
+  stays untouched (batter never was on base). Covered by 6 unit tests
+  in `engine::apply::tests`.
+- **Composite defensive-play state drift (#55)** — plays with explicit
+  runner segments (runner outs, FC-safe advances on runners, triple
+  plays) persisted correctly to `runner_movements` but the in-memory
+  `GameState` did not mirror them. For instance `9 64, 1 o6 1b` with
+  runner #9 on 1B and batter #1 at the plate produced
+  `on_1b=Some(1), on_2b=Some(9)` — the tagged-out runner was
+  erroneously "forced" to 2B by `apply_batter_fielders_choice`. The
+  bug affected both live application and deterministic replay, and
+  spanned every composite play shape, not just FC. Fix applies the
+  same semantics to state that `runner_movements` records: clear every
+  runner-out from its base, then place every FC-safe advance on its
+  destination (crediting a run for `HOME`). The reducer's
+  `FieldersChoice` branch was stripped to avoid double-applying the
+  batter's placement on replay. Covered by 4 unit tests in
+  `engine::apply::tests`.
+
 ### Removed
 
 - **`EngineCommand::Unknown(String)`** variant — the new pipeline surfaces
