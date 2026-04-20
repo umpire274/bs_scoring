@@ -129,7 +129,18 @@ pub fn run_play_ball_engine(
             continue;
         }
 
-        let commands = parse_engine_commands(line);
+        let commands = match parse_engine_commands(line, &state) {
+            Ok(cmds) => cmds,
+            Err(errors) => {
+                // Surface every error the line contained. The UI's
+                // error channel shows one line per message; looping
+                // keeps each error visible and independently scrollable.
+                for err in errors {
+                    ui.emit(UiEvent::Error(err.to_string()));
+                }
+                continue;
+            }
+        };
 
         for cmd in commands {
             // ---------------- Special: PLAYBALL (DB-backed) ----------------

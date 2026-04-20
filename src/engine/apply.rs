@@ -117,11 +117,6 @@ pub fn apply_engine_command(state: &mut GameState, cmd: EngineCommand) -> ApplyR
         EngineCommand::StealBase { order, dest } => apply_steal(state, order, dest),
 
         EngineCommand::DefensivePlay(play) => apply_defensive_play_command(state, play),
-
-        EngineCommand::Unknown(s) => ApplyResult {
-            events: vec![UiEvent::Error(format!("Unknown command: {s}"))],
-            ..Default::default()
-        },
     }
 }
 
