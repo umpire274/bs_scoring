@@ -39,7 +39,10 @@ pub enum ParseError {
 
     /// The verb requires an object (zone for hits, base for FC / steal /
     /// advance) but none was given.
-    MissingObject { verb: String, expected: &'static str },
+    MissingObject {
+        verb: String,
+        expected: &'static str,
+    },
 
     /// A zone token (e.g. `lf`) was not one of the documented codes.
     InvalidZone { token: String },
@@ -128,10 +131,7 @@ impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::BatterSlotMismatch { given, current } => match current {
-                Some(c) => write!(
-                    f,
-                    "batter slot #{given} does not match current batter #{c}"
-                ),
+                Some(c) => write!(f, "batter slot #{given} does not match current batter #{c}"),
                 None => write!(f, "batter slot #{given} provided but no batter is active"),
             },
             Self::RunnerNotOnBase { order } => {

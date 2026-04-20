@@ -1,4 +1,4 @@
-# 🎯 BS Scoring v0.11.0-alpha1 – Project Structure
+# 🎯 BS Scoring v0.11.0-alpha2 – Project Structure
 
 ## 📂 Directory layout
 
@@ -11,6 +11,7 @@ bs_scoring/
 ├── CHANGELOG.md
 ├── SCORING_GUIDE.md            # Scorer command reference
 ├── STRUCTURE.md                # This file
+├── RELEASE.md                  # Release process
 ├── .gitignore
 │
 └── src/
@@ -33,9 +34,15 @@ bs_scoring/
     │                           #   PlateAppearanceResult, Base, ScoringError
     │
     ├── engine/                 # Game logic — no I/O, no UI              [v0.11.0]
-    │   ├── commands/           # Engine-level commands (ex-src/commands)
-    │   │   ├── parser.rs       # parse_engine_commands() — "6 h, 5 2b", "6 st 2b"
-    │   │   └── types.rs        # EngineCommand enum
+    │   ├── commands/           # Scoring-command pipeline           [alpha2: rebuilt]
+    │   │   ├── types.rs        # EngineCommand enum
+    │   │   ├── errors.rs       # ParseError / ValidationError / CommandError
+    │   │   ├── grammar/        # Stateless syntactic layer
+    │   │   │   ├── mod.rs      # parse_line() facade
+    │   │   │   ├── tokens.rs   # Lazy regexes + TokenKind classifier
+    │   │   │   └── segment.rs  # Segment enum + parse_segment()
+    │   │   ├── validator.rs    # State-aware validation + coalescing
+    │   │   └── parser.rs       # Facade: parse_engine_commands(line, &state)
     │   ├── scoring/            # Scoring-rules helpers (ex-core/scoring)
     │   │   ├── batter_outs.rs  # BatterOutType, fielding-sequence parsing
     │   │   └── resolve_batter_out.rs
@@ -48,7 +55,7 @@ bs_scoring/
     │
     ├── db/                     # SQLite persistence layer
     │   ├── database.rs         # Connection + WAL + PRAGMAs
-    │   ├── migrations.rs       # Schema versioning (v1–v16)
+    │   ├── migrations.rs       # Schema versioning
     │   ├── game_queries.rs     # list_playable_games, gate_check_lineups, set_game_status
     │   ├── plate_appearances.rs# plate_appearances CRUD
     │   ├── runner_movements.rs # runner_movements CRUD
@@ -93,65 +100,119 @@ bs_scoring/
 
 ## 🏗️ Architecture
 
+The game loop in `engine/play_ball.rs` hands each raw input line to the
+command pipeline and then applies the resulting `Vec<EngineCommand>` one
+command at a time. The pipeline itself is split into a **stateless**
+syntactic stage and a **state-aware** validation stage — a pattern
+introduced in v0.11.0-alpha2:
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│                main.rs / cli/screens/                    │
-│            Menu-driven CLI application                   │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────┐
-│                   engine/play_ball.rs                    │
-│   Main game loop: reads input, drives state, writes DB  │
-└──────┬─────────────────┬──────────────────┬─────────────┘
-       │                 │                  │
-       ▼                 ▼                  ▼
-┌────────────┐  ┌─────────────────┐  ┌─────────────────────┐
-│ engine/    │  │   engine/       │  │        db/          │
-│ commands/  │  │                 │  │                     │
-│            │  │ apply.rs        │  │ plate_appearances.rs│
-│ parser.rs  │  │    │            │  │ game_events.rs      │
-│ types.rs   │  │    ▼            │  │ game_queries.rs     │
-│            │  │ runners.rs      │  │ at_bat_draft.rs     │
-│ "6 h, 5 2b"│  │ (single source  │  │ runner_movements.rs │
-│ "6 st 2b"  │  │  of truth for   │  │                     │
-│            │  │  base advance)  │  │ SQLite (v16 + WAL)  │
-│            │  │    │            │  │                     │
-│            │  │    ▼            │  │                     │
-│            │  │ reducer.rs      │  │                     │
-└────────────┘  └────────┬────────┘  └─────────────────────┘
-                         │
-                         ▼
-               ┌──────────────────────┐
-               │       models/        │
-               │                      │
-               │ game_state.rs        │
-               │ runner.rs            │
-               │ session.rs           │
-               │ plate_appearance.rs  │
-               │ events.rs            │
-               └──────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                 main.rs / cli/screens/                           │
+│               Menu-driven CLI application                         │
+└─────────────────────────────┬────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     engine/play_ball.rs                          │
+│   Main game loop: reads input, drives state, writes DB          │
+└───┬───────────────────────────────────────────────────┬──────────┘
+    │                                                   │
+    ▼                                                   ▼
+┌────────────────────────────────────────────┐   ┌─────────────────┐
+│           engine/commands/                 │   │       db/       │
+│                                            │   │                 │
+│   parser.rs  (facade)                      │   │ plate_appear…   │
+│       │                                    │   │ game_events.rs  │
+│       ▼                                    │   │ game_queries.rs │
+│   grammar/   (stateless, regex-assisted)   │   │ at_bat_draft.rs │
+│     tokens.rs → TokenKind                  │   │ runner_movem…   │
+│     segment.rs → Segment                   │   │                 │
+│       │                                    │   │ SQLite + WAL    │
+│       ▼                                    │   │                 │
+│   validator.rs  (state-aware, coalescing)  │   │                 │
+│       │                                    │   └─────────────────┘
+│       ▼                                    │
+│   Result<Vec<EngineCommand>,               │
+│          Vec<CommandError>>                │
+│                                            │
+└───────────────┬────────────────────────────┘
+                │
+                ▼ (on Ok)
+┌────────────────────────────────────────────┐
+│              engine/                       │
+│                                            │
+│    apply.rs                                │
+│       │                                    │
+│       ▼                                    │
+│    runners.rs   (single source of truth    │
+│                  for base advancement)     │
+│       │                                    │
+│       ▼                                    │
+│    reducer.rs                              │
+└────────────────┬───────────────────────────┘
+                 │
+                 ▼
+        ┌──────────────────────┐
+        │       models/        │
+        │                      │
+        │ game_state.rs        │
+        │ runner.rs            │
+        │ session.rs           │
+        │ plate_appearance.rs  │
+        │ events.rs            │
+        └──────────────────────┘
 ```
 
 ---
 
 ## 🔑 Key design decisions
 
+### Command pipeline (v0.11.0-alpha2)
+
+The scoring-command pipeline is deliberately split into two stages so that
+each can be tested in isolation and the responsibilities are not tangled:
+
+| Stage     | Module                      | Input                               | Output                                      | State?      |
+|-----------|-----------------------------|-------------------------------------|---------------------------------------------|-------------|
+| Syntactic | `engine/commands/grammar`   | `&str` (raw line)                   | `Vec<Segment>` or `Vec<CommandError>`       | stateless   |
+| Semantic  | `engine/commands/validator` | `Vec<IndexedSegment>`, `&GameState` | `Vec<EngineCommand>` or `Vec<CommandError>` | state-aware |
+
+The thin facade `engine/commands/parser.rs::parse_engine_commands(line, &state)`
+composes the two.
+
+Design rules:
+
+- The **grammar layer has no access to the game state**. It classifies
+  tokens, parses every comma-separated segment independently, and never
+  privileges the first token — all segments are peers.
+- The **validator owns the subject rule**, the runner-presence checks,
+  the infield-fly preconditions, the too-many-outs cap, and every
+  structural conflict (hit + out, FC + hit, FC + batter-out, etc.).
+- **Errors are accumulated**, never short-circuited: every segment that
+  fails a syntactic or semantic check produces a `CommandError` with its
+  1-based index; the caller sees every problem in a single pass.
+- **Coalescing happens at the end** of the validator: a hit segment plus
+  any number of runner-advance segments becomes a single `EngineCommand`
+  variant (`Single` / `Double` / `Triple` / `HomeRun`) with
+  `runner_overrides` populated; defensive-out segments merge into a
+  single `DefensivePlay`; pitches and steals stay as independent
+  commands in their original segment order.
+
 ### Model split (v0.9.0)
 
 Prior to v0.9.0, `models/play_ball.rs` contained everything related to live
 game state. It has been split into focused modules:
 
-| Module                    | Contents                                                                                 |
-|---------------------------|------------------------------------------------------------------------------------------|
-| `models/game_state.rs`    | `GameState`, `BatterOrder`, `PitchStats`                                                 |
-| `models/runner.rs`        | `RunnerDest`, `RunnerOverride`                                                           |
-| `models/session.rs`       | `PlayBallGameContext`, `PlayBallGate`, `LineupSide`                                      |
-| `models/scoring/types.rs` | Full scoring notation types (`HitType`, `OutType`, etc.) — used only by `core/parser.rs` |
-| `models/play_ball.rs`     | Compatibility shim — re-exports from the above modules                                   |
+| Module                    | Contents                                                                               |
+|---------------------------|----------------------------------------------------------------------------------------|
+| `models/game_state.rs`    | `GameState`, `BatterOrder`, `PitchStats`                                               |
+| `models/runner.rs`        | `RunnerDest`, `RunnerOverride`                                                         |
+| `models/session.rs`       | `PlayBallGameContext`, `PlayBallGate`, `LineupSide`                                    |
+| `models/scoring/types.rs` | Full scoring notation types (`HitType`, `OutType`, etc.) — used by the notation parser |
 
-Similarly, `core/play_ball.rs` (DB queries) has been moved to `db/game_queries.rs`
-and kept as a deprecated re-export shim.
+The compatibility shim `models/play_ball.rs` that mirrored the pre-v0.9.0
+path was kept through the v0.10.x line and removed in v0.11.0-alpha1.
 
 ### Runner identity on bases (`Option<BatterOrder>`)
 

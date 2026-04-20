@@ -42,6 +42,4 @@ pub enum EngineCommand {
     },
 
     DefensivePlay(DefensivePlayCommand),
-
-    Unknown(String),
 }

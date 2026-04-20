@@ -4,15 +4,17 @@
 //! (pitches, contacts, defensive plays, …) and consumed by the engine reducer.
 //! They are distinct from the user-facing CLI "commands" under `crate::cli`.
 //!
-//! # Pipeline (WIP for v0.11.0-alpha2)
+//! # Pipeline
 //!
 //! 1. `grammar` — stateless syntactic parsing: line → `Vec<Segment>`.
-//! 2. `validator` (TODO) — semantic checks against the `GameState`:
+//! 2. `validator` — semantic checks against the `GameState`:
 //!    `Vec<Segment> + &GameState` → `Vec<EngineCommand>`.
-//! 3. `parser` (current) — legacy single-pass parser, still the active entry
-//!    point from the game loop while the new pipeline is being assembled.
+//! 3. `parser` — thin facade composing the two, exposing
+//!    [`parser::parse_engine_commands`] as the single entry point for the
+//!    game loop.
 
 pub mod errors;
 pub mod grammar;
 pub mod parser;
 pub mod types;
+pub mod validator;

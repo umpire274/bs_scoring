@@ -5,6 +5,124 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.11.0-alpha2] - 2026-04-20
+
+Second alpha of the v0.11.0 milestone. Ships the scoring-command grammar
+refactor: the parser is rebuilt on top of a formal grammar with regex-assisted
+lexical recognition, split into a stateless syntactic pass and a
+state-dependent validator. Every error the line contains is now surfaced with
+its segment index, rather than the parser stopping at the first problem.
+
+### Added
+
+- **`regex` crate dependency** (`regex = "1.11.1"`) for lexical token
+  recognisers (fielding sequences, verb shapes, base / zone tags).
+- **`engine/commands/errors.rs`** — new public types for diagnostics:
+    - `ParseError` (empty segment, missing / disallowed subject, unknown verb,
+      missing / invalid object, extra tokens, invalid fielding sequence, …)
+    - `ValidationError` (batter-slot mismatch, runner not on base,
+      advance without trigger, duplicate subject, infield-fly preconditions,
+      too-many-outs, structural conflicts)
+    - `CommandError` — wraps either kind with a 1-based segment index and the
+      original segment text for `Display`.
+- **`engine/commands/grammar/`** — stateless syntactic layer:
+    - `tokens.rs` — `LazyLock<Regex>` patterns and a `TokenKind` classifier for
+      every lexical shape (`Digit`, `HitVerb`, `PitchVerb`, `StealVerb`,
+      `FcVerb`, `FlyVerb`, `LineVerb`, `InfieldFlyVerb`, `FieldingSeq`,
+      `Zone`, `Base`, `Keyword`).
+    - `segment.rs` — `Segment` enum (`Control`, `Status`, `Pitch`, `Hit`,
+      `BatterOut`, `RunnerOut`, `FielderChoice`, `Steal`, `Advance`) and
+      `parse_segment()` / `parse_line()` entry points.
+- **`engine/commands/validator.rs`** — state-aware validation and coalescing.
+  `validate(Vec<IndexedSegment>, &GameState)` accumulates every error and,
+  on success, folds hit + advances into a single `EngineCommand::Single` /
+  `Double` / `Triple` / `HomeRun`, defensive outs into a single
+  `DefensivePlay`, and keeps pitches and steals as independent commands in
+  their original segment order.
+- **`engine/commands/parser.rs` facade** — `parse_engine_commands(line, &state)`
+  composes the grammar and validator into a single entry point returning
+  `Result<Vec<EngineCommand>, Vec<CommandError>>`.
+- 130 new unit tests: 12 in `tokens`, 38 in `segment`, 5 in `grammar::mod`,
+  20 in `validator`, 6 in the `parser` facade — covering happy paths,
+  error diagnostics, order invariance, infield-fly preconditions, and every
+  structural conflict rule.
+
+### Changed
+
+- **Subject-always grammar.** The batting-order subject is mandatory on every
+  action segment, with one documented exception: verbs whose shape cannot be
+  confused with a lone digit (hit verbs, multi-character batter-outs, FC) may
+  omit the subject, which then defaults to the current batter. Single-digit
+  unassisted (`5`), steals (`st`), and standalone runner-advances (`<n> <base>`)
+  always require an explicit subject. Pitches and control / status keywords
+  never accept a subject.
+- **Order-independent segments.** Composite defensive plays, runner overrides
+  after a hit, and mixed lines can be typed in any order. For example,
+  `5 l6, 3 64, 4 43` / `3 64, 5 l6, 4 43` / `4 43, 5 l6, 3 64` all produce
+  the same triple play.
+- **Accumulated error reporting.** When a line contains multiple problems
+  (syntactic or semantic), every one is emitted in a single pass as
+  `error at segment N: '<text>': <reason>`, rather than the parser stopping
+  at the first.
+- **Game-loop wiring.** `engine::play_ball` now consumes the `Result`
+  directly, emitting one `UiEvent::Error` per `CommandError` when the line
+  fails validation.
+- Subject checks now cross-reference the current batter slot. `5 h` when the
+  current batter is `#8` is rejected with
+  `batter slot #5 does not match current batter #8`.
+- Runner-targeted segments (`<n> 64`, `<n> st 2b`, `<n> 2b`) now verify that
+  the runner is actually on base. If the subject coincides with the current
+  batter, a runner-out segment is silently demoted to a batter-out.
+- Runner-advance overrides (`<n> <base>`) now require a triggering play
+  (hit or FC) on the same line; a bare advance with no trigger is rejected.
+
+### Removed
+
+- **`EngineCommand::Unknown(String)`** variant — the new pipeline surfaces
+  parse failures as `CommandError` values via the `Result` return type, so
+  the catch-all string variant is no longer needed. The corresponding
+  fallback branch in `engine::apply` has been deleted.
+- Legacy ad-hoc parsers inside `engine/commands/parser.rs`
+  (`parse_non_hit_command`, `parse_legacy_batter_out_command`,
+  `parse_batter_token`, the standalone `parse_defensive_play_command` path).
+  Their responsibilities are now covered by the grammar + validator pipeline.
+
+### Migration notes
+
+External consumers of `engine::commands::parser::parse_engine_commands` must
+update their call sites:
+
+```rust
+// Before (v0.11.0-alpha1 and earlier):
+let commands: Vec<EngineCommand> = parse_engine_commands(line);
+for cmd in commands {
+if let EngineCommand::Unknown(msg) = &cmd { /* handle */ }
+/* … */
+}
+
+// After (v0.11.0-alpha2):
+let commands = match parse_engine_commands(line, & state) {
+Ok(cmds) => cmds,
+Err(errors) => {
+for err in errors {
+ui.emit(UiEvent::Error(err.to_string()));
+}
+continue;
+}
+};
+for cmd in commands { /* … */ }
+```
+
+Input strings that used to parse (possibly resulting in `EngineCommand::Unknown`)
+but do not follow the subject-always grammar will now be rejected at input
+time. In particular:
+
+- `st 2b`, `2b`, `5 b` → now errors, previously handled in ad-hoc ways
+- `5` alone → now an error; use `<n> 5` (e.g. `5 5`) for a batter unassisted
+  by the third baseman
+
+---
+
 ## [v0.11.0-alpha1] - 2026-04-20
 
 First alpha of the v0.11.0 milestone. This alpha ships the structural refactor

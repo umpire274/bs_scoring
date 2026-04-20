@@ -168,9 +168,7 @@ pub fn parse_segment(raw: &str) -> Result<Segment, ParseError> {
 
         // ── Implicit-batter paths ─────────────────────────────────────────────
         (TokenKind::HitVerb(hv), _) => parse_hit(None, *hv, &tokens, &kinds),
-        (TokenKind::FcVerb { fielder }, _) => {
-            parse_fc(None, *fielder, &tokens, &kinds)
-        }
+        (TokenKind::FcVerb { fielder }, _) => parse_fc(None, *fielder, &tokens, &kinds),
         (TokenKind::FlyVerb { fielder, foul }, _) => parse_batter_out_implicit(
             BatterOutKind::FlyOut {
                 fielder: *fielder,
@@ -178,14 +176,12 @@ pub fn parse_segment(raw: &str) -> Result<Segment, ParseError> {
             },
             &tokens,
         ),
-        (TokenKind::LineVerb { fielder }, _) => parse_batter_out_implicit(
-            BatterOutKind::LineOut { fielder: *fielder },
-            &tokens,
-        ),
-        (TokenKind::InfieldFlyVerb { fielder }, _) => parse_batter_out_implicit(
-            BatterOutKind::InfieldFly { fielder: *fielder },
-            &tokens,
-        ),
+        (TokenKind::LineVerb { fielder }, _) => {
+            parse_batter_out_implicit(BatterOutKind::LineOut { fielder: *fielder }, &tokens)
+        }
+        (TokenKind::InfieldFlyVerb { fielder }, _) => {
+            parse_batter_out_implicit(BatterOutKind::InfieldFly { fielder: *fielder }, &tokens)
+        }
         (TokenKind::FieldingSeq(fielders), _) => parse_batter_out_implicit(
             BatterOutKind::GroundOut {
                 fielders: fielders.clone(),
@@ -287,9 +283,7 @@ fn parse_with_subject(
 
     match &rest_kinds[0] {
         TokenKind::HitVerb(hv) => parse_hit(Some(subject), *hv, rest_tokens, rest_kinds),
-        TokenKind::FcVerb { fielder } => {
-            parse_fc(Some(subject), *fielder, rest_tokens, rest_kinds)
-        }
+        TokenKind::FcVerb { fielder } => parse_fc(Some(subject), *fielder, rest_tokens, rest_kinds),
         TokenKind::StealVerb => parse_steal(subject, rest_tokens, rest_kinds),
 
         // Runner-targeted OUTs.
@@ -470,20 +464,14 @@ fn parse_steal(
 // ─── Batter-out / runner-out helpers ─────────────────────────────────────────
 
 /// Batter-out with implicit subject. The verb is the only token.
-fn parse_batter_out_implicit(
-    out: BatterOutKind,
-    tokens: &[&str],
-) -> Result<Segment, ParseError> {
+fn parse_batter_out_implicit(out: BatterOutKind, tokens: &[&str]) -> Result<Segment, ParseError> {
     if tokens.len() > 1 {
         return Err(ParseError::ExtraTokens {
             verb: tokens[0].to_string(),
             extra: tokens[1..].join(" "),
         });
     }
-    Ok(Segment::BatterOut {
-        subject: None,
-        out,
-    })
+    Ok(Segment::BatterOut { subject: None, out })
 }
 
 /// Runner-targeted out (or explicit batter out): the subject has already been

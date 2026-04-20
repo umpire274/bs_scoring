@@ -34,8 +34,7 @@ use crate::models::runner::RunnerDest;
 // ─── Regex patterns (compiled once) ──────────────────────────────────────────
 
 /// Single digit 1–9 — matches both the subject and a lone unassisted fielder.
-pub(super) static RE_DIGIT_1_9: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[1-9]$").unwrap());
+pub(super) static RE_DIGIT_1_9: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[1-9]$").unwrap());
 
 /// Hit verbs: `h`, `2h`, `3h`, `hr`.
 pub(super) static RE_HIT_VERB: LazyLock<Regex> =
@@ -315,7 +314,10 @@ mod tests {
             TokenKind::PitchVerb(PitchVerbKind::SwingingStrike)
         );
         assert_eq!(classify("f"), TokenKind::PitchVerb(PitchVerbKind::Foul));
-        assert_eq!(classify("fl"), TokenKind::PitchVerb(PitchVerbKind::FoulBunt));
+        assert_eq!(
+            classify("fl"),
+            TokenKind::PitchVerb(PitchVerbKind::FoulBunt)
+        );
     }
 
     #[test]
@@ -365,9 +367,15 @@ mod tests {
     #[test]
     fn zone_and_base_disambiguate() {
         assert!(matches!(classify("lf"), TokenKind::Zone(FieldZone::LF)));
-        assert!(matches!(classify("2b"), TokenKind::Base(RunnerDest::Second)));
+        assert!(matches!(
+            classify("2b"),
+            TokenKind::Base(RunnerDest::Second)
+        ));
         assert!(matches!(classify("sc"), TokenKind::Base(RunnerDest::Score)));
-        assert!(matches!(classify("home"), TokenKind::Base(RunnerDest::Score)));
+        assert!(matches!(
+            classify("home"),
+            TokenKind::Base(RunnerDest::Score)
+        ));
     }
 
     #[test]
