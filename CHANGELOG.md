@@ -138,6 +138,18 @@ its segment index, rather than the parser stopping at the first problem.
   total after any FC-safe scoring or stolen-base-to-home in a resumed game.
   Both closures now call `add_runs_to_score(state, 1)`, which updates both
   the total and the correct inning bucket atomically, matching the live path.
+- **Wrong team/inning bucket for steal-home across half-inning boundary (#66)** —
+  After fix #62, both `apply_steal_state` and `apply_composite_state` called
+  `add_runs_to_score(state, 1)`, which credits the run using `state.half` and
+  `state.inning`. However, steals are linked to the last committed PA via
+  `rm.pa_seq`, so a steal-home that occurred during the first at-bat of a new
+  half could be replayed while `state.half` / `state.inning` still reflected the
+  previous half-inning. The run was credited to the wrong team and inning bucket.
+  Both closures now temporarily override `state.half` / `state.inning` with the
+  values recorded in the `runner_movements` row (`rm.half_inning`, `rm.inning`)
+  before calling `add_runs_to_score`, then restore the original state values.
+  This makes the replay authoritative on the row's recorded context rather than
+  the current traversal position.
 
 ### Removed
 
