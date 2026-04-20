@@ -1100,6 +1100,7 @@ pub fn apply_batter_fielders_choice(
         }
 
         RunnerDest::Score => {
+            add_runs_to_score(state, 1);
             // Batter reaches home; base occupancy unchanged.
         }
     }
@@ -1114,5 +1115,106 @@ fn runner_start_base_label(state: &GameState, order: u8) -> &'static str {
         "3B"
     } else {
         "UNK"
+    }
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::game_state::GameState;
+    use crate::models::runner::RunnerDest;
+    use crate::models::types::HalfInning;
+
+    /// Regression test for the FC-to-home run-credit bug.
+    ///
+    /// Before v0.11.0-alpha2 the `RunnerDest::Score` branch of
+    /// `apply_batter_fielders_choice` was a no-op: it left the base
+    /// occupancy unchanged (correctly) but forgot to add the run, so
+    /// commands like `o6 sc` recorded a completed plate appearance with
+    /// `scored=true` in `runner_movements` while `GameState.score`
+    /// remained unchanged. The scoreboard lagged by one run and the
+    /// deterministic resume reproduced the same error.
+    #[test]
+    fn fc_to_home_adds_run_to_away_when_top_half() {
+        let mut state = GameState::new();
+        state.half = HalfInning::Top;
+        state.inning = 1;
+        assert_eq!(state.score.away, 0);
+
+        apply_batter_fielders_choice(&mut state, 5, RunnerDest::Score);
+
+        assert_eq!(state.score.away, 1, "away total score must increase");
+        assert_eq!(
+            state.score.away_innings[0], 1,
+            "away inning-by-inning line score must increase for inning 1"
+        );
+        assert_eq!(state.score.home, 0, "home score must not change");
+    }
+
+    #[test]
+    fn fc_to_home_adds_run_to_home_when_bottom_half() {
+        let mut state = GameState::new();
+        state.half = HalfInning::Bottom;
+        state.inning = 3;
+
+        apply_batter_fielders_choice(&mut state, 4, RunnerDest::Score);
+
+        assert_eq!(state.score.home, 1, "home total score must increase");
+        assert_eq!(
+            state.score.home_innings[2], 1,
+            "home inning-by-inning line score must increase for inning 3"
+        );
+        assert_eq!(state.score.away, 0, "away score must not change");
+    }
+
+    #[test]
+    fn fc_to_home_leaves_base_occupancy_unchanged() {
+        // Bases loaded scenario: batter's FC to home scores *the batter*
+        // directly (unusual but grammatically legal). Runners on 1B/2B/3B
+        // are undisturbed.
+        let mut state = GameState::new();
+        state.half = HalfInning::Top;
+        state.on_1b = Some(7);
+        state.on_2b = Some(8);
+        state.on_3b = Some(9);
+
+        apply_batter_fielders_choice(&mut state, 5, RunnerDest::Score);
+
+        assert_eq!(state.on_1b, Some(7));
+        assert_eq!(state.on_2b, Some(8));
+        assert_eq!(state.on_3b, Some(9));
+        assert_eq!(state.score.away, 1);
+    }
+
+    // ── Non-regression for the other three destinations: they must
+    //    never touch the score. ────────────────────────────────────────
+    #[test]
+    fn fc_to_first_does_not_change_score() {
+        let mut state = GameState::new();
+        state.half = HalfInning::Top;
+        apply_batter_fielders_choice(&mut state, 5, RunnerDest::First);
+        assert_eq!(state.score.away, 0);
+        assert_eq!(state.score.home, 0);
+        assert_eq!(state.on_1b, Some(5));
+    }
+
+    #[test]
+    fn fc_to_second_does_not_change_score() {
+        let mut state = GameState::new();
+        state.half = HalfInning::Bottom;
+        apply_batter_fielders_choice(&mut state, 5, RunnerDest::Second);
+        assert_eq!(state.score.home, 0);
+        assert_eq!(state.on_2b, Some(5));
+    }
+
+    #[test]
+    fn fc_to_third_does_not_change_score() {
+        let mut state = GameState::new();
+        state.half = HalfInning::Top;
+        apply_batter_fielders_choice(&mut state, 5, RunnerDest::Third);
+        assert_eq!(state.score.away, 0);
+        assert_eq!(state.on_3b, Some(5));
     }
 }

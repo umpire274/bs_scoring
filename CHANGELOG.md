@@ -76,6 +76,14 @@ its segment index, rather than the parser stopping at the first problem.
 - Runner-advance overrides (`<n> <base>`) now require a triggering play
   (hit or FC) on the same line; a bare advance with no trigger is rejected.
 
+### Fixed
+
+- **FC-to-home run credit** — `apply_batter_fielders_choice` was a no-op for
+  `RunnerDest::Score`, so a command like `5 o6 sc` recorded the plate
+  appearance with `scored=true` in `runner_movements` but left the
+  scoreboard unchanged. Now adds the run to the batting team's total and
+  inning partial, both in live application and on deterministic replay.
+
 ### Removed
 
 - **`EngineCommand::Unknown(String)`** variant — the new pipeline surfaces
