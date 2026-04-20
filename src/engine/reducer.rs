@@ -1,5 +1,4 @@
 use crate::db::plate_appearances::PlateAppearanceRow;
-use crate::engine::apply::apply_batter_fielders_choice;
 use crate::engine::play_ball::{bump_order, parse_pa_sequence};
 use crate::models::events::{DomainEvent, StrikeoutKind};
 use crate::models::game_state::{BatterOrder, GameState};
@@ -277,12 +276,17 @@ fn apply_plate_appearance_core(
             state.outs = pa.outs;
         }
 
-        crate::models::plate_appearance::PlateAppearanceOutcome::FieldersChoice {
-            reached_base,
-            ..
-        } => {
+        crate::models::plate_appearance::PlateAppearanceOutcome::FieldersChoice { .. } => {
+            // v0.11.0-alpha2-fix_codex: the batter's BAT → <base> movement
+            // is now applied from the `runner_movements` row produced by
+            // `apply_defensive_play_command` and replayed by the caller
+            // (`replay_plate_appearances_and_log`). Do NOT move the batter
+            // here, or we would double-apply the placement.
+            //
+            // Runner segments of a composite FC (outs and advances on
+            // other runners) are likewise applied from their own
+            // runner_movements rows by the caller.
             state.outs = pa.outs;
-            apply_batter_fielders_choice(state, pa.batter_order, *reached_base);
         }
 
         crate::models::plate_appearance::PlateAppearanceOutcome::Single { .. } => {
