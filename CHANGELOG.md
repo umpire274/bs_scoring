@@ -129,7 +129,7 @@ its segment index, rather than the parser stopping at the first problem.
   The partition now uses an explicit whitelist of composite/defensive types
   (`ground_out`, `fly_out`, `line_out`, `infield_fly`, `unassisted_out`,
   `fielders_choice`) and discards all normal-PA movement rows.
-- **Inning-bucket not incremented for HOME composite/steal movements (#62)** —
+- **Inning-bucket not incremented for HOME composite/steal movements (#64)** —
   Both `apply_composite_state` and `apply_steal_state` in the replay path
   incremented `state.score.away` / `state.score.home` directly via
   `saturating_add`, bypassing `add_runs_to_score`. As a result the
