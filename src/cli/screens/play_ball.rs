@@ -3,28 +3,28 @@ use crate::models::session::{LineupSide, PlayBallGameContext, PlayBallGate};
 use rusqlite::params;
 
 use crate::Database;
-use crate::cli::commands::game::{insert_team_lineup, save_lineup};
+use crate::cli::screens::game::{insert_team_lineup, save_lineup};
 use crate::engine::play_ball::run_play_ball_engine;
 use crate::models::types::GameStatus;
 use crate::ui::factory::create_ui;
-use crate::utils::cli;
+use crate::utils::term;
 
 pub fn play_ball(db: &mut Database) {
-    cli::show_header("PLAY BALL");
+    term::show_header("PLAY BALL");
 
     let conn = db.get_connection_mut();
 
     let games = match list_playable_games(conn) {
         Ok(v) => v,
         Err(e) => {
-            cli::show_error(&format!("Error querying games: {e}"));
+            term::show_error(&format!("Error querying games: {e}"));
             return;
         }
     };
 
     if games.is_empty() {
         println!("📭 No pre-game games found.");
-        cli::wait_for_enter();
+        term::wait_for_enter();
         return;
     }
 
@@ -47,11 +47,11 @@ pub fn play_ball(db: &mut Database) {
         println!();
     }
 
-    let game_choice = match cli::read_i64("Select game (number, 0 to cancel): ") {
+    let game_choice = match term::read_i64("Select game (number, 0 to cancel): ") {
         Some(0) | None => return,
         Some(c) if c > 0 && (c as usize) <= games.len() => c as usize,
         _ => {
-            cli::show_error("Invalid selection");
+            term::show_error("Invalid selection");
             return;
         }
     };
@@ -93,15 +93,15 @@ pub fn play_ball(db: &mut Database) {
                 match set_game_status(conn, &g.game_id, GameStatus::InProgress) {
                     Ok(true) => {}
                     Ok(false) => {
-                        cli::show_error(
+                        term::show_error(
                             "Game status was not updated (game not in Pre-Game status?)",
                         );
-                        cli::wait_for_enter();
+                        term::wait_for_enter();
                         return;
                     }
                     Err(e) => {
-                        cli::show_error(&format!("Failed to set game LIVE: {e}"));
-                        cli::wait_for_enter();
+                        term::show_error(&format!("Failed to set game LIVE: {e}"));
+                        term::wait_for_enter();
                         return;
                     }
                 }
@@ -139,8 +139,8 @@ pub fn play_ball(db: &mut Database) {
         }
 
         Err(e) => {
-            cli::show_error(&format!("Error checking lineups: {e}"));
-            cli::wait_for_enter();
+            term::show_error(&format!("Error checking lineups: {e}"));
+            term::wait_for_enter();
         }
     }
 }
@@ -159,7 +159,7 @@ fn handle_invalid_lineup(
         LineupSide::Home => (g.home_team_id, g.home_team_name.clone()),
     };
 
-    cli::show_error(&format!(
+    term::show_error(&format!(
         "Invalid lineup for {} team: {} (found {}, required {}).",
         side.label(),
         team_name,
@@ -169,12 +169,12 @@ fn handle_invalid_lineup(
 
     // Se found < required: proponiamo inserimento/rimpiazzo lineup
     if found < required {
-        if !cli::confirm(&format!(
+        if !term::confirm(&format!(
             "Do you want to insert/replace the lineup for {} now?",
             team_name
         )) {
             println!("\n❌ Cannot start the game without valid lineups.");
-            cli::wait_for_enter();
+            term::wait_for_enter();
             return;
         }
 
@@ -189,7 +189,7 @@ fn handle_invalid_lineup(
             Some(lineup) => lineup,
             None => {
                 println!("\n❌ Lineup insertion cancelled");
-                cli::wait_for_enter();
+                term::wait_for_enter();
                 return;
             }
         };
@@ -199,28 +199,28 @@ fn handle_invalid_lineup(
             "DELETE FROM game_lineups WHERE game_id = ?1 AND team_id = ?2",
             params![&g.game_id, team_id],
         ) {
-            cli::show_error(&format!("Failed to cleanup old lineup: {e}"));
+            term::show_error(&format!("Failed to cleanup old lineup: {e}"));
             return;
         }
 
         if let Err(e) = save_lineup(conn, &g.game_id, team_id, &new_lineup) {
-            cli::show_error(&format!("Failed to save lineup: {e}"));
+            term::show_error(&format!("Failed to save lineup: {e}"));
             return;
         }
 
-        cli::show_success(&format!("Lineup saved for {}.", team_name));
+        term::show_success(&format!("Lineup saved for {}.", team_name));
     } else {
         // found > required: caso “troppi starter” rispetto alla regola DH
         println!("\nThe lineup has too many starters for the current DH setting.");
         println!("Use 'Edit Lineups' or 'Import Lineup' to fix it.");
-        cli::wait_for_enter();
+        term::wait_for_enter();
         return;
     }
 
     // Ricontrollo dopo l’azione correttiva
     match gate_check_lineups(conn, &g.game_id, g.away_team_id, g.home_team_id) {
         Ok(PlayBallGate::Ready) => {
-            cli::show_success_no_wait_for_enter(
+            term::show_success_no_wait_for_enter(
                 "Both lineups are valid now. You can start the game.",
             );
         }
@@ -233,7 +233,7 @@ fn handle_invalid_lineup(
                 LineupSide::Away => &g.away_team_name,
                 LineupSide::Home => &g.home_team_name,
             };
-            cli::show_error(&format!(
+            term::show_error(&format!(
                 "Still invalid lineup for {} team: {} (found {}, required {}).",
                 side.label(),
                 other_name,
@@ -241,8 +241,8 @@ fn handle_invalid_lineup(
                 required
             ));
         }
-        Err(e) => cli::show_error(&format!("Error checking lineups: {e}")),
+        Err(e) => term::show_error(&format!("Error checking lineups: {e}")),
     }
 
-    cli::wait_for_enter();
+    term::wait_for_enter();
 }

@@ -1,6 +1,6 @@
 use crate::Pitch;
-use crate::commands::types::EngineCommand;
-use crate::core::scoring::parse_batter_out_token;
+use crate::engine::commands::types::EngineCommand;
+use crate::engine::scoring::parse_batter_out_token;
 use crate::models::field_zone::FieldZone;
 use crate::models::game_state::BatterOrder;
 use crate::models::runner::{RunnerDest, RunnerOverride};
@@ -85,7 +85,7 @@ pub fn parse_engine_commands(line: &str) -> Vec<EngineCommand> {
             return vec![cmd];
         }
 
-        if let Ok(def_play) = crate::core::scoring::batter_outs::parse_defensive_play_command(line)
+        if let Ok(def_play) = crate::engine::scoring::batter_outs::parse_defensive_play_command(line)
         {
             return vec![EngineCommand::DefensivePlay(def_play)];
         }
@@ -94,7 +94,7 @@ pub fn parse_engine_commands(line: &str) -> Vec<EngineCommand> {
     }
 
     // Multi-segment defensive play parsing.
-    if let Ok(def_play) = crate::core::scoring::batter_outs::parse_defensive_play_command(line) {
+    if let Ok(def_play) = crate::engine::scoring::batter_outs::parse_defensive_play_command(line) {
         return vec![EngineCommand::DefensivePlay(def_play)];
     }
 
@@ -364,8 +364,8 @@ fn parse_non_hit_command(raw: &str) -> EngineCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::scoring::BatterOutType;
-    use crate::core::scoring::batter_outs::DefensiveOutKind;
+    use crate::engine::scoring::BatterOutType;
+    use crate::engine::scoring::batter_outs::DefensiveOutKind;
 
     fn single(cmds: Vec<EngineCommand>) -> EngineCommand {
         assert_eq!(cmds.len(), 1);

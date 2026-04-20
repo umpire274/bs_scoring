@@ -1,5 +1,5 @@
 pub mod app;
-pub mod cli;
+pub mod cli_impl;
 pub mod context;
 pub mod events;
 pub mod factory;

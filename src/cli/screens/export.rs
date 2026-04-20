@@ -1,4 +1,4 @@
-use crate::cli::commands::game::GameInfo;
+use crate::cli::screens::game::GameInfo;
 use crate::db::umpire::UmpireEvaluation;
 use crate::models::umpires::UmpireEvaluationExportRow;
 use crate::utils::normalize::slugify_filename_component;

@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.11.0-alpha1] - 2026-04-20
+
+First alpha of the v0.11.0 milestone. This alpha ships the structural refactor
+of `src/` only; additional features scheduled for the v0.11.0 final release
+will be delivered in subsequent alphas.
+
+### Changed
+
+- **Structural refactor** of `src/` for improved readability and maintainability.
+  Public runtime behaviour is unchanged; the public API exposed by `lib.rs`
+  preserves the same re-exports.
+- Collapsed `src/core/` into `src/engine/`: game-logic files now live together.
+    - `core/runner_logic.rs` → `engine/runners.rs`
+    - `core/play_ball_apply.rs` → `engine/apply.rs`
+    - `core/play_ball_reducer.rs` → `engine/reducer.rs`
+    - `core/parser.rs` → `engine/notation.rs`
+    - `core/scoring/` → `engine/scoring/`
+- Removed the top-level `src/commands/` module (ambiguous with `src/cli/commands/`).
+  Its contents were moved under `src/engine/commands/`:
+    - `commands/engine_parser.rs` → `engine/commands/parser.rs`
+    - `commands/types.rs` → `engine/commands/types.rs`
+- Renamed `src/cli/commands/` → `src/cli/screens/` — these files are user-flow
+  screens (new-game, list-games, play-ball, umpire-supervisor, …), not engine
+  commands. This removes the clash with `engine/commands/`.
+- Moved `core/menu.rs` → `cli/menu.rs` — menu-choice enums belong to the CLI
+  layer.
+- Renamed to remove module-name homonyms:
+    - `utils/cli.rs` → `utils/term.rs` (terminal helpers)
+    - `ui/cli.rs` → `ui/cli_impl.rs` (`Ui` trait CLI implementation)
+
+### Removed
+
+- `src/core/play_ball.rs` — deprecated compatibility re-export since v0.8.1,
+  all callers already used `db::game_queries` directly.
+- `src/models/play_ball.rs` — deprecated compatibility re-export since v0.8.1,
+  all callers already used `models::game_state`, `models::runner`,
+  `models::session` directly.
+
+### Migration notes
+
+External consumers that were still importing the compatibility paths removed in
+this release need to update their `use` statements. The canonical paths are:
+
+- `crate::core::*` → `crate::engine::*`
+- `crate::commands::engine_parser` → `crate::engine::commands::parser`
+- `crate::commands::types` → `crate::engine::commands::types`
+- `crate::cli::commands::*` → `crate::cli::screens::*`
+- `crate::core::menu::*` → `crate::cli::menu::*`
+- `crate::utils::cli` → `crate::utils::term`
+- `crate::ui::cli` → `crate::ui::cli_impl`
+
+The top-level re-exports from `bs_scoring::*` (`Database`, `Menu`, `GameState`,
+`Player`, `Team`, `League`, scoring types, …) are unchanged.
+
 ## [v0.10.6] - 2026-04-16
 
 ### Added

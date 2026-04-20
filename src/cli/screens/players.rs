@@ -1,9 +1,9 @@
-use crate::core::menu::PlayerMenuChoice;
+use crate::cli::menu::PlayerMenuChoice;
 use crate::db::player::Player;
 use crate::models::player_traits::{BatSide, PitchHand};
 use crate::models::types::Position;
-use crate::utils::cli;
-use crate::utils::cli::choose_enum;
+use crate::utils::term;
+use crate::utils::term::choose_enum;
 use crate::{Database, Menu, Team};
 use std::fs;
 use std::io;
@@ -26,7 +26,7 @@ pub fn handle_player_menu(db: &Database) {
 
 fn import_export_menu(db: &Database) {
     loop {
-        cli::show_header("IMPORT/EXPORT PLAYERS");
+        term::show_header("IMPORT/EXPORT PLAYERS");
         println!("  1. 📥 Import from CSV");
         println!("  2. 📥 Import from JSON");
         println!("  3. 📤 Export to CSV");
@@ -37,7 +37,7 @@ fn import_export_menu(db: &Database) {
         print!("Select an option: ");
         io::stdout().flush().unwrap();
 
-        match cli::read_choice() {
+        match term::read_choice() {
             1 => import_csv(db),
             2 => import_json(db),
             3 => export_csv(db),
@@ -45,31 +45,31 @@ fn import_export_menu(db: &Database) {
             0 => break,
             _ => {
                 println!("\n❌ Invalid choice. Press ENTER to continue...");
-                cli::wait_for_enter();
+                term::wait_for_enter();
             }
         }
     }
 }
 
 fn import_csv(db: &Database) {
-    cli::show_header("IMPORT PLAYERS FROM CSV");
+    term::show_header("IMPORT PLAYERS FROM CSV");
 
-    let filepath = cli::read_string("CSV file path: ");
+    let filepath = term::read_string("CSV file path: ");
     if filepath.is_empty() {
-        cli::show_error("File path is required!");
+        term::show_error("File path is required!");
         return;
     }
 
     let path = Path::new(&filepath);
     if !path.exists() {
-        cli::show_error("File not found!");
+        term::show_error("File not found!");
         return;
     }
 
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => {
-            cli::show_error(&format!("Failed to read file: {}", e));
+            term::show_error(&format!("Failed to read file: {}", e));
             return;
         }
     };
@@ -208,28 +208,28 @@ fn import_csv(db: &Database) {
         println!("   Errors:   {}", errors);
     }
     println!("═══════════════════════════════════════\n");
-    cli::wait_for_enter();
+    term::wait_for_enter();
 }
 
 fn import_json(db: &Database) {
-    cli::show_header("IMPORT PLAYERS FROM JSON");
+    term::show_header("IMPORT PLAYERS FROM JSON");
 
-    let filepath = cli::read_string("JSON file path: ");
+    let filepath = term::read_string("JSON file path: ");
     if filepath.is_empty() {
-        cli::show_error("File path is required!");
+        term::show_error("File path is required!");
         return;
     }
 
     let path = Path::new(&filepath);
     if !path.exists() {
-        cli::show_error("File not found!");
+        term::show_error("File not found!");
         return;
     }
 
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => {
-            cli::show_error(&format!("Failed to read file: {}", e));
+            term::show_error(&format!("Failed to read file: {}", e));
             return;
         }
     };
@@ -237,7 +237,7 @@ fn import_json(db: &Database) {
     let players_data: Vec<serde_json::Value> = match serde_json::from_str(&content) {
         Ok(data) => data,
         Err(e) => {
-            cli::show_error(&format!("Invalid JSON format: {}", e));
+            term::show_error(&format!("Invalid JSON format: {}", e));
             return;
         }
     };
@@ -368,23 +368,23 @@ fn import_json(db: &Database) {
         println!("   Errors:   {}", errors);
     }
     println!("═══════════════════════════════════════\n");
-    cli::wait_for_enter();
+    term::wait_for_enter();
 }
 
 fn export_csv(db: &Database) {
-    cli::show_header("EXPORT PLAYERS TO CSV");
+    term::show_header("EXPORT PLAYERS TO CSV");
 
     let conn = db.get_connection();
     let players = get_all_players_with_teams(conn);
 
     if players.is_empty() {
-        cli::show_error("No players to export!");
+        term::show_error("No players to export!");
         return;
     }
 
-    let filepath = cli::read_string("Output CSV file path (e.g., players.csv): ");
+    let filepath = term::read_string("Output CSV file path (e.g., players.csv): ");
     if filepath.is_empty() {
-        cli::show_error("File path is required!");
+        term::show_error("File path is required!");
         return;
     }
 
@@ -405,32 +405,32 @@ fn export_csv(db: &Database) {
 
     match fs::write(&filepath, csv_content) {
         Ok(_) => {
-            cli::show_success(&format!(
+            term::show_success(&format!(
                 "Exported {} players to '{}'\n\nFormat: team,number,first_name,last_name,position,pitch,bat",
                 players.len(),
                 filepath
             ));
         }
         Err(e) => {
-            cli::show_error(&format!("Failed to write file: {}", e));
+            term::show_error(&format!("Failed to write file: {}", e));
         }
     }
 }
 
 fn export_json(db: &Database) {
-    cli::show_header("EXPORT PLAYERS TO JSON");
+    term::show_header("EXPORT PLAYERS TO JSON");
 
     let conn = db.get_connection();
     let players = get_all_players_with_teams(conn);
 
     if players.is_empty() {
-        cli::show_error("No players to export!");
+        term::show_error("No players to export!");
         return;
     }
 
-    let filepath = cli::read_string("Output JSON file path (e.g., players.json): ");
+    let filepath = term::read_string("Output JSON file path (e.g., players.json): ");
     if filepath.is_empty() {
-        cli::show_error("File path is required!");
+        term::show_error("File path is required!");
         return;
     }
 
@@ -452,21 +452,21 @@ fn export_json(db: &Database) {
     let json_content = match serde_json::to_string_pretty(&players_json) {
         Ok(json) => json,
         Err(e) => {
-            cli::show_error(&format!("Failed to serialize JSON: {}", e));
+            term::show_error(&format!("Failed to serialize JSON: {}", e));
             return;
         }
     };
 
     match fs::write(&filepath, json_content) {
         Ok(_) => {
-            cli::show_success(&format!(
+            term::show_success(&format!(
                 "Exported {} players to '{}'",
                 players.len(),
                 filepath
             ));
         }
         Err(e) => {
-            cli::show_error(&format!("Failed to write file: {}", e));
+            term::show_error(&format!("Failed to write file: {}", e));
         }
     }
 }
@@ -487,7 +487,7 @@ fn get_or_create_team(conn: &rusqlite::Connection, team_name: &str) -> rusqlite:
 }
 
 fn add_player(db: &Database) {
-    cli::show_header("ADD NEW PLAYER");
+    term::show_header("ADD NEW PLAYER");
 
     let conn = db.get_connection();
 
@@ -495,13 +495,13 @@ fn add_player(db: &Database) {
     match Team::get_all(conn) {
         Ok(teams) => {
             if teams.is_empty() {
-                cli::show_error("No teams available. Create a team first!");
+                term::show_error("No teams available. Create a team first!");
                 return;
             }
 
             println!("Available teams:\n");
             for (i, team) in teams.iter().enumerate() {
-                cli::show_list_item(
+                term::show_list_item(
                     i + 1,
                     &format!(
                         "{} {}",
@@ -515,15 +515,15 @@ fn add_player(db: &Database) {
             }
             println!();
 
-            if let Some(team_choice) = cli::read_i64("Select team (0 to cancel): ") {
+            if let Some(team_choice) = term::read_i64("Select team (0 to cancel): ") {
                 if team_choice == 0 {
                     println!("\n❌ Operation cancelled");
-                    cli::wait_for_enter();
+                    term::wait_for_enter();
                     return;
                 }
 
                 if team_choice < 1 || team_choice as usize > teams.len() {
-                    cli::show_error("Invalid team selection");
+                    term::show_error("Invalid team selection");
                     return;
                 }
 
@@ -531,18 +531,18 @@ fn add_player(db: &Database) {
                 let team_id = team.id.unwrap();
 
                 // Get player info
-                let first_name = cli::read_string("First name: ");
+                let first_name = term::read_string("First name: ");
                 if first_name.is_empty() {
-                    cli::show_error("First name is required!");
+                    term::show_error("First name is required!");
                     return;
                 }
 
-                let last_name = cli::read_string("Last name: ");
+                let last_name = term::read_string("Last name: ");
 
-                let number = match cli::read_i32("Jersey number: ") {
+                let number = match term::read_i32("Jersey number: ") {
                     Some(n) if n > 0 && n <= 99 => n,
                     _ => {
-                        cli::show_error("Invalid jersey number (1-99)");
+                        term::show_error("Invalid jersey number (1-99)");
                         return;
                     }
                 };
@@ -562,19 +562,19 @@ fn add_player(db: &Database) {
 
                 print!("Select a defensive position (1-9): ");
                 io::stdout().flush().unwrap();
-                let position = match cli::read_choice() {
+                let position = match term::read_choice() {
                     n if (1..=9).contains(&n) => Position::from_number(n as u8).unwrap(),
                     _ => {
-                        cli::show_error("Invalid position");
+                        term::show_error("Invalid position");
                         return;
                     }
                 };
 
                 // Select pitch hand (optional)
-                let pitch = cli::choose_enum_optional::<PitchHand>();
+                let pitch = term::choose_enum_optional::<PitchHand>();
 
                 // Select batting side (optional)
-                let bat = cli::choose_enum_optional::<BatSide>();
+                let bat = term::choose_enum_optional::<BatSide>();
 
                 // Create player
                 let mut player = Player::new(
@@ -589,7 +589,7 @@ fn add_player(db: &Database) {
 
                 match player.create(conn) {
                     Ok(id) => {
-                        cli::show_success(&format!(
+                        term::show_success(&format!(
                             "Player created successfully!\n\n   {:<14} {}\n   {:<14} {} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {:?}\n   {:<14} {}\n   {:<14} {}\n",
                             "ID:",
                             id,
@@ -609,19 +609,19 @@ fn add_player(db: &Database) {
                         ));
                     }
                     Err(e) => {
-                        cli::show_error(&format!("Failed to create player: {}", e));
+                        term::show_error(&format!("Failed to create player: {}", e));
                     }
                 }
             }
         }
         Err(e) => {
-            cli::show_error(&format!("Error loading teams: {}", e));
+            term::show_error(&format!("Error loading teams: {}", e));
         }
     }
 }
 
 fn list_players(db: &Database) {
-    cli::show_header("ALL PLAYERS");
+    term::show_header("ALL PLAYERS");
 
     let conn = db.get_connection();
 
@@ -633,7 +633,7 @@ fn list_players(db: &Database) {
 
     print!("Select filter option: ");
     io::stdout().flush().unwrap();
-    let filter_choice = cli::read_choice();
+    let filter_choice = term::read_choice();
     println!();
 
     let players = if filter_choice == 2 {
@@ -642,11 +642,11 @@ fn list_players(db: &Database) {
             Ok(teams) if !teams.is_empty() => {
                 println!("\nAvailable teams:\n");
                 for (i, team) in teams.iter().enumerate() {
-                    cli::show_list_item(i + 1, &team.name);
+                    term::show_list_item(i + 1, &team.name);
                 }
                 println!();
 
-                if let Some(team_choice) = cli::read_i64("Select team (0 for all): ") {
+                if let Some(team_choice) = term::read_i64("Select team (0 for all): ") {
                     if team_choice == 0 {
                         get_all_players_with_teams(conn)
                     } else if team_choice > 0 && (team_choice as usize) <= teams.len() {
@@ -675,7 +675,7 @@ fn list_players(db: &Database) {
         println!("📭 No players found.\n");
     } else {
         println!("\n📋 Players ({} total):\n", players.len());
-        cli::show_separator(72);
+        term::show_separator(72);
 
         for (player, team_name) in players {
             println!(
@@ -688,10 +688,10 @@ fn list_players(db: &Database) {
                 player.bat.map(|b| b.as_str()).unwrap_or("-")
             );
         }
-        cli::show_separator(72);
+        term::show_separator(72);
     }
 
-    cli::wait_for_enter();
+    term::wait_for_enter();
 }
 
 fn get_all_players_with_teams(conn: &rusqlite::Connection) -> Vec<(Player, String)> {
@@ -711,14 +711,14 @@ fn get_all_players_with_teams(conn: &rusqlite::Connection) -> Vec<(Player, Strin
 }
 
 fn update_player(db: &Database) {
-    cli::show_header("UPDATE PLAYER");
+    term::show_header("UPDATE PLAYER");
 
     let conn = db.get_connection();
 
     let players = get_all_players_with_teams(conn);
 
     if players.is_empty() {
-        cli::show_error("No players available");
+        term::show_error("No players available");
         return;
     }
 
@@ -726,15 +726,15 @@ fn update_player(db: &Database) {
     display_player_list(&players);
     println!();
 
-    if let Some(choice) = cli::read_i64("Select player to update (0 to cancel): ") {
+    if let Some(choice) = term::read_i64("Select player to update (0 to cancel): ") {
         if choice == 0 {
             println!("\n❌ Operation cancelled");
-            cli::wait_for_enter();
+            term::wait_for_enter();
             return;
         }
 
         if choice < 1 || choice as usize > players.len() {
-            cli::show_error("Invalid selection");
+            term::show_error("Invalid selection");
             return;
         }
 
@@ -743,19 +743,19 @@ fn update_player(db: &Database) {
         println!("\nCurrent values (press ENTER to keep):\n");
 
         // Update first name
-        let new_first = cli::read_string(&format!("First name [{}]: ", player.first_name));
+        let new_first = term::read_string(&format!("First name [{}]: ", player.first_name));
         if !new_first.is_empty() {
             player.first_name = new_first;
         }
 
         // Update last name
-        let new_last = cli::read_string(&format!("Last name [{}]: ", player.last_name));
+        let new_last = term::read_string(&format!("Last name [{}]: ", player.last_name));
         if !new_last.is_empty() {
             player.last_name = new_last;
         }
 
         // Update number
-        if let Some(new_number) = cli::read_i32(&format!("Number [{}]: ", player.number))
+        if let Some(new_number) = term::read_i32(&format!("Number [{}]: ", player.number))
             && new_number > 0
             && new_number <= 99
         {
@@ -763,7 +763,7 @@ fn update_player(db: &Database) {
         }
 
         // Update position
-        if let Some(pos_choice) = cli::read_i32(&format!(
+        if let Some(pos_choice) = term::read_i32(&format!(
             "Position [{}] (1-9, or 0 to keep): ",
             player.position.to_number()
         )) && pos_choice > 0
@@ -780,21 +780,21 @@ fn update_player(db: &Database) {
         player.bat = choose_enum(player.bat).or(player.bat);
 
         match player.update(conn) {
-            Ok(_) => cli::show_success("Player updated successfully!"),
-            Err(e) => cli::show_error(&format!("Failed to update player: {}", e)),
+            Ok(_) => term::show_success("Player updated successfully!"),
+            Err(e) => term::show_error(&format!("Failed to update player: {}", e)),
         }
     }
 }
 
 fn delete_player(db: &Database) {
-    cli::show_header("DELETE PLAYER");
+    term::show_header("DELETE PLAYER");
 
     let conn = db.get_connection();
 
     let players = get_all_players_with_teams(conn);
 
     if players.is_empty() {
-        cli::show_error("No players available");
+        term::show_error("No players available");
         return;
     }
 
@@ -802,21 +802,21 @@ fn delete_player(db: &Database) {
     display_player_list(&players);
     println!();
 
-    if let Some(choice) = cli::read_i64("Select player to delete (0 to cancel): ") {
+    if let Some(choice) = term::read_i64("Select player to delete (0 to cancel): ") {
         if choice == 0 {
             println!("\n❌ Operation cancelled");
-            cli::wait_for_enter();
+            term::wait_for_enter();
             return;
         }
 
         if choice < 1 || choice as usize > players.len() {
-            cli::show_error("Invalid selection");
+            term::show_error("Invalid selection");
             return;
         }
 
         let (player, team_name) = &players[(choice - 1) as usize];
 
-        if cli::confirm(&format!(
+        if term::confirm(&format!(
             "Are you sure you want to delete '#{} {} ({})'?",
             player.number,
             player.full_name(),
@@ -824,26 +824,26 @@ fn delete_player(db: &Database) {
         )) {
             if let Some(id) = player.id {
                 match Player::delete(conn, id) {
-                    Ok(_) => cli::show_success("Player deleted successfully!"),
-                    Err(e) => cli::show_error(&format!("Failed to delete player: {}", e)),
+                    Ok(_) => term::show_success("Player deleted successfully!"),
+                    Err(e) => term::show_error(&format!("Failed to delete player: {}", e)),
                 }
             }
         } else {
             println!("\n❌ Deletion cancelled");
-            cli::wait_for_enter();
+            term::wait_for_enter();
         }
     }
 }
 
 fn change_team(db: &Database) {
-    cli::show_header("CHANGE PLAYER TEAM");
+    term::show_header("CHANGE PLAYER TEAM");
 
     let conn = db.get_connection();
 
     let players = get_all_players_with_teams(conn);
 
     if players.is_empty() {
-        cli::show_error("No players available");
+        term::show_error("No players available");
         return;
     }
 
@@ -851,15 +851,15 @@ fn change_team(db: &Database) {
     display_player_list(&players);
     println!();
 
-    if let Some(player_choice) = cli::read_i64("Select player (0 to cancel): ") {
+    if let Some(player_choice) = term::read_i64("Select player (0 to cancel): ") {
         if player_choice == 0 {
             println!("\n❌ Operation cancelled");
-            cli::wait_for_enter();
+            term::wait_for_enter();
             return;
         }
 
         if player_choice < 1 || player_choice as usize > players.len() {
-            cli::show_error("Invalid selection");
+            term::show_error("Invalid selection");
             return;
         }
 
@@ -875,19 +875,19 @@ fn change_team(db: &Database) {
                     } else {
                         ""
                     };
-                    cli::show_list_item(i + 1, &format!("{}{}", team.name, marker));
+                    term::show_list_item(i + 1, &format!("{}{}", team.name, marker));
                 }
                 println!();
 
-                if let Some(team_choice) = cli::read_i64("Select new team (0 to cancel): ") {
+                if let Some(team_choice) = term::read_i64("Select new team (0 to cancel): ") {
                     if team_choice == 0 {
                         println!("\n❌ Operation cancelled");
-                        cli::wait_for_enter();
+                        term::wait_for_enter();
                         return;
                     }
 
                     if team_choice < 1 || team_choice as usize > teams.len() {
-                        cli::show_error("Invalid selection");
+                        term::show_error("Invalid selection");
                         return;
                     }
 
@@ -896,7 +896,7 @@ fn change_team(db: &Database) {
 
                     if new_team_id == player.team_id {
                         println!("\n⚠️  Player is already in this team!");
-                        cli::wait_for_enter();
+                        term::wait_for_enter();
                         return;
                     }
 
@@ -904,19 +904,19 @@ fn change_team(db: &Database) {
 
                     match player.update(conn) {
                         Ok(_) => {
-                            cli::show_success(&format!(
+                            term::show_success(&format!(
                                 "Player team changed!\n   {} → {}",
                                 current_team, new_team.name
                             ));
                         }
                         Err(e) => {
-                            cli::show_error(&format!("Failed to change team: {}", e));
+                            term::show_error(&format!("Failed to change team: {}", e));
                         }
                     }
                 }
             }
             Err(e) => {
-                cli::show_error(&format!("Error loading teams: {}", e));
+                term::show_error(&format!("Error loading teams: {}", e));
             }
         }
     }
@@ -925,7 +925,7 @@ fn change_team(db: &Database) {
 /// Helper function to display a list of players with team names
 fn display_player_list(players: &[(Player, String)]) {
     for (i, (player, team_name)) in players.iter().enumerate() {
-        cli::show_list_item(
+        term::show_list_item(
             i + 1,
             &format!("#{} {} ({})", player.number, player.full_name(), team_name),
         );

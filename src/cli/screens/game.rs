@@ -1,7 +1,7 @@
-use crate::cli::commands::play_ball::play_ball;
-use crate::core::menu::GameMenuChoice;
+use crate::cli::screens::play_ball::play_ball;
+use crate::cli::menu::GameMenuChoice;
 use crate::db::game_events::refactor_batter_order;
-use crate::utils::cli;
+use crate::utils::term;
 use crate::{Database, Menu, Team};
 use chrono::Local;
 use rusqlite::{Connection, params};
@@ -61,7 +61,7 @@ pub fn handle_utilities_game_menu(db: &mut Database) {
     loop {
         match show_utilities_game_menu() {
             UtilitiesGameMenuChoice::RefactorBattersOrder => {
-                cli::show_header("REFACTOR BATTER ORDERS");
+                term::show_header("REFACTOR BATTER ORDERS");
                 println!(
                     "This utility will recalculate and update the 'batter_order' field in 'plate_appearances'\nbased on the current lineups and batting orders defined in 'game_lineups'."
                 );
@@ -69,19 +69,19 @@ pub fn handle_utilities_game_menu(db: &mut Database) {
                     "This is useful if you have made manual edits to lineups or\nif you want to ensure consistency after data imports."
                 );
                 println!();
-                if cli::confirm("Proceed with refactoring batter orders? This cannot be undone!") {
+                if term::confirm("Proceed with refactoring batter orders? This cannot be undone!") {
                     match refactor_batter_order(db.get_connection_mut()) {
-                        Ok(_) => cli::show_success_no_wait_for_enter(
+                        Ok(_) => term::show_success_no_wait_for_enter(
                             "Batter orders refactored successfully!",
                         ),
                         Err(e) => {
-                            cli::show_error(&format!("Error refactoring batter orders: {}", e))
+                            term::show_error(&format!("Error refactoring batter orders: {}", e))
                         }
                     }
                 } else {
                     println!("\n❌ Refactoring cancelled.");
                 }
-                cli::wait_for_enter();
+                term::wait_for_enter();
             }
             UtilitiesGameMenuChoice::Back => break,
         }
@@ -90,7 +90,7 @@ pub fn handle_utilities_game_menu(db: &mut Database) {
 
 pub fn show_utilities_game_menu() -> UtilitiesGameMenuChoice {
     loop {
-        cli::clear_screen();
+        term::clear_screen();
         println!("╔════════════════════════════════════════════╗");
         println!("║            🛠️  GAME UTILITIES              ║");
         println!("╚════════════════════════════════════════════╝");
@@ -102,13 +102,13 @@ pub fn show_utilities_game_menu() -> UtilitiesGameMenuChoice {
         print!("Select an option (1 or 0): ");
         io::stdout().flush().unwrap();
 
-        let choice = cli::read_choice();
+        let choice = term::read_choice();
         match choice {
             1 => return UtilitiesGameMenuChoice::RefactorBattersOrder,
             0 => return UtilitiesGameMenuChoice::Back,
             _ => {
                 println!("\n❌ Invalid choice. Press ENTER to continue...");
-                cli::wait_for_enter();
+                term::wait_for_enter();
             }
         }
     }
@@ -116,7 +116,7 @@ pub fn show_utilities_game_menu() -> UtilitiesGameMenuChoice {
 
 pub fn show_edit_game_menu() -> EditGameMenuChoice {
     loop {
-        cli::clear_screen();
+        term::clear_screen();
         println!("╔════════════════════════════════════════════╗");
         println!("║           🎮  EDIT GAME MENU               ║");
         println!("╚════════════════════════════════════════════╝");
@@ -131,7 +131,7 @@ pub fn show_edit_game_menu() -> EditGameMenuChoice {
         print!("Select an option (1-3 or 0): ");
         io::stdout().flush().unwrap();
 
-        let choice = cli::read_choice();
+        let choice = term::read_choice();
         match choice {
             1 => return EditGameMenuChoice::EditTeams,
             2 => return EditGameMenuChoice::EditLineups,
@@ -140,7 +140,7 @@ pub fn show_edit_game_menu() -> EditGameMenuChoice {
             0 => return EditGameMenuChoice::Back,
             _ => {
                 println!("\n❌ Invalid choice. Press ENTER to continue...");
-                cli::wait_for_enter();
+                term::wait_for_enter();
             }
         }
     }
@@ -183,7 +183,7 @@ pub fn get_game_by_id(conn: &Connection, game_id: i64) -> rusqlite::Result<Optio
 }
 
 fn create_new_game(db: &Database) {
-    cli::show_header("CREATE NEW GAME");
+    term::show_header("CREATE NEW GAME");
 
     let conn = db.get_connection();
 
@@ -191,18 +191,18 @@ fn create_new_game(db: &Database) {
     let teams = match Team::get_all(conn) {
         Ok(teams) => {
             if teams.is_empty() {
-                cli::show_error("No teams available. Create teams first!");
+                term::show_error("No teams available. Create teams first!");
                 return;
             }
 
             if teams.len() < 2 {
-                cli::show_error("Need at least 2 teams to create a game!");
+                term::show_error("Need at least 2 teams to create a game!");
                 return;
             }
             teams
         }
         Err(e) => {
-            cli::show_error(&format!("Error loading teams: {}", e));
+            term::show_error(&format!("Error loading teams: {}", e));
             return;
         }
     };
@@ -210,7 +210,7 @@ fn create_new_game(db: &Database) {
     // STEP 1: Select teams and basic metadata
     println!("Available teams:\n");
     for (i, team) in teams.iter().enumerate() {
-        cli::show_list_item(
+        term::show_list_item(
             i + 1,
             &format!(
                 "{} {}",
@@ -225,39 +225,39 @@ fn create_new_game(db: &Database) {
     println!();
 
     // Select away team
-    let away_team_id = match cli::read_i64("Away team (number, 0 to cancel): ") {
+    let away_team_id = match term::read_i64("Away team (number, 0 to cancel): ") {
         Some(0) | None => {
             println!("\n❌ Game creation cancelled");
-            cli::wait_for_enter();
+            term::wait_for_enter();
             return;
         }
         Some(choice) if choice > 0 && (choice as usize) <= teams.len() => {
             teams[(choice - 1) as usize].id.unwrap()
         }
         _ => {
-            cli::show_error("Invalid selection");
+            term::show_error("Invalid selection");
             return;
         }
     };
 
     // Select home team
-    let home_team_id = match cli::read_i64("Home team (number, 0 to cancel): ") {
+    let home_team_id = match term::read_i64("Home team (number, 0 to cancel): ") {
         Some(0) | None => {
             println!("\n❌ Game creation cancelled");
-            cli::wait_for_enter();
+            term::wait_for_enter();
             return;
         }
         Some(choice) if choice > 0 && (choice as usize) <= teams.len() => {
             teams[(choice - 1) as usize].id.unwrap()
         }
         _ => {
-            cli::show_error("Invalid selection");
+            term::show_error("Invalid selection");
             return;
         }
     };
 
     if away_team_id == home_team_id {
-        cli::show_error("Away and Home teams must be different!");
+        term::show_error("Away and Home teams must be different!");
         return;
     }
 
@@ -280,23 +280,23 @@ fn create_new_game(db: &Database) {
     );
 
     println!("\nDefault Game ID: {}", default_game_id);
-    let game_id = cli::read_optional_string("Custom Game ID (press ENTER for default): ")
+    let game_id = term::read_optional_string("Custom Game ID (press ENTER for default): ")
         .unwrap_or(default_game_id);
 
     // STEP 3: Date and Time
     let default_date = Local::now().format("%Y-%m-%d").to_string();
     let game_date =
-        cli::read_optional_string(&format!("Game date (YYYY-MM-DD) [{}]: ", default_date))
+        term::read_optional_string(&format!("Game date (YYYY-MM-DD) [{}]: ", default_date))
             .unwrap_or(default_date);
 
     let default_time = Local::now().format("%H:%M").to_string();
-    let game_time = cli::read_optional_string(&format!("Game time (HH:MM) [{}]: ", default_time))
+    let game_time = term::read_optional_string(&format!("Game time (HH:MM) [{}]: ", default_time))
         .unwrap_or(default_time);
 
     // STEP 4: Venue
-    let venue = cli::read_string("Venue: ");
+    let venue = term::read_string("Venue: ");
     if venue.is_empty() {
-        cli::show_error("Venue is required!");
+        term::show_error("Venue is required!");
         return;
     }
 
@@ -312,7 +312,7 @@ fn create_new_game(db: &Database) {
         Some(lineup) => lineup,
         None => {
             println!("\n❌ Away team lineup cancelled. Game creation aborted.");
-            cli::wait_for_enter();
+            term::wait_for_enter();
             return;
         }
     };
@@ -329,7 +329,7 @@ fn create_new_game(db: &Database) {
         Some(lineup) => lineup,
         None => {
             println!("\n❌ Home team lineup cancelled. Game creation aborted.");
-            cli::wait_for_enter();
+            term::wait_for_enter();
             return;
         }
     };
@@ -353,17 +353,17 @@ fn create_new_game(db: &Database) {
         Ok(_) => {
             // Save away team lineup
             if let Err(e) = save_lineup(conn, &game_id, away_team_id, &away_lineup) {
-                cli::show_error(&format!("Failed to save away team lineup: {}", e));
+                term::show_error(&format!("Failed to save away team lineup: {}", e));
                 return;
             }
 
             // Save home team lineup
             if let Err(e) = save_lineup(conn, &game_id, home_team_id, &home_lineup) {
-                cli::show_error(&format!("Failed to save home team lineup: {}", e));
+                term::show_error(&format!("Failed to save home team lineup: {}", e));
                 return;
             }
 
-            cli::show_success(&format!(
+            term::show_success(&format!(
                 "Game created successfully!\n\n\
                  Game ID: {}\n\
                  Date: {} at {}\n\
@@ -382,13 +382,13 @@ fn create_new_game(db: &Database) {
             ));
         }
         Err(e) => {
-            cli::show_error(&format!("Failed to create game: {}", e));
+            term::show_error(&format!("Failed to create game: {}", e));
         }
     }
 }
 
 fn list_games(db: &Database) {
-    cli::show_header("GAMES LIST");
+    term::show_header("GAMES LIST");
 
     let conn = db.get_connection();
 
@@ -403,7 +403,7 @@ fn list_games(db: &Database) {
     ) {
         Ok(stmt) => stmt,
         Err(e) => {
-            cli::show_error(&format!("Error querying games: {}", e));
+            term::show_error(&format!("Error querying games: {}", e));
             return;
         }
     };
@@ -430,7 +430,7 @@ fn list_games(db: &Database) {
                 println!("📭 No games found.\n");
             } else {
                 println!("\n📋 Games ({} total):\n", game_list.len());
-                cli::show_separator(50);
+                term::show_separator(50);
 
                 for (_id, game_id, date, venue, status_int, away, home, away_score, home_score) in
                     game_list
@@ -446,27 +446,27 @@ fn list_games(db: &Database) {
                     );
                     println!("     Venue: {} | Status: {}", venue, status);
                     println!("     ID: {}", game_id);
-                    cli::show_separator(50);
+                    term::show_separator(50);
                 }
             }
         }
         Err(e) => {
-            cli::show_error(&format!("Error loading games: {}", e));
+            term::show_error(&format!("Error loading games: {}", e));
         }
     }
 
-    cli::wait_for_enter();
+    term::wait_for_enter();
 }
 
 /// Edit Game functions (placeholder)
 fn edit_teams(_db: &Database) {
-    cli::show_header("EDIT TEAMS");
+    term::show_header("EDIT TEAMS");
     println!("🚧 Feature under development...\n");
-    cli::wait_for_enter();
+    term::wait_for_enter();
 }
 
 fn edit_lineups(db: &mut Database) {
-    cli::show_header("EDIT LINEUPS");
+    term::show_header("EDIT LINEUPS");
 
     let conn = db.get_connection_mut();
 
@@ -486,7 +486,7 @@ fn edit_lineups(db: &mut Database) {
         ) {
             Ok(s) => s,
             Err(e) => {
-                cli::show_error(&format!("Error loading lineup: {e}"));
+                term::show_error(&format!("Error loading lineup: {e}"));
                 return;
             }
         };
@@ -507,15 +507,15 @@ fn edit_lineups(db: &mut Database) {
     };
 
     if current_lineup.is_empty() {
-        cli::show_error("No lineup found for this team!");
+        term::show_error("No lineup found for this team!");
         return;
     }
 
     print_lineup(&team_name, team_type, &current_lineup);
 
-    if !cli::confirm("Edit this lineup?") {
+    if !term::confirm("Edit this lineup?") {
         println!("\n❌ Cancelled");
-        cli::wait_for_enter();
+        term::wait_for_enter();
         return;
     }
 
@@ -525,7 +525,7 @@ fn edit_lineups(db: &mut Database) {
 
     edit_lineup_helper(conn, &game_id, team_id, &team_name, team_type);
 
-    cli::show_success(&format!(
+    term::show_success(&format!(
         "Lineup updated successfully for {} ({})!\n\n\
          The lineup has been completely replaced.\n\
          Since the game is still in Pre-Game status, this is NOT a substitution.",
@@ -534,9 +534,9 @@ fn edit_lineups(db: &mut Database) {
 }
 
 fn edit_innings_score(_db: &Database) {
-    cli::show_header("EDIT INNINGS/SCORE");
+    term::show_header("EDIT INNINGS/SCORE");
     println!("🚧 Feature under development...\n");
-    cli::wait_for_enter();
+    term::wait_for_enter();
 }
 
 fn ask_team_dh(team_label: &str, team_name: &str) -> bool {
@@ -544,7 +544,7 @@ fn ask_team_dh(team_label: &str, team_name: &str) -> bool {
     println!("{} TEAM DH SETTING: {}", team_label, team_name);
     println!("═══════════════════════════════════════\n");
 
-    cli::confirm("Use Designated Hitter (DH)?")
+    term::confirm("Use Designated Hitter (DH)?")
 }
 
 /// Insert lineup for a team
@@ -559,7 +559,7 @@ pub(crate) fn insert_team_lineup(
     use std::io::{self, Write};
 
     if required_players != 9 && required_players != 10 {
-        cli::show_error("Internal error: required_players must be 9 or 10");
+        term::show_error("Internal error: required_players must be 9 or 10");
         return None;
     }
 
@@ -570,13 +570,13 @@ pub(crate) fn insert_team_lineup(
         let roster = match Player::get_by_team(conn, team_id) {
             Ok(players) => players,
             Err(e) => {
-                cli::show_error(&format!("Error loading roster: {}", e));
+                term::show_error(&format!("Error loading roster: {}", e));
                 return None;
             }
         };
 
         if roster.len() < 12 {
-            cli::show_error(&format!(
+            term::show_error(&format!(
                 "Team '{}' has only {} players. Need at least 12 players in roster!",
                 team_name,
                 roster.len()
@@ -610,7 +610,7 @@ pub(crate) fn insert_team_lineup(
 
             // Read jersey number
             let jersey_number = loop {
-                match cli::read_i32("Jersey number: ") {
+                match term::read_i32("Jersey number: ") {
                     Some(num) if roster.iter().any(|p| p.number == num) => {
                         if used_numbers.contains(&num) {
                             println!("❌ Player #{} already in lineup!", num);
@@ -635,7 +635,7 @@ pub(crate) fn insert_team_lineup(
                 print!("): ");
                 io::stdout().flush().unwrap();
 
-                let input = cli::read_string("").trim().to_string();
+                let input = term::read_string("").trim().to_string();
 
                 let position = if input.eq_ignore_ascii_case("DH") {
                     if !uses_dh {
@@ -692,11 +692,11 @@ pub(crate) fn insert_team_lineup(
         if uses_dh {
             let dh_count = used_positions.iter().filter(|p| p.as_str() == "DH").count();
             if dh_count != 1 {
-                cli::show_error(
+                term::show_error(
                     "DH lineup requires exactly ONE 'DH' assigned among batting spots 1-9.",
                 );
                 println!("🔄 Restarting lineup entry...\n");
-                cli::wait_for_enter();
+                term::wait_for_enter();
                 continue;
             }
         }
@@ -707,7 +707,7 @@ pub(crate) fn insert_team_lineup(
             println!("PITCHER INFO (does not bat, required for DH lineup)");
 
             let pitcher_number = loop {
-                match cli::read_i32("Pitcher jersey number: ") {
+                match term::read_i32("Pitcher jersey number: ") {
                     Some(num) if roster.iter().any(|p| p.number == num) => break num,
                     Some(num) => println!("❌ Player #{} not found in roster!", num),
                     None => println!("❌ Invalid number!"),
@@ -727,11 +727,11 @@ pub(crate) fn insert_team_lineup(
         // Display complete lineup and ask for confirmation
         display_lineup(conn, &lineup, team_name, uses_dh);
 
-        if cli::confirm("\nConfirm this lineup?") {
+        if term::confirm("\nConfirm this lineup?") {
             return Some(lineup);
         } else {
             println!("\n🔄 Lineup cancelled. Restarting...\n");
-            cli::wait_for_enter();
+            term::wait_for_enter();
         }
     }
 }
@@ -985,7 +985,7 @@ fn edit_lineup_helper(
         let lineup = match load_starting_lineup(conn, game_id, team_id) {
             Ok(v) => v,
             Err(e) => {
-                cli::show_error(&format!("Error loading lineup: {e}"));
+                term::show_error(&format!("Error loading lineup: {e}"));
                 return;
             }
         };
@@ -1000,24 +1000,24 @@ fn edit_lineup_helper(
 
         print!("Select an action: ");
         io::stdout().flush().unwrap();
-        match cli::read_choice() {
+        match term::read_choice() {
             1 => {
                 println!();
-                let a = match cli::read_i64("Spot A (batting order): ") {
+                let a = match term::read_i64("Spot A (batting order): ") {
                     Some(x) => x as i32,
                     None => continue,
                 };
-                let b = match cli::read_i64("Spot B (batting order): ") {
+                let b = match term::read_i64("Spot B (batting order): ") {
                     Some(x) => x as i32,
                     None => continue,
                 };
                 if let Err(e) = swap_spots(conn, game_id, team_id, a, b) {
-                    cli::show_error(&format!("Swap failed: {e}"));
+                    term::show_error(&format!("Swap failed: {e}"));
                 }
             }
             2 => {
                 println!();
-                let spot = match cli::read_i64("Spot to replace (batting order): ") {
+                let spot = match term::read_i64("Spot to replace (batting order): ") {
                     Some(x) => x as i32,
                     None => continue,
                 };
@@ -1025,13 +1025,13 @@ fn edit_lineup_helper(
                 let bench = match load_bench_from_roster(conn, team_id, &lineup) {
                     Ok(v) => v,
                     Err(msg) => {
-                        cli::show_error(&msg);
+                        term::show_error(&msg);
                         continue;
                     }
                 };
 
                 if bench.is_empty() {
-                    cli::show_error("Bench is empty");
+                    term::show_error("Bench is empty");
                     continue;
                 }
 
@@ -1040,11 +1040,11 @@ fn edit_lineup_helper(
                     println!("  {}. #{:<3} {} {}", i + 1, num, f, l);
                 }
 
-                let pick = match cli::read_i64("Select bench player (0 cancel): ") {
+                let pick = match term::read_i64("Select bench player (0 cancel): ") {
                     Some(0) | None => continue,
                     Some(x) if (x as usize) <= bench.len() => x as usize,
                     _ => {
-                        cli::show_error("Invalid selection");
+                        term::show_error("Invalid selection");
                         continue;
                     }
                 };
@@ -1054,17 +1054,17 @@ fn edit_lineup_helper(
                 if let Err(e) =
                     replace_with_roster_player(conn, game_id, team_id, spot, bench_player_id)
                 {
-                    cli::show_error(&format!("Replace failed: {e}"));
+                    term::show_error(&format!("Replace failed: {e}"));
                 }
             }
             0 => break,
-            _ => cli::show_error("Invalid selection"),
+            _ => term::show_error("Invalid selection"),
         }
     }
 }
 
 fn import_lineup(db: &mut Database) {
-    cli::show_header("IMPORT LINEUP");
+    term::show_header("IMPORT LINEUP");
 
     let conn = db.get_connection_mut();
 
@@ -1080,16 +1080,16 @@ fn import_lineup(db: &mut Database) {
     };
 
     // 2) path file
-    let path = cli::read_string("CSV/JSON file path: ").trim().to_string();
+    let path = term::read_string("CSV/JSON file path: ").trim().to_string();
     if path.is_empty() {
-        cli::show_error("No file path provided");
+        term::show_error("No file path provided");
         return;
     }
 
     let content = match fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) => {
-            cli::show_error(&format!("Cannot read file: {e}"));
+            term::show_error(&format!("Cannot read file: {e}"));
             return;
         }
     };
@@ -1098,7 +1098,7 @@ fn import_lineup(db: &mut Database) {
     let rows = match parse_lineup_file(&path, &content) {
         Ok(r) => r,
         Err(msg) => {
-            cli::show_error(&msg);
+            term::show_error(&msg);
             return;
         }
     };
@@ -1107,18 +1107,18 @@ fn import_lineup(db: &mut Database) {
     let resolved = match validate_and_resolve(conn, team_id, &rows) {
         Ok(v) => v,
         Err(msg) => {
-            cli::show_error(&msg);
+            term::show_error(&msg);
             return;
         }
     };
 
     // 5) save (replace)
     if let Err(e) = save_imported_lineup(conn, &game_id, team_id, &resolved) {
-        cli::show_error(&format!("Import failed: {e}"));
+        term::show_error(&format!("Import failed: {e}"));
         return;
     }
 
-    cli::show_success(&format!(
+    term::show_success(&format!(
         "Lineup imported for {} ({}) - game {}!",
         team_name, team_type, game_id
     ));
@@ -1288,7 +1288,7 @@ fn select_pregame_game_and_team(
 
     if pregame_games.is_empty() {
         println!("📭 No pre-game games found.");
-        cli::wait_for_enter();
+        term::wait_for_enter();
         return None;
     }
 
@@ -1301,11 +1301,11 @@ fn select_pregame_game_and_team(
         println!();
     }
 
-    let game_choice = match cli::read_i64("Select game (number, 0 to cancel): ") {
+    let game_choice = match term::read_i64("Select game (number, 0 to cancel): ") {
         Some(0) | None => return None,
         Some(choice) if choice > 0 && (choice as usize) <= pregame_games.len() => choice as usize,
         _ => {
-            cli::show_error("Invalid selection");
+            term::show_error("Invalid selection");
             return None;
         }
     };
@@ -1321,12 +1321,12 @@ fn select_pregame_game_and_team(
     println!("  0. Cancel");
     println!();
 
-    match cli::read_choice() {
+    match term::read_choice() {
         1 => Some((game_id.clone(), *away_team_id, away_team.clone(), "Away")),
         2 => Some((game_id.clone(), *home_team_id, home_team.clone(), "Home")),
         0 => None,
         _ => {
-            cli::show_error("Invalid selection");
+            term::show_error("Invalid selection");
             None
         }
     }

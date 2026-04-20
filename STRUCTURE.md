@@ -1,4 +1,4 @@
-# 🎯 BS Scoring v0.10.0 – Project Structure
+# 🎯 BS Scoring v0.11.0-alpha1 – Project Structure
 
 ## 📂 Directory layout
 
@@ -17,73 +17,60 @@ bs_scoring/
     ├── lib.rs                  # Library entry point / public re-exports
     ├── main.rs                 # Binary entry point
     │
-    ├── models/                 # Pure data types — no I/O, no DB
+    ├── models/                 # Pure data types — no I/O, no DB, no UI
     │   ├── types.rs            # HalfInning, Pitch, GameStatus, Score, Position, …
-    │   ├── game_state.rs       # GameState, BatterOrder, PitchStats        [v0.9.0]
-    │   ├── runner.rs           # RunnerDest, RunnerOverride                 [v0.9.0]
-    │   ├── session.rs          # PlayBallGameContext, PlayBallGate,         [v0.9.0]
-    │   │                       #   LineupSide
-    │   ├── play_ball.rs        # ⚠ Compatibility shim — re-exports from    [v0.9.0]
-    │   │                       #   game_state, runner, session
+    │   ├── game_state.rs       # GameState, BatterOrder, PitchStats
+    │   ├── runner.rs           # RunnerDest, RunnerOverride
+    │   ├── session.rs          # PlayBallGameContext, PlayBallGate, LineupSide
     │   ├── plate_appearance.rs # PlateAppearance, PlateAppearanceOutcome, …
-    │   ├── events.rs           # DomainEvent, PersistedEvent               [v0.9.0]
+    │   ├── events.rs           # DomainEvent, PersistedEvent
     │   ├── field_zone.rs       # FieldZone (LF, CF, RF, …)
     │   ├── player_traits.rs    # PitchHand, BatSide
-    │   └── scoring/            # Full scoring notation types               [v0.9.0]
+    │   ├── umpires.rs          # Umpire domain types, evaluation rows
+    │   └── scoring/            # Full scoring-notation value types
     │       ├── mod.rs
     │       └── types.rs        # HitType, OutType, Walk, AdvancedPlay,
     │                           #   PlateAppearanceResult, Base, ScoringError
-    │                           #   (used by core/parser.rs; not by live engine)
     │
-    ├── commands/               # Input parsing
-    │   ├── types.rs            # EngineCommand enum (incl. StealBase)      [v0.9.1]
-    │   └── engine_parser.rs    # parse_engine_commands()
-    │                           #   handles "6 h, 5 2b" and "6 st 2b" syntax
-    │
-    ├── core/                   # Game logic
-    │   ├── runner_logic.rs   # ★ Unified runner movement logic             [v0.10.0]
-    │   │                       #   apply_hit(), apply_walk(),
-    │   │                       #   build_movements_from_snapshot(),
-    │   │                       #   validate_runner_overrides(), BaseSnapshot
-    │   ├── menu.rs             # COBOL-style menu system
-    │   ├── parser.rs           # Scoring notation parser (legacy / reference)
-    │   ├── play_ball.rs        # ⚠ Deprecated shim — re-exports from      [v0.9.0]
-    │   │                       #   db/game_queries
-    │   ├── play_ball_apply.rs  # EngineCommand → ApplyResult
-    │   │                       #   delegates to runner_logic               [v0.10.0]
-    │   └── play_ball_reducer.rs# DomainEvent / PA → GameState mutations
-    │                           #   delegates to runner_logic               [v0.10.0]
-    │
-    ├── engine/
+    ├── engine/                 # Game logic — no I/O, no UI              [v0.11.0]
+    │   ├── commands/           # Engine-level commands (ex-src/commands)
+    │   │   ├── parser.rs       # parse_engine_commands() — "6 h, 5 2b", "6 st 2b"
+    │   │   └── types.rs        # EngineCommand enum
+    │   ├── scoring/            # Scoring-rules helpers (ex-core/scoring)
+    │   │   ├── batter_outs.rs  # BatterOutType, fielding-sequence parsing
+    │   │   └── resolve_batter_out.rs
+    │   ├── notation.rs         # Scoring-notation parser (ex-core/parser.rs)
+    │   ├── runners.rs          # Runner-movement logic (ex-core/runner_logic.rs)
+    │   ├── apply.rs            # EngineCommand → ApplyResult (ex-core/play_ball_apply.rs)
+    │   ├── reducer.rs          # PA/DomainEvent → GameState (ex-core/play_ball_reducer.rs)
+    │   ├── helpers.rs          # Shared internal helpers
     │   └── play_ball.rs        # Main game loop: I/O, DB persistence, state drive
     │
     ├── db/                     # SQLite persistence layer
-    │   ├── database.rs         # Connection + WAL + PRAGMAs               [v0.10.0]
-    │   ├── migrations.rs       # Schema versioning (v1–v16)                [v0.9.2]
-    │   │                       #   v1 now creates base tables              [v0.10.0]
-    │   ├── game_queries.rs     # list_playable_games, gate_check_lineups,  [v0.9.0]
-    │   │                       #   set_game_status
-    │   ├── plate_appearances.rs# plate_appearances CRUD                    [v0.9.0]
-    │   │                       #   append_plate_appearance returns seq i64  [v0.9.2]
-    │   ├── runner_movements.rs # runner_movements CRUD                     [v0.9.2]
-    │   │                       #   append_runner_movement, list_runner_movements
-    │   ├── game_events.rs      # game_events log CRUD (admin/info only)    [v0.9.2]
+    │   ├── database.rs         # Connection + WAL + PRAGMAs
+    │   ├── migrations.rs       # Schema versioning (v1–v16)
+    │   ├── game_queries.rs     # list_playable_games, gate_check_lineups, set_game_status
+    │   ├── plate_appearances.rs# plate_appearances CRUD
+    │   ├── runner_movements.rs # runner_movements CRUD
+    │   ├── game_events.rs      # game_events log CRUD
     │   ├── at_bat_draft.rs     # In-progress PA draft (resume support)
     │   ├── league.rs           # League CRUD
     │   ├── team.rs             # Team CRUD
     │   ├── player.rs           # Player CRUD
+    │   ├── umpire.rs           # Umpire + UmpireEvaluation CRUD
     │   └── config.rs           # Cross-platform DB path
     │
-    ├── ui/                     # UI abstractions
+    ├── ui/                     # UI abstractions (Ui trait + backends)
     │   ├── events.rs           # UiEvent definitions
     │   ├── context.rs          # PlayBallUiContext (team names, …)
     │   ├── factory.rs          # UI backend selection
-    │   ├── app.rs              # App-level UI trait
-    │   ├── cli.rs              # Plain-text CLI backend
-    │   └── tui.rs              # Terminal UI (ratatui) backend
+    │   ├── app.rs              # App-level UI state
+    │   ├── cli_impl.rs         # Plain-text CLI backend      [renamed from cli.rs]
+    │   └── tui.rs              # Ratatui terminal-UI backend
     │
-    ├── cli/                    # CLI command handlers (menu actions)
-    │   └── commands/
+    ├── cli/                    # User-facing CLI layer                    [v0.11.0]
+    │   ├── menu.rs             # Menu-choice enums (ex-core/menu.rs)
+    │   └── screens/            # Menu-entry handlers (ex-cli/commands/)
     │       ├── main_menu.rs
     │       ├── game.rs
     │       ├── play_ball.rs
@@ -91,11 +78,15 @@ bs_scoring/
     │       ├── team.rs
     │       ├── players.rs
     │       ├── statistics.rs
-    │       └── db.rs
+    │       ├── db.rs
+    │       ├── export.rs
+    │       └── umpire_supervisor.rs
     │
     └── utils/
-        ├── boot.rs             # App initialization
-        └── cli.rs              # CliSelectable trait, choose_enum helpers
+        ├── boot.rs             # App initialization (banner, boot status)
+        ├── term.rs             # Terminal helpers         [renamed from cli.rs]
+        ├── normalize.rs        # slugify / filename normalization
+        └── time.rs             # Export-timestamp helpers
 ```
 
 ---
@@ -104,30 +95,29 @@ bs_scoring/
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                   main.rs / cli/                         │
+│                main.rs / cli/screens/                    │
 │            Menu-driven CLI application                   │
 └───────────────────────────┬─────────────────────────────┘
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────┐
-│                    engine/play_ball.rs                   │
-│  Main game loop: reads input, drives state, writes DB   │
+│                   engine/play_ball.rs                    │
+│   Main game loop: reads input, drives state, writes DB  │
 └──────┬─────────────────┬──────────────────┬─────────────┘
        │                 │                  │
        ▼                 ▼                  ▼
 ┌────────────┐  ┌─────────────────┐  ┌─────────────────────┐
-│ commands/  │  │     core/       │  │        db/          │
-│            │  │                 │  │                     │
-│ engine_    │  │ play_ball_      │  │ plate_appearances.rs│
-│ parser.rs  │  │ apply.rs        │  │ game_events.rs      │
-│            │  │        │        │  │ game_queries.rs     │
-│ "6 h, 5 2b"│  │        ▼        │  │ at_bat_draft.rs     │
-│ "6 st 2b"  │  │ runner_logic.rs │  │ runner_movements.rs │
-│            │  │ (single source  │  │                     │
-│            │  │  of truth)      │  │ SQLite (v16 + WAL)  │
-│            │  │        │        │  │                     │
-│            │  │        ▼        │  │                     │
-│            │  │ play_ball_      │  │                     │
+│ engine/    │  │   engine/       │  │        db/          │
+│ commands/  │  │                 │  │                     │
+│            │  │ apply.rs        │  │ plate_appearances.rs│
+│ parser.rs  │  │    │            │  │ game_events.rs      │
+│ types.rs   │  │    ▼            │  │ game_queries.rs     │
+│            │  │ runners.rs      │  │ at_bat_draft.rs     │
+│ "6 h, 5 2b"│  │ (single source  │  │ runner_movements.rs │
+│ "6 st 2b"  │  │  of truth for   │  │                     │
+│            │  │  base advance)  │  │ SQLite (v16 + WAL)  │
+│            │  │    │            │  │                     │
+│            │  │    ▼            │  │                     │
 │            │  │ reducer.rs      │  │                     │
 └────────────┘  └────────┬────────┘  └─────────────────────┘
                          │
@@ -136,18 +126,8 @@ bs_scoring/
                │       models/        │
                │                      │
                │ game_state.rs        │
-               │   GameState          │
-               │   on_1b/2b/3b:       │
-               │   Option<BatterOrder>│
-               │                      │
                │ runner.rs            │
-               │   RunnerDest         │
-               │   RunnerOverride     │
-               │                      │
                │ session.rs           │
-               │   PlayBallGameContext│
-               │   PlayBallGate       │
-               │                      │
                │ plate_appearance.rs  │
                │ events.rs            │
                └──────────────────────┘

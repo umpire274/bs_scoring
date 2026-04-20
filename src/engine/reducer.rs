@@ -1,6 +1,5 @@
-use crate::core::play_ball_apply::apply_batter_fielders_choice;
-use crate::core::runner_logic;
 use crate::db::plate_appearances::PlateAppearanceRow;
+use crate::engine::apply::apply_batter_fielders_choice;
 use crate::engine::play_ball::{bump_order, parse_pa_sequence};
 use crate::models::events::{DomainEvent, StrikeoutKind};
 use crate::models::game_state::{BatterOrder, GameState};
@@ -162,7 +161,7 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
 
 // ─── Base placement helpers ───────────────────────────────────────────────────
 // NOTE: State mutation and score tracking for hits and walks is now handled by
-// `crate::core::runner_logic`. The functions below have been removed:
+// `crate::engine::runners`. The functions below have been removed:
 // - place_runner_with_order → runner_logic::place_runner
 // - ensure_inning → runner_logic (internal)
 // - add_runs_to_score → runner_logic (internal)
@@ -171,27 +170,27 @@ pub fn apply_domain_event(state: &mut GameState, ev: &DomainEvent) {
 
 /// Apply hit advancement with optional per-runner overrides.
 ///
-/// Delegates to `runner_logic::apply_hit` — the single source of truth.
+/// Delegates to `crate::engine::runners::apply_hit` — the single source of truth.
 pub fn apply_hit_with_overrides(
     state: &mut GameState,
     batter_order: BatterOrder,
     bases: u8,
     overrides: &[RunnerOverride],
 ) -> Vec<crate::db::runner_movements::RunnerMovementInsert> {
-    let result = runner_logic::apply_hit(state, batter_order, bases, overrides);
+    let result = crate::engine::runners::apply_hit(state, batter_order, bases, overrides);
     result.movements
 }
 
 /// Legacy automatic-only hit advancement (used by PA replay where we don't have override data).
 pub fn apply_hit_advancement(state: &mut GameState, bases: u8) {
     let batter_order: BatterOrder = 0;
-    let _ = runner_logic::apply_hit(state, batter_order, bases, &[]);
+    let _ = crate::engine::runners::apply_hit(state, batter_order, bases, &[]);
 }
 
 // ─── Walk advancement ─────────────────────────────────────────────────────────
 
 fn apply_walk_advancement(state: &mut GameState, batter_order: BatterOrder) {
-    let _ = runner_logic::apply_walk(state, batter_order);
+    let _ = crate::engine::runners::apply_walk(state, batter_order);
 }
 
 // ─── PA replay ───────────────────────────────────────────────────────────────
@@ -434,7 +433,7 @@ pub fn apply_live_plate_appearance(
 }
 
 /// Build RunnerMovementInsert rows from a pre-mutation base snapshot.
-/// Delegates to runner_logic::build_movements_from_snapshot.
+/// Delegates to crate::engine::runners::build_movements_from_snapshot.
 #[allow(clippy::too_many_arguments)]
 fn build_hit_movements_from_snapshot(
     runner_on_1b: Option<u8>,
@@ -446,14 +445,14 @@ fn build_hit_movements_from_snapshot(
     inning: u32,
     half_str: &str,
 ) -> Vec<crate::db::runner_movements::RunnerMovementInsert> {
-    let snapshot = runner_logic::BaseSnapshot {
+    let snapshot = crate::engine::runners::BaseSnapshot {
         on_1b: runner_on_1b,
         on_2b: runner_on_2b,
         on_3b: runner_on_3b,
     };
     let override_map: std::collections::HashMap<u8, RunnerDest> =
         overrides.iter().map(|r| (r.order, r.dest)).collect();
-    runner_logic::build_movements_from_snapshot(
+    crate::engine::runners::build_movements_from_snapshot(
         &snapshot,
         batter_order,
         bases,
