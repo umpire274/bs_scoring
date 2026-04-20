@@ -1217,7 +1217,21 @@ fn replay_plate_appearances_and_log(
             "2B" => state.on_2b = Some(order),
             "3B" => state.on_3b = Some(order),
             "HOME" => {
+                // Credit the run using the inning/half recorded in the row,
+                // not state.half/state.inning: a steal can be linked to the
+                // last PA of the previous half, so state may still reflect
+                // the old half when this closure executes.
+                let saved_inning = state.inning;
+                let saved_half = state.half;
+                state.inning = rm.inning as u32;
+                state.half = if rm.half_inning == "Top" {
+                    HalfInning::Top
+                } else {
+                    HalfInning::Bottom
+                };
                 add_runs_to_score(state, 1);
+                state.inning = saved_inning;
+                state.half = saved_half;
             }
             _ => {}
         }
@@ -1269,10 +1283,21 @@ fn replay_plate_appearances_and_log(
             "2B" => state.on_2b = Some(order),
             "3B" => state.on_3b = Some(order),
             "HOME" => {
-                // Use add_runs_to_score so that away_innings / home_innings
-                // buckets are updated in the same way as the live path,
-                // keeping per-inning totals consistent with the grand total.
+                // Credit the run using the inning/half recorded in the row
+                // rather than state.half/state.inning for the same reason as
+                // apply_steal_state: the row is the authoritative source for
+                // when this movement was recorded.
+                let saved_inning = state.inning;
+                let saved_half = state.half;
+                state.inning = rm.inning as u32;
+                state.half = if rm.half_inning == "Top" {
+                    HalfInning::Top
+                } else {
+                    HalfInning::Bottom
+                };
                 add_runs_to_score(state, 1);
+                state.inning = saved_inning;
+                state.half = saved_half;
             }
             _ => {}
         }
