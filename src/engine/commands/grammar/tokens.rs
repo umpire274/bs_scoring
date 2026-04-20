@@ -64,13 +64,13 @@ pub(super) static RE_LINE_VERB: LazyLock<Regex> =
 pub(super) static RE_IFLY_VERB: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?i)iff?([1-9])$").unwrap());
 
-/// Compact fielding sequence (no dashes): two or more consecutive digits.
+/// Compact fielding sequence (no dashes): two or more consecutive fielder digits (1-9).
 pub(super) static RE_FIELDING_SEQ_COMPACT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\d{2,}$").unwrap());
+    LazyLock::new(|| Regex::new(r"^[1-9]{2,}$").unwrap());
 
-/// Hyphenated fielding sequence: digits separated by `-`.
+/// Hyphenated fielding sequence: fielder digits (1-9) separated by `-`.
 pub(super) static RE_FIELDING_SEQ_DASHED: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\d(-\d)+$").unwrap());
+    LazyLock::new(|| Regex::new(r"^[1-9](-[1-9])+$").unwrap());
 
 // ─── Lexical kinds ───────────────────────────────────────────────────────────
 
@@ -362,6 +362,18 @@ mod tests {
         assert_eq!(classify("6-3"), TokenKind::FieldingSeq(vec![6, 3]));
         assert_eq!(classify("862"), TokenKind::FieldingSeq(vec![8, 6, 2]));
         assert_eq!(classify("8-6-2"), TokenKind::FieldingSeq(vec![8, 6, 2]));
+    }
+
+    #[test]
+    fn fielding_sequence_with_zero_is_unknown() {
+        // Fielder 0 is illegal — sequences containing it must be rejected at
+        // lex time so that the segment-specific parse error fires instead of a
+        // generic build-command failure (issue #60).
+        assert!(matches!(classify("60"), TokenKind::Unknown(_)));
+        assert!(matches!(classify("06"), TokenKind::Unknown(_)));
+        assert!(matches!(classify("6-0"), TokenKind::Unknown(_)));
+        assert!(matches!(classify("0-6"), TokenKind::Unknown(_)));
+        assert!(matches!(classify("630"), TokenKind::Unknown(_)));
     }
 
     #[test]
