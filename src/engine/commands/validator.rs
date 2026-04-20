@@ -172,9 +172,13 @@ fn check_mixing(indexed: &[IndexedSegment]) -> Result<(), Vec<CommandError>> {
         }
     }
 
-    // Pitches cannot be combined with hits / outs / FC. They CAN be
-    // combined with steals (e.g. `b, 5 st 2b`) and with other pitches.
-    let has_non_steal_action = indexed.iter().any(|s| {
+    // "End-of-PA" actions are those that settle the plate appearance:
+    // hits, outs on batter or runner, fielder's choice, standalone
+    // runner-advance overrides. They cannot coexist with pitches (which
+    // are in-pitch events) or with steals (which are also in-pitch — a
+    // runner who moves on a ball in play belongs in the hit's override
+    // list, not in a separate `st` segment).
+    let has_end_of_pa_action = indexed.iter().any(|s| {
         matches!(
             s.segment,
             Segment::Hit { .. }
@@ -184,12 +188,30 @@ fn check_mixing(indexed: &[IndexedSegment]) -> Result<(), Vec<CommandError>> {
                 | Segment::Advance { .. }
         )
     });
+
+    // Pitches cannot be combined with end-of-PA actions. They CAN be
+    // combined with steals (e.g. `b, 5 st 2b`) and with other pitches.
     let has_pitch = indexed
         .iter()
         .any(|s| matches!(s.segment, Segment::Pitch(_)));
-    if has_pitch && has_non_steal_action {
+    if has_pitch && has_end_of_pa_action {
         for seg in indexed {
             if matches!(seg.segment, Segment::Pitch(_)) {
+                errors.push(mixing_err(seg, seg.text.clone()));
+            }
+        }
+    }
+
+    // Steals cannot be combined with end-of-PA actions either. Runner
+    // movement during a ball in play must be expressed as a runner
+    // override on the hit (see SCORING_GUIDE section 6.3), not as an
+    // independent `st` command that would double-apply the movement.
+    let has_steal = indexed
+        .iter()
+        .any(|s| matches!(s.segment, Segment::Steal { .. }));
+    if has_steal && has_end_of_pa_action {
+        for seg in indexed {
+            if matches!(seg.segment, Segment::Steal { .. }) {
                 errors.push(mixing_err(seg, seg.text.clone()));
             }
         }
@@ -939,6 +961,55 @@ mod tests {
         let st = make_state(Some(5));
         let errs = run("b, 5 h", &st).expect_err("pitch + hit");
         assert_eq!(errs.len(), 1);
+    }
+
+    // ── Steal vs end-of-PA actions (issue for steal-mixing) ──
+    //
+    // Steals cannot be combined with hits, outs, FC, or standalone
+    // runner-advance overrides. On a ball in play the runner's movement
+    // must be expressed as a runner override on the hit (section 6.3 of
+    // SCORING_GUIDE), not as a separate `st` segment — otherwise the
+    // movement would be applied twice (once by the steal, once by the
+    // hit's advancement logic) and the scoring state would drift.
+
+    #[test]
+    fn hit_and_steal_rejected() {
+        let mut st = make_state(Some(5));
+        st.on_1b = Some(3);
+        let errs = run("5 h, 3 st 2b", &st).expect_err("hit + steal");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e.kind,
+                CommandErrorKind::Validation(ValidationError::ControlMixedWithActions { .. })
+            )),
+            "expected a mixing error for the steal segment"
+        );
+        assert!(
+            errs.iter().any(|e| e.segment_text.contains("st")),
+            "the error must point at the steal segment"
+        );
+    }
+
+    #[test]
+    fn batter_out_and_steal_rejected() {
+        let mut st = make_state(Some(5));
+        st.on_1b = Some(3);
+        let errs = run("5 63, 3 st 2b", &st).expect_err("batter out + steal");
+        assert!(errs.iter().any(|e| matches!(
+            e.kind,
+            CommandErrorKind::Validation(ValidationError::ControlMixedWithActions { .. })
+        )));
+    }
+
+    #[test]
+    fn fc_and_steal_rejected() {
+        let mut st = make_state(Some(5));
+        st.on_1b = Some(3);
+        let errs = run("5 o6 1b, 3 st 2b", &st).expect_err("FC + steal");
+        assert!(errs.iter().any(|e| matches!(
+            e.kind,
+            CommandErrorKind::Validation(ValidationError::ControlMixedWithActions { .. })
+        )));
     }
 
     // ── Control ──
