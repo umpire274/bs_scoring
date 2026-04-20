@@ -12,6 +12,7 @@ use crate::engine::commands::types::EngineCommand;
 use crate::engine::reducer::{
     apply_domain_event, apply_live_plate_appearance, apply_plate_appearance_row,
 };
+use crate::engine::runners::add_runs_to_score;
 use crate::engine::{get_fielder, get_foul_flag, get_sequence, parse_outcome_json};
 use crate::models::events::{DomainEvent, SideChangeData};
 use crate::models::game_state::{BatterOrder, GameState};
@@ -1216,11 +1217,21 @@ fn replay_plate_appearances_and_log(
             "2B" => state.on_2b = Some(order),
             "3B" => state.on_3b = Some(order),
             "HOME" => {
-                if rm.half_inning == "Top" {
-                    state.score.away = state.score.away.saturating_add(1);
+                // Credit the run using the inning/half recorded in the row,
+                // not state.half/state.inning: a steal can be linked to the
+                // last PA of the previous half, so state may still reflect
+                // the old half when this closure executes.
+                let saved_inning = state.inning;
+                let saved_half = state.half;
+                state.inning = rm.inning as u32;
+                state.half = if rm.half_inning == "Top" {
+                    HalfInning::Top
                 } else {
-                    state.score.home = state.score.home.saturating_add(1);
-                }
+                    HalfInning::Bottom
+                };
+                add_runs_to_score(state, 1);
+                state.inning = saved_inning;
+                state.half = saved_half;
             }
             _ => {}
         }
@@ -1272,11 +1283,21 @@ fn replay_plate_appearances_and_log(
             "2B" => state.on_2b = Some(order),
             "3B" => state.on_3b = Some(order),
             "HOME" => {
-                if rm.half_inning == "Top" {
-                    state.score.away = state.score.away.saturating_add(1);
+                // Credit the run using the inning/half recorded in the row
+                // rather than state.half/state.inning for the same reason as
+                // apply_steal_state: the row is the authoritative source for
+                // when this movement was recorded.
+                let saved_inning = state.inning;
+                let saved_half = state.half;
+                state.inning = rm.inning as u32;
+                state.half = if rm.half_inning == "Top" {
+                    HalfInning::Top
                 } else {
-                    state.score.home = state.score.home.saturating_add(1);
-                }
+                    HalfInning::Bottom
+                };
+                add_runs_to_score(state, 1);
+                state.inning = saved_inning;
+                state.half = saved_half;
             }
             _ => {}
         }
