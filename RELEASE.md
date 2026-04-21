@@ -1,9 +1,9 @@
 # Git Release Instructions
 
 This document describes the process to cut a new release of `bs_scoring`.
-Example commands use the current working version, **v0.11.0-alpha2**.
+Example commands use the current working version, **v0.11.0**.
 
-For releases cut at a different version, simply substitute `v0.11.0-alpha2`
+For releases cut at a different version, simply substitute `v0.11.0`
 everywhere.
 
 ## Step-by-Step Release Process
@@ -30,26 +30,26 @@ git commit -F COMMIT_MESSAGE.txt
 **Alternative (inline commit):**
 
 ```bash
-git commit -m "feat: Grammar refactor for command parser (v0.11.0-alpha2)"
+git commit -m "release: v0.11.0 — grammar refactor + structural refactor + 8 fixes"
 ```
 
 ### 4. Create Annotated Tag
 
 ```bash
-git tag -a v0.11.0-alpha2 -F TAG_MESSAGE.txt
+git tag -a v0.11.0 -F TAG_MESSAGE.txt
 ```
 
 **Alternative (inline tag):**
 
 ```bash
-git tag -a v0.11.0-alpha2 -m "Baseball Scorer v0.11.0-alpha2 — Grammar refactor"
+git tag -a v0.11.0 -m "Baseball Scorer v0.11.0 — stable release"
 ```
 
 ### 5. Push Changes and Tags
 
 ```bash
 git push origin main
-git push origin v0.11.0-alpha2
+git push origin v0.11.0
 ```
 
 **Push all tags:**
@@ -71,7 +71,7 @@ git log --oneline -5
 ### View Tag Details
 
 ```bash
-git show v0.11.0-alpha2
+git show v0.11.0
 ```
 
 ### List All Tags
@@ -87,7 +87,7 @@ git tag -l
 ```bash
 git add . && \
 git commit -F COMMIT_MESSAGE.txt && \
-git tag -a v0.11.0-alpha2 -F TAG_MESSAGE.txt && \
+git tag -a v0.11.0 -F TAG_MESSAGE.txt && \
 git push origin main --tags
 ```
 
@@ -98,10 +98,11 @@ git push origin main --tags
 After pushing the tag, create a GitHub Release:
 
 1. Go to: https://github.com/umpire274/bs_scoring/releases/new
-2. Select tag: `v0.11.0-alpha2`
-3. Release title: `v0.11.0-alpha2 — Grammar refactor for command parser`
+2. Select tag: `v0.11.0`
+3. Release title: `v0.11.0 — Grammar refactor + structural refactor + 8 fixes`
 4. Description: Copy content from `TAG_MESSAGE.txt`
-5. For alpha / beta / RC tags, flag **"Set as a pre-release"**
+5. For alpha / beta / RC tags, flag **"Set as a pre-release"**.
+   Stable releases (no suffix) leave that flag unchecked.
 6. Attach assets (optional):
     - Pre-compiled binaries
     - CHANGELOG.md
@@ -115,13 +116,13 @@ After pushing the tag, create a GitHub Release:
 ### Delete local tag
 
 ```bash
-git tag -d v0.11.0-alpha2
+git tag -d v0.11.0
 ```
 
 ### Delete remote tag
 
 ```bash
-git push origin :refs/tags/v0.11.0-alpha2
+git push origin :refs/tags/v0.11.0
 ```
 
 ### Revert commit
@@ -134,7 +135,7 @@ git revert HEAD
 
 ## Version Bumping for Next Release
 
-For the next release (e.g. `v0.11.0-alpha3` or `v0.11.0` final):
+For the next release (e.g. `v0.12.0-alpha1`, `v0.11.1`, or similar):
 
 1. Update `Cargo.toml`: `version = "<new-version>"`
 2. Update `Cargo.lock`: `version = "<new-version>"` under the
@@ -144,11 +145,12 @@ For the next release (e.g. `v0.11.0-alpha3` or `v0.11.0` final):
 4. Update the version number in the headers of `README.md`,
    `STRUCTURE.md`, and `SCORING_GUIDE.md` if they reference a specific
    release.
-5. Create a new `COMMIT_MESSAGE.txt` and `TAG_MESSAGE.txt` for the
+5. Update the footer of this `RELEASE.md`.
+6. Create a new `COMMIT_MESSAGE.txt` and `TAG_MESSAGE.txt` for the
    release, reusing the structure of the previous ones.
-6. Repeat the release process above.
+7. Repeat the release process above.
 
 ---
 
-**Current Version:** 0.11.0-alpha2
-**Previous Version:** 0.11.0-alpha1
+**Current Version:** 0.11.0
+**Previous Version:** 0.11.0-alpha2

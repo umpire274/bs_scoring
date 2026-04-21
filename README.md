@@ -1,4 +1,4 @@
-# ⚾ Baseball Scorer — v0.11.0-alpha2
+# ⚾ Baseball Scorer — v0.11.0
 
 A comprehensive baseball and softball scoring TUI application with SQLite
 persistence, pitch-by-pitch tracking, runner advancement overrides, steal
@@ -6,59 +6,91 @@ support, deterministic game resume, and umpire supervisor tools.
 
 ## 🆕 What's New in v0.11.0
 
-`v0.11.0` is being delivered incrementally as a series of alphas. No
-`v0.11.0` final has been cut yet; the two alphas below represent the work
-landed so far.
+`v0.11.0` consolidates two major refactors — a structural reorganisation
+of `src/` (alpha1) and a full rebuild of the scoring-command parser on
+top of a formal grammar (alpha2) — plus eight issue fixes that landed on
+top of alpha2 (issues #55, #56, #59, #60, #61, #62, #64, #66). Public
+API via `bs_scoring::*` is unchanged.
 
-### v0.11.0-alpha2 — Grammar refactor
+### Grammar refactor
 
-- ✅ **Regex-assisted command parser** — the scoring-command parser has been
-  rebuilt on top of a formal grammar. Lexical recognition uses `regex` 1.11;
-  segment parsing is a small handwritten recursive descent.
-- ✅ **Stateless-then-stateful pipeline** — parsing splits into two clear
-  stages: a syntactic pass that produces `Vec<Segment>` with no access to
-  the game state, and a validator that applies state-dependent rules
-  (batter-slot coherence, runner presence, infield-fly preconditions,
-  too-many-outs, mutual exclusions).
-- ✅ **Subject-always grammar** — the batting-order subject is mandatory on
-  every action segment, with one documented exception: verbs whose shape
-  cannot be confused with a lone digit (hit verbs, multi-character
+- ✅ **Regex-assisted command parser** — the scoring-command parser is
+  built on top of a formal grammar. Lexical recognition uses `regex`
+  1.11; segment parsing is a small handwritten recursive descent.
+- ✅ **Stateless-then-stateful pipeline** — parsing splits into two
+  clear stages: a syntactic pass that produces `Vec<Segment>` with no
+  access to the game state, and a validator that applies state-dependent
+  rules (batter-slot coherence, runner presence, infield-fly
+  preconditions, too-many-outs, mutual exclusions).
+- ✅ **Subject-always grammar** — the batting-order subject is mandatory
+  on every action segment, with one documented exception: verbs whose
+  shape cannot be confused with a lone digit (hit verbs, multi-character
   batter-outs, fielder's choice) may omit the subject, in which case it
   defaults to the current batter.
-- ✅ **Order-independent segments** — a play like `5 l6, 3 64, 4 43` and its
-  permutations (`3 64, 5 l6, 4 43`, `4 43, 5 l6, 3 64`) all produce the
-  same triple play. The parser no longer privileges the first token.
-- ✅ **Diagnostic errors with segment index** — every error is surfaced as
-  `error at segment N: '<text>': <reason>`. Multiple errors in the same
-  line are accumulated and reported together rather than short-circuiting
-  on the first.
-- ✅ **130 new unit tests** covering token classification, segment parsing,
-  semantic validation, order invariance, and diagnostic quality.
+- ✅ **Order-independent segments** — a play like `5 l6, 3 64, 4 43`
+  and its permutations (`3 64, 5 l6, 4 43`, `4 43, 5 l6, 3 64`) all
+  produce the same triple play. The parser no longer privileges the
+  first token.
+- ✅ **Diagnostic errors with segment index** — every error is surfaced
+  as `error at segment N: '<text>': <reason>`. Multiple errors in the
+  same line are accumulated and reported together rather than
+  short-circuiting on the first.
+- ✅ **83 new unit tests** covering token classification, segment
+  parsing, semantic validation, order invariance, and diagnostic
+  quality.
 
-### v0.11.0-alpha1 — Structural refactor
+### Structural refactor
 
-- ✅ **`core/` absorbed into `engine/`** — game logic now lives in a single
-  coherent subtree; `runner_logic.rs`, `play_ball_apply.rs`,
-  `play_ball_reducer.rs`, `parser.rs`, and `scoring/` moved under
+- ✅ **`core/` absorbed into `engine/`** — game logic now lives in a
+  single coherent subtree; `runner_logic.rs`, `play_ball_apply.rs`,
+  `play_ball_reducer.rs`, `parser.rs`, and `scoring/` live under
   `src/engine/`.
 - ✅ **Top-level `commands/` removed** — moved under
   `src/engine/commands/`, eliminating the ambiguity with
   `src/cli/commands/`.
 - ✅ **`cli/commands/` renamed to `cli/screens/`** — these files are
-  user-flow screens, not engine commands; the new name removes the clash.
+  user-flow screens, not engine commands; the new name removes the
+  clash.
 - ✅ **Anti-homonym renames** — `utils/cli.rs` → `utils/term.rs` and
   `ui/cli.rs` → `ui/cli_impl.rs` remove two module-name collisions that
   made `use` sites hard to read.
 - ✅ **Deprecated shims removed** — `core/play_ball.rs` and
-  `models/play_ball.rs` (compatibility re-exports since v0.8.1) deleted.
-- ✅ **Public API preserved** — the top-level re-exports from
-  `bs_scoring::*` (`Database`, `Menu`, `GameState`, `Player`, `Team`,
-  `League`, scoring types, …) are unchanged.
+  `models/play_ball.rs` (compatibility re-exports since v0.8.1)
+  deleted.
+
+### Correctness fixes on top of alpha2
+
+- **Composite defensive plays** (#55) — live application and
+  deterministic replay converge on the same `GameState` for every
+  composite play (triple plays, runner outs on FC, FC-safe advances on
+  runners), matching the `runner_movements` rows persisted to the DB.
+- **FC-to-home run credit** (#56) — a batter reaching home directly
+  on a fielder's choice correctly credits the run to the batting
+  team.
+- **Steal mixing** (#59) — steals combined with an end-of-PA action
+  (hit, out, FC, standalone advance) are rejected by the validator
+  with a mixing diagnostic.
+- **Fielding-sequence lexer** (#60) — `0` is no longer accepted as a
+  fielder in compact (`60`) or dashed (`6-0`) fielding sequences.
+- **Resume double-scoring** (#61, #62) — walk and hit movements are
+  no longer re-applied during the replay's composite pass; the
+  partition now uses an explicit whitelist of composite/defensive
+  advancement types.
+- **Inning buckets on HOME movements** (#64) — replay-path `HOME`
+  steal and composite scoring rows now increment the per-inning
+  `away_innings` / `home_innings` buckets, keeping the inning-by-inning
+  line consistent with the grand total.
+- **Cross-half steal-home scoring** (#66) — replay credits a
+  steal-home using the inning and half recorded on the
+  `runner_movements` row rather than the current traversal position,
+  so a steal linked to the last PA of a half is credited to the right
+  team and inning bucket.
 
 ### Recent Versions
 
 | Version       | Highlights                                                                       |
 |---------------|----------------------------------------------------------------------------------|
+| 0.11.0        | Consolidates alpha1 structural refactor + alpha2 grammar refactor + 8 fixes      |
 | 0.11.0-alpha2 | Grammar refactor: regex-assisted parser, subject-always rule, error accumulation |
 | 0.11.0-alpha1 | Structural refactor of `src/`: engine/ absorbs core/, cli/screens/, renames      |
 | 0.10.6        | Defensive plays (composite), unassisted out, fielder's choice, TUI history       |
@@ -230,7 +262,7 @@ The TUI scoring interface provides:
 
 ### Scorer Commands (summary)
 
-Under v0.11.0-alpha2 the batting-order subject is mandatory on action
+Under v0.11.0 the batting-order subject is mandatory on action
 segments, with one exception: on verbs whose shape cannot be confused with
 a lone digit (hits, multi-character batter-outs, fielder's choice) the
 subject may be omitted and defaults to the current batter.
@@ -326,25 +358,26 @@ DATABASE MANAGEMENT
 
 ## 📊 Features by Version
 
-| Version          | Key Features                                                                    |
-|------------------|---------------------------------------------------------------------------------|
-| 0.11.0-alpha2    | Grammar refactor, regex-assisted parser, order-independent segments, 130+ tests |
-| 0.11.0-alpha1    | Structural refactor: engine/ absorbs core/, cli/screens/, anti-homonym renames  |
-| 0.10.6           | Composite defensive plays, unassisted out, fielder's choice, TUI history        |
-| 0.10.5 / -bugfix | Umpire summary with date/time/venue, nullable game_time fix                     |
-| 0.10.4           | Umpire reports CSV/JSON export, `GameInfo` struct, interactive history UX       |
-| 0.10.3           | Umpire history helper decomposition, interactive report selection               |
-| 0.10.2           | Batter-out commands: ground / fly / foul-fly / line-out / infield-fly           |
-| 0.10.1           | Umpire Supervisor: registry, crew assignment, evaluations, career history       |
-| 0.10.0           | Unified runner logic, WAL mode, migration-only schema, model helpers            |
-| 0.9.x            | TUI Help/focus system, steal command, runner_movements v16, module split        |
-| 0.8.0            | Runner overrides by batting order, `Option<BatterOrder>` on bases               |
-| 0.7.x            | Compact PA persistence, deterministic resume, TUI scoreboard                    |
-| 0.6.x            | Pitch-by-pitch tracking, pitch count, strike/ball logic                         |
-| 0.4.x            | Pre-game lineup editing, DH support, `GameStatus` enum                          |
-| 0.3.x            | Player management, CSV/JSON import-export                                       |
-| 0.2.x            | SQLite persistence, menu system, schema migrations                              |
-| 0.1.0            | Initial CLI scoring                                                             |
+| Version          | Key Features                                                                   |
+|------------------|--------------------------------------------------------------------------------|
+| 0.11.0           | Consolidates alpha1 + alpha2 + 8 fixes; stable release                         |
+| 0.11.0-alpha2    | Grammar refactor, regex-assisted parser, order-independent segments, 83+ tests |
+| 0.11.0-alpha1    | Structural refactor: engine/ absorbs core/, cli/screens/, anti-homonym renames |
+| 0.10.6           | Composite defensive plays, unassisted out, fielder's choice, TUI history       |
+| 0.10.5 / -bugfix | Umpire summary with date/time/venue, nullable game_time fix                    |
+| 0.10.4           | Umpire reports CSV/JSON export, `GameInfo` struct, interactive history UX      |
+| 0.10.3           | Umpire history helper decomposition, interactive report selection              |
+| 0.10.2           | Batter-out commands: ground / fly / foul-fly / line-out / infield-fly          |
+| 0.10.1           | Umpire Supervisor: registry, crew assignment, evaluations, career history      |
+| 0.10.0           | Unified runner logic, WAL mode, migration-only schema, model helpers           |
+| 0.9.x            | TUI Help/focus system, steal command, runner_movements v16, module split       |
+| 0.8.0            | Runner overrides by batting order, `Option<BatterOrder>` on bases              |
+| 0.7.x            | Compact PA persistence, deterministic resume, TUI scoreboard                   |
+| 0.6.x            | Pitch-by-pitch tracking, pitch count, strike/ball logic                        |
+| 0.4.x            | Pre-game lineup editing, DH support, `GameStatus` enum                         |
+| 0.3.x            | Player management, CSV/JSON import-export                                      |
+| 0.2.x            | SQLite persistence, menu system, schema migrations                             |
+| 0.1.0            | Initial CLI scoring                                                            |
 
 ## 🚀 Roadmap
 
@@ -377,7 +410,7 @@ MIT License — Free to use for your games! ⚾
 
 ---
 
-**Version:** 0.11.0-alpha2
+**Version:** 0.11.0
 **Schema:** v18
 **Edition:** Rust 2024
 **Author:** Alessandro Maestri

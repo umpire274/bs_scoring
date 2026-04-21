@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.11.0] - 2026-04-21
+
+First stable release of the v0.11.0 milestone. Promotes `v0.11.0-alpha2`
+to final after the post-alpha fixes landed on
+`v0.11.0-alpha2-fix_codex` (issues #55, #56, #59, #60, #61, #62, #64,
+#66) were verified green. No functional code changes between
+`v0.11.0-alpha2` + fixes and this release — the `v0.11.0` tag exists to
+mark a clean, production-ready stopping point on the v0.11.0 line.
+
+The highlights of the milestone, aggregated across alpha1 + alpha2 +
+fixes:
+
+- **Grammar refactor** (alpha2) — scoring-command parser rebuilt on a
+  two-stage pipeline: stateless regex-assisted syntactic layer followed
+  by a state-aware validator. Every error in a line is now reported at
+  once with its 1-based segment index. Segments are order-independent.
+- **Structural refactor** (alpha1) — `src/` reorganised: `core/` absorbed
+  into `engine/`, top-level `commands/` moved under `engine/commands/`,
+  `cli/commands/` renamed to `cli/screens/`, several anti-homonym
+  renames. Public API via `bs_scoring::*` unchanged.
+- **Composite-play state consistency** (#55) — live application and
+  deterministic replay now converge on the same `GameState` for every
+  composite defensive play, matching the `runner_movements` rows
+  persisted to the DB.
+- **FC-to-home scoring** (#56) — a batter reaching home directly on a
+  fielder's choice now correctly credits the run.
+- **Grammar and replay-path polish** (#59, #60, #61, #62, #64, #66) —
+  steals can no longer be combined with end-of-PA actions; invalid
+  fielder 0 in a fielding sequence is rejected at lex time; resumed
+  games no longer double-apply walk / hit movements; HOME composite and
+  steal-home movements correctly increment per-inning buckets and
+  credit the right team when crossing half-innings.
+
+### Added
+
+- Nothing new beyond what already shipped in `v0.11.0-alpha2` and its
+  follow-up fixes.
+
+### Changed
+
+- Version bumped from `0.11.0-alpha2` to `0.11.0` in `Cargo.toml` and
+  `Cargo.lock`.
+- Headers in `README.md`, `SCORING_GUIDE.md`, `STRUCTURE.md`, and
+  `RELEASE.md` updated to reflect the final version.
+
+---
+
 ## [v0.11.0-alpha2] - 2026-04-20
 
 Second alpha of the v0.11.0 milestone. Ships the scoring-command grammar
@@ -42,8 +89,8 @@ its segment index, rather than the parser stopping at the first problem.
 - **`engine/commands/parser.rs` facade** — `parse_engine_commands(line, &state)`
   composes the grammar and validator into a single entry point returning
   `Result<Vec<EngineCommand>, Vec<CommandError>>`.
-- 130 new unit tests: 12 in `tokens`, 38 in `segment`, 5 in `grammar::mod`,
-  20 in `validator`, 6 in the `parser` facade — covering happy paths,
+- 83 new unit tests: 15 in `tokens`, 30 in `segment`, 7 in `grammar::mod`,
+  24 in `validator`, 7 in the `parser` facade — covering happy paths,
   error diagnostics, order invariance, infield-fly preconditions, and every
   structural conflict rule.
 
@@ -126,9 +173,14 @@ its segment index, rather than the parser stopping at the first problem.
   `apply_composite_state` during replay. This unintentionally re-applied
   `walk`, `hit_auto`, and `hit_override` rows that `apply_plate_appearance_row`
   had already applied, causing runs to be counted twice in resumed games.
-  The partition now uses an explicit whitelist of composite/defensive types
-  (`ground_out`, `fly_out`, `line_out`, `infield_fly`, `unassisted_out`,
-  `fielders_choice`) and discards all normal-PA movement rows.
+- **Exclude hit and walk rows from composite replay pass (#62)** — fix
+  for #61. The partition now uses an explicit whitelist of
+  composite/defensive types (`ground_out`, `fly_out`, `line_out`,
+  `infield_fly`, `unassisted_out`, `fielders_choice`) and discards all
+  normal-PA movement rows (`hit_auto`, `hit_override`, `walk`, …),
+  which are applied exclusively by `apply_plate_appearance_row`. This
+  makes the replay pipeline authoritative on a row's `advancement_type`
+  for deciding which path applies it, eliminating the double-apply.
 - **Inning-bucket not incremented for HOME composite/steal movements (#64)** —
   Both `apply_composite_state` and `apply_steal_state` in the replay path
   incremented `state.score.away` / `state.score.home` directly via
