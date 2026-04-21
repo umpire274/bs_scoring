@@ -12,9 +12,16 @@
 //! 3. `parser` — thin facade composing the two, exposing
 //!    [`parser::parse_engine_commands`] as the single entry point for the
 //!    game loop.
+//!
+//! # Vocabulary
+//!
+//! [`kind::CommandKind`] is the single source of truth for which verbs
+//! the grammar accepts. Every layer of the pipeline refers to it instead
+//! of maintaining parallel per-layer sub-enums.
 
 pub mod errors;
 pub mod grammar;
+pub mod kind;
 pub mod parser;
 pub mod types;
 pub mod validator;

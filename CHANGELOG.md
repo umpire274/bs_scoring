@@ -5,6 +5,86 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.11.1] - 2026-04-21
+
+Internal refactor of the command vocabulary plus a scoreboard UX polish.
+No change to the grammar accepted by the parser or to the engine
+behaviour. Public API via `bs_scoring::*` is unchanged.
+
+### Changed
+
+- **Command-taxonomy refactor (internal).** The scoring-command
+  pipeline now has a single source of truth for the list of verbs it
+  accepts: the new `engine::commands::kind::CommandKind` enum, a flat
+  26-variant enumeration with one variant per lexical verb shape, paired
+  with a `CommandFamily` grouping. The parallel tag sub-enums that used
+  to live in each pipeline layer (`HitVerbKind`, `PitchVerbKind`,
+  `KeywordKind` in `tokens.rs`; `ControlKind`, `StatusKind`, `PitchKind`,
+  `HitKind` in `segment.rs`) have been removed and their callers
+  rewritten to reference `CommandKind` directly.
+    - `TokenKind` collapses four of its variants (`HitVerb`,
+      `PitchVerb`, `StealVerb`, `Keyword`) into a single
+      `TokenKind::Verb(CommandKind)` carrying the parameter-less verb's
+      kind.
+    - `Segment::Control`, `Segment::Status`, `Segment::Pitch`, and
+      `Segment::Hit` now carry `CommandKind` directly instead of a
+      dedicated sub-enum.
+    - `BatterOutKind` is kept (its variants carry fielder identifiers,
+      not just a tag) and gains a `.command_kind()` helper that maps
+      each variant to the corresponding `CommandKind`. Notably,
+      `FlyOut { foul: true }` maps to `CommandKind::FoulFlyOut`, a
+      distinct lexical verb.
+    - The grammar's segment dispatcher now branches on
+      `CommandKind::family()` rather than on the removed sub-enums.
+    - `validator.rs` `Resolved::Pitch` / `Resolved::Hit` carry
+      `CommandKind`; the hit coalescer and the `status_to_game` /
+      `pitch_to_engine` helpers match on `CommandKind` with an
+      `unreachable!()` catch-all that documents the family invariant.
+- **Lexer micro-optimisation.** Removed three regexes
+  (`RE_HIT_VERB`, `RE_PITCH_VERB`, `RE_STEAL_VERB`) that became dead
+  weight after the refactor. Parameter-less verbs (hit, pitch, steal,
+  control, status) are now recognised by a single exact-match `match`
+  on lowercased text — faster and more readable than carrying a regex
+  per one-letter keyword. Regexes retained only for verbs with numeric
+  parameters (`o<n>`, `f<n>`, `l<n>`, `if<n>`, fielding sequences).
+- **Scoreboard UX.** TUI scoreboard rewritten with dynamic highlighting
+  and refined layout:
+    - Batting team row highlighted with yellow + bold and a subtle
+      left-edge marker so the active half-inning is obvious at a
+      glance.
+    - Linescore header reworked to render with `Line` / `Span` instead
+      of a flat string, with the current inning emphasised via
+      reversed style.
+    - Balls / strikes count styled dynamically: a full count (3-2)
+      renders reversed + bold, critical counts (3-1, 2-2) render
+      yellow + bold. New helper `styled_count_span`.
+    - Outs indicator now shows two dots (`○` / `●`) instead of three,
+      with active outs in yellow + bold and inactive outs in dark
+      gray. New helper `styled_outs_spans`.
+    - Status line re-rendered with mixed styled spans and proper
+      centring; the redundant inning indicator (`"4↑"`) removed.
+    - Better spacing and alignment across scoreboard components.
+- Bumped version from `0.11.0` to `0.11.1` in `Cargo.toml` and
+  `Cargo.lock`.
+
+### Added
+
+- New public module `src/engine/commands/kind.rs` with `CommandKind`,
+  `CommandFamily`, `CommandKind::family()`, and
+  `CommandKind::canonical_name()`. The module is the single documented
+  reference for anyone asking "which commands does the parser accept?"
+  and the place to add new commands in future releases.
+
+### Notes
+
+- This release is an internal refactor. No change to accepted grammar,
+  engine behaviour, diagnostic messages, or on-disk data. The 83 unit
+  tests of the command pipeline (`tokens`, `segment`, `grammar::mod`,
+  `validator`, `parser` facade) pass unchanged; 4 new tests in
+  `kind.rs` verify the invariants of the new taxonomy.
+
+---
+
 ## [v0.11.0] - 2026-04-21
 
 First stable release of the v0.11.0 milestone. Promotes `v0.11.0-alpha2`

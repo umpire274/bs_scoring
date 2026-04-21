@@ -1,10 +1,11 @@
-# ⚾ BS Scoring — Scoring Command Guide (v0.11.0)
+# ⚾ BS Scoring — Scoring Command Guide (v0.11.1)
 
 This document describes every command the **Play Ball** engine accepts as
-of v0.11.0, the grammar rules that govern them, and the diagnostic
+of v0.11.1, the grammar rules that govern them, and the diagnostic
 messages the parser produces when an input is not valid.
 
-The command grammar changed substantially in v0.11.0. If you are
+The command grammar changed substantially in v0.11.0 and is unchanged
+in v0.11.1. If you are
 coming from v0.10.x, read section 1 and section 2 first — they summarize
 the new model.
 
@@ -525,7 +526,7 @@ b, 5 st 2b, 3 st 3b             — double steal on a ball
 
 ---
 
-## 14) Current scope (v0.11.0)
+## 14) Current scope (v0.11.1)
 
 Supported:
 
