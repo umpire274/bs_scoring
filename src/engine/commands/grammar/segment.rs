@@ -44,30 +44,43 @@
 //!
 //! Pitch and control verbs FORBID a subject.
 
-use super::tokens::{HitVerbKind, KeywordKind, PitchVerbKind, TokenKind, classify};
+use super::tokens::{TokenKind, classify};
 use crate::engine::commands::errors::ParseError;
+use crate::engine::commands::kind::CommandKind;
 use crate::models::field_zone::FieldZone;
 use crate::models::runner::RunnerDest;
 
-/// A parsed segment — the shape of one comma-separated chunk of the line.
+/// A parsed segment. Every `Segment` variant is the result of
+/// syntactically recognising one comma-separated chunk of an input line;
+/// no state-dependent checks (`is runner on base?`, `is this the current
+/// batter?`) are performed here — those belong to the validator.
 ///
-/// The batter subject (1–9) is optional only on the variants that allow an
-/// implicit-batter shortcut; see module docs.
+/// Subjects: whether the subject is mandatory, forbidden, or optional
+/// depends on the variant. See the [`kind::CommandKind`] module docs for
+/// the subject-rule per family. When the subject is optional the
+/// implicit default is the current batter; the *validator* substitutes
+/// that default, segment-parsing stays game-state-agnostic and uses an
+/// `Option<u8>` with `None` meaning "implicit current batter". See
+/// module docs for the full shape grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Segment {
-    /// Engine-control keyword.
-    Control(ControlKind),
+    /// Engine-control keyword. Carries the precise `CommandKind`
+    /// (`Exit` or `PlayBall`); the validator does a simple match.
+    Control(CommandKind),
 
-    /// Game-status change.
-    Status(StatusKind),
+    /// Game-status change. `CommandKind` is one of
+    /// `Regular`/`Postponed`/`Cancelled`/`Suspended`/`Forfeited`/`Protested`.
+    Status(CommandKind),
 
-    /// Pitch recorded against the current batter.
-    Pitch(PitchKind),
+    /// Pitch recorded against the current batter. `CommandKind` is one
+    /// of `Ball`/`CalledStrike`/`SwingingStrike`/`Foul`/`FoulBunt`.
+    Pitch(CommandKind),
 
     /// Hit by a batter. `subject` is optional (implicit = current batter).
+    /// `kind` is one of `Single`/`Double`/`Triple`/`HomeRun`.
     Hit {
         subject: Option<u8>,
-        kind: HitKind,
+        kind: CommandKind,
         zone: Option<FieldZone>,
     },
 
@@ -96,41 +109,14 @@ pub enum Segment {
     Advance { subject: u8, dest: RunnerDest },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ControlKind {
-    Exit,
-    PlayBall,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StatusKind {
-    Regular,
-    Postponed,
-    Cancelled,
-    Suspended,
-    Forfeited,
-    Protested,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PitchKind {
-    Ball,
-    CalledStrike,
-    SwingingStrike,
-    Foul,
-    FoulBunt,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HitKind {
-    Single,
-    Double,
-    Triple,
-    HomeRun,
-}
-
-/// Batter/runner out shape. Both BatterOut and RunnerOut reuse this type
-/// because the fielding patterns are identical; only the target differs.
+/// Batter/runner out shape. Both `Segment::BatterOut` and
+/// `Segment::RunnerOut` reuse this type because the fielding patterns
+/// are identical; only the target differs.
+///
+/// Unlike `CommandKind` (which is a pure tag enum), `BatterOutKind`
+/// carries the fielder identifiers that are part of the out's lexical
+/// shape. Use [`BatterOutKind::command_kind`] to get the corresponding
+/// `CommandKind` variant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BatterOutKind {
     /// Unassisted out by a single fielder (e.g. `3`, `5`).
@@ -145,6 +131,22 @@ pub enum BatterOutKind {
     InfieldFly { fielder: u8 },
 }
 
+impl BatterOutKind {
+    /// The `CommandKind` corresponding to this batter-out shape. Note
+    /// that `FlyOut { foul: true }` maps to `CommandKind::FoulFlyOut`
+    /// (a distinct lexical verb in the grammar).
+    pub fn command_kind(&self) -> CommandKind {
+        match self {
+            Self::Unassisted { .. } => CommandKind::Unassisted,
+            Self::GroundOut { .. } => CommandKind::GroundOut,
+            Self::FlyOut { foul: false, .. } => CommandKind::FlyOut,
+            Self::FlyOut { foul: true, .. } => CommandKind::FoulFlyOut,
+            Self::LineOut { .. } => CommandKind::LineOut,
+            Self::InfieldFly { .. } => CommandKind::InfieldFly,
+        }
+    }
+}
+
 // ─── Parser entry point ──────────────────────────────────────────────────────
 
 /// Parse a single segment (one comma-separated chunk of the input line).
@@ -157,17 +159,37 @@ pub fn parse_segment(raw: &str) -> Result<Segment, ParseError> {
     let tokens: Vec<&str> = trimmed.split_whitespace().collect();
     let kinds: Vec<TokenKind> = tokens.iter().map(|t| classify(t)).collect();
 
+    use crate::engine::commands::kind::CommandFamily;
+
     // Dispatch on the FIRST token. Most paths are deterministic from here.
     match (&kinds[0], tokens[0]) {
-        // ── Control / status / pitch (subject forbidden) ──────────────────────
-        (TokenKind::Keyword(kw), _) => parse_keyword_segment(*kw, &tokens),
-        (TokenKind::PitchVerb(pv), _) => parse_pitch_segment(*pv, &tokens),
+        // ── Verb tokens that carry a precise CommandKind ───────────────────
+        //
+        // Every parameter-less verb (control / status / pitch / hit / steal)
+        // shows up as TokenKind::Verb(CommandKind::X). Dispatch on the
+        // family, not on the individual variant, so we don't fan out across
+        // 13 arms here.
+        (TokenKind::Verb(ck), _) => match ck.family() {
+            CommandFamily::Control | CommandFamily::Status => parse_keyword_segment(*ck, &tokens),
+            CommandFamily::Pitch => parse_pitch_segment(*ck, &tokens),
+            CommandFamily::Hit => parse_hit(None, *ck, &tokens, &kinds),
+            CommandFamily::Steal => Err(ParseError::MissingSubject {
+                verb: "st".to_string(),
+            }),
+            // A parameter-less verb in families that require a subject or
+            // follow a different path should never land here: the grammar
+            // has no parameter-less BatterOut/FielderChoice/Advance.
+            _ => unreachable!(
+                "parameter-less verb {:?} in unexpected family {:?}",
+                ck,
+                ck.family()
+            ),
+        },
 
         // ── Subject-first path: `<n> <verb> [<obj>]` ──────────────────────────
         (TokenKind::Digit(subject), _) => parse_with_subject(*subject, &tokens, &kinds),
 
-        // ── Implicit-batter paths ─────────────────────────────────────────────
-        (TokenKind::HitVerb(hv), _) => parse_hit(None, *hv, &tokens, &kinds),
+        // ── Implicit-batter paths for verbs with a numeric parameter ─────────
         (TokenKind::FcVerb { fielder }, _) => parse_fc(None, *fielder, &tokens, &kinds),
         (TokenKind::FlyVerb { fielder, foul }, _) => parse_batter_out_implicit(
             BatterOutKind::FlyOut {
@@ -189,11 +211,7 @@ pub fn parse_segment(raw: &str) -> Result<Segment, ParseError> {
             &tokens,
         ),
 
-        // ── No-subject verbs that REQUIRE a subject — these are the ones that
-        //    can never be implicit-batter: steal and runner-advance. ───────────
-        (TokenKind::StealVerb, _) => Err(ParseError::MissingSubject {
-            verb: "st".to_string(),
-        }),
+        // ── Base in first position: standalone advance without subject ───────
         (TokenKind::Base(_), first) => Err(ParseError::MissingSubject {
             verb: first.to_string(),
         }),
@@ -212,40 +230,37 @@ pub fn parse_segment(raw: &str) -> Result<Segment, ParseError> {
 
 // ─── Keyword / control / status / pitch ──────────────────────────────────────
 
-fn parse_keyword_segment(kw: KeywordKind, tokens: &[&str]) -> Result<Segment, ParseError> {
+fn parse_keyword_segment(ck: CommandKind, tokens: &[&str]) -> Result<Segment, ParseError> {
+    use crate::engine::commands::kind::CommandFamily;
+
     if tokens.len() > 1 {
         return Err(ParseError::ExtraTokens {
-            verb: kw.as_str().to_string(),
+            verb: ck.canonical_name().to_string(),
             extra: tokens[1..].join(" "),
         });
     }
 
-    Ok(match kw {
-        KeywordKind::Exit => Segment::Control(ControlKind::Exit),
-        KeywordKind::PlayBall => Segment::Control(ControlKind::PlayBall),
-        KeywordKind::Regular => Segment::Status(StatusKind::Regular),
-        KeywordKind::Postponed => Segment::Status(StatusKind::Postponed),
-        KeywordKind::Cancelled => Segment::Status(StatusKind::Cancelled),
-        KeywordKind::Suspended => Segment::Status(StatusKind::Suspended),
-        KeywordKind::Forfeited => Segment::Status(StatusKind::Forfeited),
-        KeywordKind::Protested => Segment::Status(StatusKind::Protested),
+    Ok(match ck.family() {
+        CommandFamily::Control => Segment::Control(ck),
+        CommandFamily::Status => Segment::Status(ck),
+        _ => unreachable!("parse_keyword_segment called with {:?}", ck),
     })
 }
 
-fn parse_pitch_segment(pv: PitchVerbKind, tokens: &[&str]) -> Result<Segment, ParseError> {
+fn parse_pitch_segment(ck: CommandKind, tokens: &[&str]) -> Result<Segment, ParseError> {
+    debug_assert_eq!(
+        ck.family(),
+        crate::engine::commands::kind::CommandFamily::Pitch,
+        "parse_pitch_segment called with non-pitch {:?}",
+        ck
+    );
     if tokens.len() > 1 {
         return Err(ParseError::ExtraTokens {
             verb: tokens[0].to_string(),
             extra: tokens[1..].join(" "),
         });
     }
-    Ok(Segment::Pitch(match pv {
-        PitchVerbKind::Ball => PitchKind::Ball,
-        PitchVerbKind::CalledStrike => PitchKind::CalledStrike,
-        PitchVerbKind::SwingingStrike => PitchKind::SwingingStrike,
-        PitchVerbKind::Foul => PitchKind::Foul,
-        PitchVerbKind::FoulBunt => PitchKind::FoulBunt,
-    }))
+    Ok(Segment::Pitch(ck))
 }
 
 // ─── Subject-first path ──────────────────────────────────────────────────────
@@ -264,27 +279,32 @@ fn parse_with_subject(
     }
 
     // Reject subject-on-pitch / subject-on-control right away.
-    match &kinds[1] {
-        TokenKind::PitchVerb(_) => {
-            return Err(ParseError::SubjectNotAllowed {
-                verb: tokens[1].to_string(),
-            });
+    if let TokenKind::Verb(ck) = &kinds[1] {
+        use crate::engine::commands::kind::CommandFamily;
+        match ck.family() {
+            CommandFamily::Pitch | CommandFamily::Control | CommandFamily::Status => {
+                return Err(ParseError::SubjectNotAllowed {
+                    verb: tokens[1].to_string(),
+                });
+            }
+            _ => {}
         }
-        TokenKind::Keyword(_) => {
-            return Err(ParseError::SubjectNotAllowed {
-                verb: tokens[1].to_string(),
-            });
-        }
-        _ => {}
     }
 
     let rest_tokens = &tokens[1..];
     let rest_kinds = &kinds[1..];
 
     match &rest_kinds[0] {
-        TokenKind::HitVerb(hv) => parse_hit(Some(subject), *hv, rest_tokens, rest_kinds),
+        TokenKind::Verb(ck) => {
+            use crate::engine::commands::kind::CommandFamily;
+            match ck.family() {
+                CommandFamily::Hit => parse_hit(Some(subject), *ck, rest_tokens, rest_kinds),
+                CommandFamily::Steal => parse_steal(subject, rest_tokens, rest_kinds),
+                // Pitch/Control/Status already rejected above.
+                _ => unreachable!("unexpected verb family {:?} after subject", ck.family()),
+            }
+        }
         TokenKind::FcVerb { fielder } => parse_fc(Some(subject), *fielder, rest_tokens, rest_kinds),
-        TokenKind::StealVerb => parse_steal(subject, rest_tokens, rest_kinds),
 
         // Runner-targeted OUTs.
         TokenKind::FlyVerb { fielder, foul } => parse_targeted_out(
@@ -340,9 +360,6 @@ fn parse_with_subject(
         TokenKind::Unknown(_) => Err(ParseError::UnknownVerb {
             token: rest_tokens[0].to_string(),
         }),
-
-        // Pitch / Keyword already handled above, cannot arrive here.
-        TokenKind::PitchVerb(_) | TokenKind::Keyword(_) => unreachable!(),
     }
 }
 
@@ -350,18 +367,22 @@ fn parse_with_subject(
 
 /// `hit_tokens` starts at the hit verb (index 0 of the slice).
 /// Accepts optional zone as the next token.
+///
+/// `hit_kind` must be a variant of [`CommandKind`] in the `Hit` family
+/// (Single / Double / Triple / HomeRun). Other variants are rejected by
+/// the upstream dispatch.
 fn parse_hit(
     subject: Option<u8>,
-    hv: HitVerbKind,
+    hit_kind: CommandKind,
     hit_tokens: &[&str],
     hit_kinds: &[TokenKind],
 ) -> Result<Segment, ParseError> {
-    let kind = match hv {
-        HitVerbKind::Single => HitKind::Single,
-        HitVerbKind::Double => HitKind::Double,
-        HitVerbKind::Triple => HitKind::Triple,
-        HitVerbKind::HomeRun => HitKind::HomeRun,
-    };
+    debug_assert_eq!(
+        hit_kind.family(),
+        crate::engine::commands::kind::CommandFamily::Hit,
+        "parse_hit called with non-hit {:?}",
+        hit_kind
+    );
 
     let zone = match hit_tokens.get(1) {
         None => None,
@@ -384,7 +405,7 @@ fn parse_hit(
 
     Ok(Segment::Hit {
         subject,
-        kind,
+        kind: hit_kind,
         zone,
     })
 }
@@ -515,7 +536,7 @@ mod tests {
             seg("h"),
             Segment::Hit {
                 subject: None,
-                kind: HitKind::Single,
+                kind: CommandKind::Single,
                 zone: None,
             }
         );
@@ -526,7 +547,7 @@ mod tests {
             seg("5 h lf"),
             Segment::Hit {
                 subject: Some(5),
-                kind: HitKind::Single,
+                kind: CommandKind::Single,
                 zone: Some(FieldZone::LF),
             }
         );
@@ -536,7 +557,7 @@ mod tests {
         assert!(matches!(
             seg("2h"),
             Segment::Hit {
-                kind: HitKind::Double,
+                kind: CommandKind::Double,
                 ..
             }
         ));
@@ -544,14 +565,14 @@ mod tests {
             seg("3 3h cf"),
             Segment::Hit {
                 subject: Some(3),
-                kind: HitKind::Triple,
+                kind: CommandKind::Triple,
                 ..
             }
         ));
         assert!(matches!(
             seg("hr"),
             Segment::Hit {
-                kind: HitKind::HomeRun,
+                kind: CommandKind::HomeRun,
                 ..
             }
         ));
@@ -738,11 +759,11 @@ mod tests {
     // ── Pitch ──
     #[test]
     fn pitch_verbs_alone() {
-        assert_eq!(seg("b"), Segment::Pitch(PitchKind::Ball));
-        assert_eq!(seg("k"), Segment::Pitch(PitchKind::CalledStrike));
-        assert_eq!(seg("s"), Segment::Pitch(PitchKind::SwingingStrike));
-        assert_eq!(seg("f"), Segment::Pitch(PitchKind::Foul));
-        assert_eq!(seg("fl"), Segment::Pitch(PitchKind::FoulBunt));
+        assert_eq!(seg("b"), Segment::Pitch(CommandKind::Ball));
+        assert_eq!(seg("k"), Segment::Pitch(CommandKind::CalledStrike));
+        assert_eq!(seg("s"), Segment::Pitch(CommandKind::SwingingStrike));
+        assert_eq!(seg("f"), Segment::Pitch(CommandKind::Foul));
+        assert_eq!(seg("fl"), Segment::Pitch(CommandKind::FoulBunt));
     }
     #[test]
     fn pitch_with_subject_rejected() {
@@ -753,18 +774,18 @@ mod tests {
     // ── Control / status ──
     #[test]
     fn control_keywords() {
-        assert_eq!(seg("exit"), Segment::Control(ControlKind::Exit));
-        assert_eq!(seg("quit"), Segment::Control(ControlKind::Exit));
-        assert_eq!(seg("playball"), Segment::Control(ControlKind::PlayBall));
+        assert_eq!(seg("exit"), Segment::Control(CommandKind::Exit));
+        assert_eq!(seg("quit"), Segment::Control(CommandKind::Exit));
+        assert_eq!(seg("playball"), Segment::Control(CommandKind::PlayBall));
     }
     #[test]
     fn status_keywords() {
-        assert_eq!(seg("regular"), Segment::Status(StatusKind::Regular));
-        assert_eq!(seg("post"), Segment::Status(StatusKind::Postponed));
-        assert_eq!(seg("cancel"), Segment::Status(StatusKind::Cancelled));
-        assert_eq!(seg("susp"), Segment::Status(StatusKind::Suspended));
-        assert_eq!(seg("forf"), Segment::Status(StatusKind::Forfeited));
-        assert_eq!(seg("protest"), Segment::Status(StatusKind::Protested));
+        assert_eq!(seg("regular"), Segment::Status(CommandKind::Regular));
+        assert_eq!(seg("post"), Segment::Status(CommandKind::Postponed));
+        assert_eq!(seg("cancel"), Segment::Status(CommandKind::Cancelled));
+        assert_eq!(seg("susp"), Segment::Status(CommandKind::Suspended));
+        assert_eq!(seg("forf"), Segment::Status(CommandKind::Forfeited));
+        assert_eq!(seg("protest"), Segment::Status(CommandKind::Protested));
     }
     #[test]
     fn keyword_with_subject_rejected() {

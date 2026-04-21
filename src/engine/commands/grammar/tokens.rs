@@ -6,21 +6,26 @@
 //!
 //! # Vocabulary
 //!
-//! | Kind            | Pattern                  | Examples                   |
-//! |-----------------|--------------------------|----------------------------|
-//! | Subject         | `^[1-9]$`                | `5`                        |
-//! | Hit verb        | `^(h|2h|3h|hr)$`         | `h`, `2h`, `hr`            |
-//! | Pitch verb      | `^(b|k|s|f|fl)$`         | `b`, `k`, `fl`             |
-//! | Steal verb      | `^st$`                   | `st`                       |
-//! | FC verb         | `^o[1-9]$`               | `o6`                       |
-//! | Fly verb        | `^ff?[1-9]$`             | `f8`, `ff3`                |
-//! | Line verb       | `^l[1-9]$`               | `l6`                       |
-//! | Infield-fly     | `^iff?[1-9]$`            | `if4`, `iff4`              |
-//! | Fielding seq    | `^\d{2,}$` or dashed     | `63`, `862`, `6-3`, `8-6-2`|
-//! | Unassisted      | `^[1-9]$` (single digit) | `5` (same shape as subject)|
-//! | Zone            | enumerated               | `lf`, `rc`, `gll`          |
-//! | Base            | enumerated               | `1b`, `sc`, `home`         |
-//! | Control / Status| enumerated keywords      | `exit`, `playball`, …      |
+//! | Kind               | Pattern                  | Examples                   |
+//! |--------------------|--------------------------|----------------------------|
+//! | Subject            | `^[1-9]$`                | `5`                        |
+//! | Parameter-less verb| exact lowercased text    | see [`CommandKind`]        |
+//! | FC verb            | `^o[1-9]$`               | `o6`                       |
+//! | Fly verb           | `^ff?[1-9]$`             | `f8`, `ff3`                |
+//! | Line verb          | `^l[1-9]$`               | `l6`                       |
+//! | Infield-fly        | `^iff?[1-9]$`            | `if4`, `iff4`              |
+//! | Fielding seq       | `^[1-9]{2,}$` or dashed  | `63`, `862`, `6-3`, `8-6-2`|
+//! | Unassisted         | `^[1-9]$` (single digit) | `5` (same shape as subject)|
+//! | Zone               | enumerated               | `lf`, `rc`, `gll`          |
+//! | Base               | enumerated               | `1b`, `sc`, `home`         |
+//!
+//! Parameter-less verbs cover every command whose token is a fixed
+//! keyword with no numeric payload (hit verbs `h`/`2h`/`3h`/`hr`, pitches
+//! `b`/`k`/`s`/`f`/`fl`, steal `st`, engine control `exit`/`playball`,
+//! status `regular`/`post`/…). They all classify into
+//! [`TokenKind::Verb`] parameterised by the matching [`CommandKind`]
+//! variant. The full list lives in [`CommandKind`] itself — see
+//! `crate::engine::commands::kind`.
 //!
 //! Ambiguity note: `^[1-9]$` matches both *subject* and *unassisted-out
 //! verb*. Disambiguation is done at the segment level, not here.
@@ -28,25 +33,20 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
+use crate::engine::commands::kind::CommandKind;
 use crate::models::field_zone::FieldZone;
 use crate::models::runner::RunnerDest;
 
 // ─── Regex patterns (compiled once) ──────────────────────────────────────────
+//
+// Only patterns whose recognisers carry a parameter (a fielder number or
+// a fielding sequence) need a regex here. Parameter-less verbs (hit,
+// pitch, steal, control, status) are matched by exact lowercased text
+// in `classify`, which is both faster and more readable than carrying
+// a regex for every one-letter keyword.
 
 /// Single digit 1–9 — matches both the subject and a lone unassisted fielder.
 pub(super) static RE_DIGIT_1_9: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[1-9]$").unwrap());
-
-/// Hit verbs: `h`, `2h`, `3h`, `hr`.
-pub(super) static RE_HIT_VERB: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?i)(h|2h|3h|hr)$").unwrap());
-
-/// Pitch verbs: `b`, `k`, `s`, `f`, `fl`.
-pub(super) static RE_PITCH_VERB: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?i)(b|k|s|f|fl)$").unwrap());
-
-/// Steal verb keyword.
-pub(super) static RE_STEAL_VERB: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?i)st$").unwrap());
 
 /// Fielder's-choice verb: `o<fielder>` with fielder in 1–9.
 pub(super) static RE_FC_VERB: LazyLock<Regex> =
@@ -77,19 +77,22 @@ pub(super) static RE_FIELDING_SEQ_DASHED: LazyLock<Regex> =
 /// What kind of token a single whitespace-separated chunk of a segment
 /// matches. This classification is purely lexical — no state, no semantics.
 ///
-/// `Digit` is intentionally distinct from `Unassisted`: both have the same
-/// shape (`^[1-9]$`), but only the segment-level parser knows which role the
-/// token plays at each position.
+/// `Digit` is intentionally distinct from the unassisted-out verb (which is
+/// also a single digit): both have the same shape (`^[1-9]$`), but only the
+/// segment-level parser knows which role the token plays at each position.
+///
+/// All verb tokens that do not carry a numeric parameter in their shape
+/// (hit verbs, pitches, steal, control / status keywords) collapse into
+/// a single [`TokenKind::Verb`] variant parameterised by
+/// [`CommandKind`]. Verbs that do carry a parameter (`f<n>`, `l<n>`,
+/// `if<n>`, `o<n>`) keep their own variants because the parameter is
+/// part of the token's lexical shape, not a separate field downstream.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum TokenKind {
     /// A digit 1–9 (may be a subject or a lone unassisted-fielder verb).
     Digit(u8),
-    /// Hit verb normalised to lowercase.
-    HitVerb(HitVerbKind),
-    /// Pitch verb.
-    PitchVerb(PitchVerbKind),
-    /// Steal keyword `st`.
-    StealVerb,
+    /// A parameter-less verb keyword: hit, pitch, steal, control, status.
+    Verb(CommandKind),
     /// Fielder's choice `o<n>`.
     FcVerb { fielder: u8 },
     /// Fly out `f<n>` or foul-fly `ff<n>`.
@@ -104,56 +107,8 @@ pub(super) enum TokenKind {
     Zone(FieldZone),
     /// Base tag (only valid as object of FC / steal / advance).
     Base(RunnerDest),
-    /// Control / status / pitch-less keywords.
-    Keyword(KeywordKind),
     /// Anything that did not match a known pattern. Carries the raw token.
     Unknown(String),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum HitVerbKind {
-    Single,
-    Double,
-    Triple,
-    HomeRun,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PitchVerbKind {
-    Ball,
-    CalledStrike,
-    SwingingStrike,
-    Foul,
-    FoulBunt,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum KeywordKind {
-    // Engine control
-    Exit,
-    PlayBall,
-    // Game status
-    Regular,
-    Postponed,
-    Cancelled,
-    Suspended,
-    Forfeited,
-    Protested,
-}
-
-impl KeywordKind {
-    pub(super) fn as_str(self) -> &'static str {
-        match self {
-            Self::Exit => "exit",
-            Self::PlayBall => "playball",
-            Self::Regular => "regular",
-            Self::Postponed => "post",
-            Self::Cancelled => "cancel",
-            Self::Suspended => "susp",
-            Self::Forfeited => "forf",
-            Self::Protested => "protest",
-        }
-    }
 }
 
 // ─── Classifier ──────────────────────────────────────────────────────────────
@@ -171,18 +126,35 @@ pub(super) fn classify(raw: &str) -> TokenKind {
         return TokenKind::Unknown(String::new());
     }
 
-    // Keywords first — these are short strings that would otherwise collide
-    // with nothing, but matching them early keeps the branching readable.
+    // Keyword-style tokens first: control, status, pitch, steal, hit.
+    // These are parameter-less verbs that collapse into TokenKind::Verb.
+    // `quit` is accepted as an alias for `exit`; canonical_name on
+    // CommandKind::Exit returns "exit".
     let lower = trimmed.to_ascii_lowercase();
     match lower.as_str() {
-        "exit" | "quit" => return TokenKind::Keyword(KeywordKind::Exit),
-        "playball" => return TokenKind::Keyword(KeywordKind::PlayBall),
-        "regular" => return TokenKind::Keyword(KeywordKind::Regular),
-        "post" => return TokenKind::Keyword(KeywordKind::Postponed),
-        "cancel" => return TokenKind::Keyword(KeywordKind::Cancelled),
-        "susp" => return TokenKind::Keyword(KeywordKind::Suspended),
-        "forf" => return TokenKind::Keyword(KeywordKind::Forfeited),
-        "protest" => return TokenKind::Keyword(KeywordKind::Protested),
+        "exit" | "quit" => return TokenKind::Verb(CommandKind::Exit),
+        "playball" => return TokenKind::Verb(CommandKind::PlayBall),
+
+        "regular" => return TokenKind::Verb(CommandKind::Regular),
+        "post" => return TokenKind::Verb(CommandKind::Postponed),
+        "cancel" => return TokenKind::Verb(CommandKind::Cancelled),
+        "susp" => return TokenKind::Verb(CommandKind::Suspended),
+        "forf" => return TokenKind::Verb(CommandKind::Forfeited),
+        "protest" => return TokenKind::Verb(CommandKind::Protested),
+
+        "b" => return TokenKind::Verb(CommandKind::Ball),
+        "k" => return TokenKind::Verb(CommandKind::CalledStrike),
+        "s" => return TokenKind::Verb(CommandKind::SwingingStrike),
+        "f" => return TokenKind::Verb(CommandKind::Foul),
+        "fl" => return TokenKind::Verb(CommandKind::FoulBunt),
+
+        "h" => return TokenKind::Verb(CommandKind::Single),
+        "2h" => return TokenKind::Verb(CommandKind::Double),
+        "3h" => return TokenKind::Verb(CommandKind::Triple),
+        "hr" => return TokenKind::Verb(CommandKind::HomeRun),
+
+        "st" => return TokenKind::Verb(CommandKind::Steal),
+
         _ => {}
     }
 
@@ -190,36 +162,6 @@ pub(super) fn classify(raw: &str) -> TokenKind {
     if RE_DIGIT_1_9.is_match(trimmed) {
         let n = trimmed.parse::<u8>().unwrap();
         return TokenKind::Digit(n);
-    }
-
-    // Pitch verbs.
-    if RE_PITCH_VERB.is_match(trimmed) {
-        let kind = match lower.as_str() {
-            "b" => PitchVerbKind::Ball,
-            "k" => PitchVerbKind::CalledStrike,
-            "s" => PitchVerbKind::SwingingStrike,
-            "f" => PitchVerbKind::Foul,
-            "fl" => PitchVerbKind::FoulBunt,
-            _ => unreachable!(),
-        };
-        return TokenKind::PitchVerb(kind);
-    }
-
-    // Hit verbs.
-    if RE_HIT_VERB.is_match(trimmed) {
-        let kind = match lower.as_str() {
-            "h" => HitVerbKind::Single,
-            "2h" => HitVerbKind::Double,
-            "3h" => HitVerbKind::Triple,
-            "hr" => HitVerbKind::HomeRun,
-            _ => unreachable!(),
-        };
-        return TokenKind::HitVerb(kind);
-    }
-
-    // Steal.
-    if RE_STEAL_VERB.is_match(trimmed) {
-        return TokenKind::StealVerb;
     }
 
     // Order matters below: `ff3` must match infield/fly patterns before the
@@ -295,29 +237,20 @@ mod tests {
 
     #[test]
     fn hit_verbs_are_case_insensitive() {
-        assert_eq!(classify("h"), TokenKind::HitVerb(HitVerbKind::Single));
-        assert_eq!(classify("H"), TokenKind::HitVerb(HitVerbKind::Single));
-        assert_eq!(classify("2h"), TokenKind::HitVerb(HitVerbKind::Double));
-        assert_eq!(classify("3H"), TokenKind::HitVerb(HitVerbKind::Triple));
-        assert_eq!(classify("HR"), TokenKind::HitVerb(HitVerbKind::HomeRun));
+        assert_eq!(classify("h"), TokenKind::Verb(CommandKind::Single));
+        assert_eq!(classify("H"), TokenKind::Verb(CommandKind::Single));
+        assert_eq!(classify("2h"), TokenKind::Verb(CommandKind::Double));
+        assert_eq!(classify("3H"), TokenKind::Verb(CommandKind::Triple));
+        assert_eq!(classify("HR"), TokenKind::Verb(CommandKind::HomeRun));
     }
 
     #[test]
     fn pitch_verbs_all_recognised() {
-        assert_eq!(classify("b"), TokenKind::PitchVerb(PitchVerbKind::Ball));
-        assert_eq!(
-            classify("k"),
-            TokenKind::PitchVerb(PitchVerbKind::CalledStrike)
-        );
-        assert_eq!(
-            classify("s"),
-            TokenKind::PitchVerb(PitchVerbKind::SwingingStrike)
-        );
-        assert_eq!(classify("f"), TokenKind::PitchVerb(PitchVerbKind::Foul));
-        assert_eq!(
-            classify("fl"),
-            TokenKind::PitchVerb(PitchVerbKind::FoulBunt)
-        );
+        assert_eq!(classify("b"), TokenKind::Verb(CommandKind::Ball));
+        assert_eq!(classify("k"), TokenKind::Verb(CommandKind::CalledStrike));
+        assert_eq!(classify("s"), TokenKind::Verb(CommandKind::SwingingStrike));
+        assert_eq!(classify("f"), TokenKind::Verb(CommandKind::Foul));
+        assert_eq!(classify("fl"), TokenKind::Verb(CommandKind::FoulBunt));
     }
 
     #[test]
@@ -392,16 +325,16 @@ mod tests {
 
     #[test]
     fn keywords() {
-        assert_eq!(classify("exit"), TokenKind::Keyword(KeywordKind::Exit));
-        assert_eq!(classify("quit"), TokenKind::Keyword(KeywordKind::Exit));
-        assert_eq!(
-            classify("playball"),
-            TokenKind::Keyword(KeywordKind::PlayBall)
-        );
-        assert_eq!(
-            classify("regular"),
-            TokenKind::Keyword(KeywordKind::Regular)
-        );
+        assert_eq!(classify("exit"), TokenKind::Verb(CommandKind::Exit));
+        assert_eq!(classify("quit"), TokenKind::Verb(CommandKind::Exit));
+        assert_eq!(classify("playball"), TokenKind::Verb(CommandKind::PlayBall));
+        assert_eq!(classify("regular"), TokenKind::Verb(CommandKind::Regular));
+        assert_eq!(classify("post"), TokenKind::Verb(CommandKind::Postponed));
+        assert_eq!(classify("cancel"), TokenKind::Verb(CommandKind::Cancelled));
+        assert_eq!(classify("susp"), TokenKind::Verb(CommandKind::Suspended));
+        assert_eq!(classify("forf"), TokenKind::Verb(CommandKind::Forfeited));
+        assert_eq!(classify("protest"), TokenKind::Verb(CommandKind::Protested));
+        assert_eq!(classify("st"), TokenKind::Verb(CommandKind::Steal));
     }
 
     #[test]

@@ -26,9 +26,8 @@
 //! the full list of `CommandError` values produced along the way.
 
 use crate::engine::commands::errors::{CommandError, CommandErrorKind, ValidationError};
-use crate::engine::commands::grammar::{
-    BatterOutKind, ControlKind, HitKind, PitchKind, Segment, StatusKind,
-};
+use crate::engine::commands::grammar::{BatterOutKind, Segment};
+use crate::engine::commands::kind::CommandKind;
 use crate::engine::commands::types::EngineCommand;
 use crate::engine::scoring::batter_outs::{
     DefensiveOutKind, DefensiveOutRecord, DefensivePlayCommand, DefensivePlayTarget,
@@ -123,11 +122,11 @@ pub fn validate(
 /// carries the actual batting-order slot to use (no more `Option<u8>`).
 #[derive(Debug, Clone)]
 enum Resolved {
-    Pitch(PitchKind),
+    Pitch(CommandKind),
     Hit {
         #[allow(dead_code)] // retained for future reducer needs
         batter: u8,
-        kind: HitKind,
+        kind: CommandKind,
         zone: Option<FieldZone>,
     },
     BatterOut {
@@ -239,8 +238,8 @@ fn try_build_control_line(indexed: &[IndexedSegment]) -> Option<EngineCommand> {
         return None;
     }
     match &indexed[0].segment {
-        Segment::Control(ControlKind::Exit) => Some(EngineCommand::Exit),
-        Segment::Control(ControlKind::PlayBall) => Some(EngineCommand::PlayBall),
+        Segment::Control(CommandKind::Exit) => Some(EngineCommand::Exit),
+        Segment::Control(CommandKind::PlayBall) => Some(EngineCommand::PlayBall),
         Segment::Status(sk) => Some(EngineCommand::SetStatus(status_to_game(*sk))),
         _ => None,
     }
@@ -629,22 +628,25 @@ fn build_commands(resolved: &[Option<Resolved>]) -> Result<Vec<EngineCommand>, V
     // Route 1: line contains a HIT.
     if let Some((kind, zone)) = hit {
         let hit_cmd = match kind {
-            HitKind::Single => EngineCommand::Single {
+            CommandKind::Single => EngineCommand::Single {
                 zone,
                 runner_overrides: overrides,
             },
-            HitKind::Double => EngineCommand::Double {
+            CommandKind::Double => EngineCommand::Double {
                 zone,
                 runner_overrides: overrides,
             },
-            HitKind::Triple => EngineCommand::Triple {
+            CommandKind::Triple => EngineCommand::Triple {
                 zone,
                 runner_overrides: overrides,
             },
-            HitKind::HomeRun => EngineCommand::HomeRun {
+            CommandKind::HomeRun => EngineCommand::HomeRun {
                 zone,
                 runner_overrides: overrides,
             },
+            // Enforced upstream: only Hit-family CommandKind reaches
+            // Resolved::Hit.
+            _ => unreachable!("non-Hit CommandKind {:?} in hit Resolved variant", kind),
         };
         out.extend(steals);
         out.push(hit_cmd);
@@ -695,24 +697,30 @@ fn build_commands(resolved: &[Option<Resolved>]) -> Result<Vec<EngineCommand>, V
 
 // ─── Conversion helpers ──────────────────────────────────────────────────────
 
-fn status_to_game(sk: StatusKind) -> GameStatus {
-    match sk {
-        StatusKind::Regular => GameStatus::Regulation,
-        StatusKind::Postponed => GameStatus::Postponed,
-        StatusKind::Cancelled => GameStatus::Cancelled,
-        StatusKind::Suspended => GameStatus::Suspended,
-        StatusKind::Forfeited => GameStatus::Forfeited,
-        StatusKind::Protested => GameStatus::Protested,
+fn status_to_game(ck: CommandKind) -> GameStatus {
+    match ck {
+        CommandKind::Regular => GameStatus::Regulation,
+        CommandKind::Postponed => GameStatus::Postponed,
+        CommandKind::Cancelled => GameStatus::Cancelled,
+        CommandKind::Suspended => GameStatus::Suspended,
+        CommandKind::Forfeited => GameStatus::Forfeited,
+        CommandKind::Protested => GameStatus::Protested,
+        // Enforced upstream: only Status-family CommandKind reaches here
+        // (it comes from Segment::Status(ck)).
+        _ => unreachable!("non-Status CommandKind {:?} in status_to_game", ck),
     }
 }
 
-fn pitch_to_engine(pk: PitchKind) -> Pitch {
-    match pk {
-        PitchKind::Ball => Pitch::Ball,
-        PitchKind::CalledStrike => Pitch::CalledStrike,
-        PitchKind::SwingingStrike => Pitch::SwingingStrike,
-        PitchKind::Foul => Pitch::Foul,
-        PitchKind::FoulBunt => Pitch::FoulBunt,
+fn pitch_to_engine(ck: CommandKind) -> Pitch {
+    match ck {
+        CommandKind::Ball => Pitch::Ball,
+        CommandKind::CalledStrike => Pitch::CalledStrike,
+        CommandKind::SwingingStrike => Pitch::SwingingStrike,
+        CommandKind::Foul => Pitch::Foul,
+        CommandKind::FoulBunt => Pitch::FoulBunt,
+        // Enforced upstream: only Pitch-family CommandKind reaches here
+        // (it comes from Segment::Pitch(ck)).
+        _ => unreachable!("non-Pitch CommandKind {:?} in pitch_to_engine", ck),
     }
 }
 

@@ -17,9 +17,7 @@ mod tokens;
 
 pub mod segment;
 
-pub use segment::{
-    BatterOutKind, ControlKind, HitKind, PitchKind, Segment, StatusKind, parse_segment,
-};
+pub use segment::{BatterOutKind, Segment, parse_segment};
 
 use crate::engine::commands::errors::{CommandError, CommandErrorKind};
 
