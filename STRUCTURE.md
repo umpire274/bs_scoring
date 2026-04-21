@@ -1,4 +1,4 @@
-# 🎯 BS Scoring v0.11.0-alpha2 – Project Structure
+# 🎯 BS Scoring v0.11.0 – Project Structure
 
 ## 📂 Directory layout
 
@@ -104,7 +104,7 @@ The game loop in `engine/play_ball.rs` hands each raw input line to the
 command pipeline and then applies the resulting `Vec<EngineCommand>` one
 command at a time. The pipeline itself is split into a **stateless**
 syntactic stage and a **state-aware** validation stage — a pattern
-introduced in v0.11.0-alpha2:
+introduced in v0.11.0:
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -168,7 +168,7 @@ introduced in v0.11.0-alpha2:
 
 ## 🔑 Key design decisions
 
-### Command pipeline (v0.11.0-alpha2)
+### Command pipeline (v0.11.0)
 
 The scoring-command pipeline is deliberately split into two stages so that
 each can be tested in isolation and the responsibilities are not tangled:

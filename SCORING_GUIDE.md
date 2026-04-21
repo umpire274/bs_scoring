@@ -1,10 +1,10 @@
-# ⚾ BS Scoring — Scoring Command Guide (v0.11.0-alpha2)
+# ⚾ BS Scoring — Scoring Command Guide (v0.11.0)
 
 This document describes every command the **Play Ball** engine accepts as
-of v0.11.0-alpha2, the grammar rules that govern them, and the diagnostic
+of v0.11.0, the grammar rules that govern them, and the diagnostic
 messages the parser produces when an input is not valid.
 
-The command grammar changed substantially in v0.11.0-alpha2. If you are
+The command grammar changed substantially in v0.11.0. If you are
 coming from v0.10.x, read section 1 and section 2 first — they summarize
 the new model.
 
@@ -525,7 +525,7 @@ b, 5 st 2b, 3 st 3b             — double steal on a ball
 
 ---
 
-## 14) Current scope (v0.11.0-alpha2)
+## 14) Current scope (v0.11.0)
 
 Supported:
 
@@ -543,6 +543,4 @@ Implemented end-to-end:
 - scoreboard with total and inning-by-inning scores
 - runner identity tracking by batting order
 
-The broader grammar and the diagnostic pipeline introduced in this
-alpha are the foundation for the remaining v0.11.0 work. Refer to
-`CHANGELOG.md` for the running release notes.
+Refer to `CHANGELOG.md` for the running release notes.
