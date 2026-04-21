@@ -9,16 +9,16 @@ use crossterm::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
     },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::layout::Rect;
 use ratatui::{
-    backend::CrosstermBackend, layout::{Constraint, Direction, Layout},
+    Frame, Terminal,
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame,
-    Terminal,
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -430,12 +430,13 @@ impl TuiUi {
             Span::raw("OUT")
         };
 
-        let mut spans = Vec::new();
-        spans.push(Span::raw(" ".repeat(left_pad)));
-        spans.push(Self::styled_count_span(count));
-        spans.push(Span::raw("  "));
-        spans.push(out_label);
-        spans.push(Span::raw(" "));
+        let mut spans = vec![
+            Span::raw(" ".repeat(left_pad)),
+            Self::styled_count_span(count),
+            Span::raw("  "),
+            out_label,
+            Span::raw(" "),
+        ];
         spans.extend(Self::styled_outs_spans(visible_outs));
         spans.push(Span::raw(" ".repeat(right_pad)));
 

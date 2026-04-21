@@ -1,4 +1,4 @@
-# 🎯 BS Scoring v0.11.0 – Project Structure
+# 🎯 BS Scoring v0.11.1 – Project Structure
 
 ## 📂 Directory layout
 
@@ -33,8 +33,9 @@ bs_scoring/
     │       └── types.rs        # HitType, OutType, Walk, AdvancedPlay,
     │                           #   PlateAppearanceResult, Base, ScoringError
     │
-    ├── engine/                 # Game logic — no I/O, no UI              [v0.11.0]
+    ├── engine/                 # Game logic — no I/O, no UI              [v0.11.x]
     │   ├── commands/           # Scoring-command pipeline           [alpha2: rebuilt]
+    │   │   ├── kind.rs         # CommandKind taxonomy               [v0.11.1]
     │   │   ├── types.rs        # EngineCommand enum
     │   │   ├── errors.rs       # ParseError / ValidationError / CommandError
     │   │   ├── grammar/        # Stateless syntactic layer
@@ -75,7 +76,7 @@ bs_scoring/
     │   ├── cli_impl.rs         # Plain-text CLI backend      [renamed from cli.rs]
     │   └── tui.rs              # Ratatui terminal-UI backend
     │
-    ├── cli/                    # User-facing CLI layer                    [v0.11.0]
+    ├── cli/                    # User-facing CLI layer                    [v0.11.x]
     │   ├── menu.rs             # Menu-choice enums (ex-core/menu.rs)
     │   └── screens/            # Menu-entry handlers (ex-cli/commands/)
     │       ├── main_menu.rs
@@ -198,6 +199,38 @@ Design rules:
   `runner_overrides` populated; defensive-out segments merge into a
   single `DefensivePlay`; pitches and steals stay as independent
   commands in their original segment order.
+
+### Vocabulary taxonomy: `CommandKind` (v0.11.1)
+
+v0.11.1 introduces a single source of truth for the list of verbs the
+grammar accepts: the `CommandKind` enum in `engine::commands::kind`. It
+is a flat 26-variant enum with one variant per lexical verb shape,
+paired with a `CommandFamily` grouping (`Control`, `Status`, `Pitch`,
+`Hit`, `BatterOut`, `FielderChoice`, `Steal`, `Advance`).
+
+Every layer of the command pipeline references `CommandKind` instead of
+keeping its own parallel sub-enums:
+
+| Layer                             | Before v0.11.1                                         | After v0.11.1                         |
+|-----------------------------------|--------------------------------------------------------|---------------------------------------|
+| `tokens::TokenKind::Verb`         | `HitVerb`, `PitchVerb`, `StealVerb`, `Keyword`         | `Verb(CommandKind)`                   |
+| `segment::Segment::Control`       | `Control(ControlKind)`                                 | `Control(CommandKind)`                |
+| `segment::Segment::Status`        | `Status(StatusKind)`                                   | `Status(CommandKind)`                 |
+| `segment::Segment::Pitch`         | `Pitch(PitchKind)`                                     | `Pitch(CommandKind)`                  |
+| `segment::Segment::Hit { kind }`  | `HitKind`                                              | `CommandKind`                         |
+| `validator::Resolved::Pitch / Hit`| `PitchKind` / `HitKind`                                | `CommandKind`                         |
+
+`BatterOutKind` is retained — its variants carry fielder identifiers
+(not just a tag) — but gains a `.command_kind()` helper that maps each
+variant to the corresponding `CommandKind`. `FlyOut { foul: true }` maps
+to `CommandKind::FoulFlyOut`, which is a lexically distinct verb in the
+grammar.
+
+Adding a new command in a future release now requires touching exactly
+one enum variant plus the dispatch in the two or three handlers that
+care about it, instead of updating five parallel sub-enums. See the
+module documentation of `kind.rs` for the full "adding a command"
+checklist.
 
 ### Model split (v0.9.0)
 

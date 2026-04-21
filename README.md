@@ -1,8 +1,46 @@
-# ⚾ Baseball Scorer — v0.11.0
+# ⚾ Baseball Scorer — v0.11.1
 
 A comprehensive baseball and softball scoring TUI application with SQLite
 persistence, pitch-by-pitch tracking, runner advancement overrides, steal
 support, deterministic game resume, and umpire supervisor tools.
+
+## 🆕 What's New in v0.11.1
+
+`v0.11.1` is an internal refactor plus a scoreboard UX polish. No change
+to the grammar accepted by the parser or to the engine behaviour —
+`v0.11.0` games, scripts, and workflows continue to work exactly the
+same way.
+
+### Command-taxonomy refactor
+
+- ✅ **Single source of truth for the command vocabulary** — the new
+  `engine::commands::kind::CommandKind` enum lists every verb the
+  grammar accepts in one place (26 variants). A companion
+  `CommandFamily` enum groups them by structural role. Adding a new
+  command in a future release now touches one enum variant instead of
+  updating four or five parallel sub-enums across the pipeline.
+- ✅ **Parallel sub-enums removed** — `HitVerbKind`, `PitchVerbKind`,
+  `KeywordKind` (tokens), `ControlKind`, `StatusKind`, `PitchKind`,
+  `HitKind` (segment). Each pipeline layer now references `CommandKind`
+  directly.
+- ✅ **Lexer simplified** — three regexes (`RE_HIT_VERB`,
+  `RE_PITCH_VERB`, `RE_STEAL_VERB`) removed in favour of an exact-match
+  `match` on lowercased text for parameter-less verbs. Regex use is now
+  reserved to verbs with numeric parameters (`o<n>`, `f<n>`, `l<n>`,
+  `if<n>`, fielding sequences).
+
+### Scoreboard UX
+
+- ✅ **Batting team highlighted** — active half-inning row rendered in
+  yellow + bold with a subtle left-edge marker.
+- ✅ **Dynamic count styling** — full count (3-2) renders
+  reversed + bold; critical counts (3-1, 2-2) render yellow + bold.
+- ✅ **Outs indicator polished** — two dots (`○` / `●`) instead of
+  three, active in yellow + bold, inactive in dark gray.
+- ✅ **Linescore header rewritten** with `Line` / `Span` rendering;
+  current inning emphasised via reversed style.
+- ✅ **Status line re-centred** with mixed styled spans; redundant
+  inning indicator removed.
 
 ## 🆕 What's New in v0.11.0
 
@@ -90,6 +128,7 @@ API via `bs_scoring::*` is unchanged.
 
 | Version       | Highlights                                                                       |
 |---------------|----------------------------------------------------------------------------------|
+| 0.11.1        | Internal refactor (`CommandKind` taxonomy) + scoreboard UX polish                |
 | 0.11.0        | Consolidates alpha1 structural refactor + alpha2 grammar refactor + 8 fixes      |
 | 0.11.0-alpha2 | Grammar refactor: regex-assisted parser, subject-always rule, error accumulation |
 | 0.11.0-alpha1 | Structural refactor of `src/`: engine/ absorbs core/, cli/screens/, renames      |
@@ -134,7 +173,8 @@ bs_scoring/
     │       └── types.rs      # HitType, OutType, Walk, AdvancedPlay, …
     │
     ├── engine/               # Game logic — no I/O, no UI
-    │   ├── commands/         # Scoring-command pipeline [v0.11.0]
+    │   ├── commands/         # Scoring-command pipeline [v0.11.1]
+    │   │   ├── kind.rs       # CommandKind taxonomy [v0.11.1]
     │   │   ├── types.rs      # EngineCommand enum
     │   │   ├── errors.rs     # ParseError / ValidationError / CommandError
     │   │   ├── grammar/      # Stateless syntactic layer
@@ -358,26 +398,27 @@ DATABASE MANAGEMENT
 
 ## 📊 Features by Version
 
-| Version          | Key Features                                                                   |
-|------------------|--------------------------------------------------------------------------------|
-| 0.11.0           | Consolidates alpha1 + alpha2 + 8 fixes; stable release                         |
-| 0.11.0-alpha2    | Grammar refactor, regex-assisted parser, order-independent segments, 83+ tests |
-| 0.11.0-alpha1    | Structural refactor: engine/ absorbs core/, cli/screens/, anti-homonym renames |
-| 0.10.6           | Composite defensive plays, unassisted out, fielder's choice, TUI history       |
-| 0.10.5 / -bugfix | Umpire summary with date/time/venue, nullable game_time fix                    |
-| 0.10.4           | Umpire reports CSV/JSON export, `GameInfo` struct, interactive history UX      |
-| 0.10.3           | Umpire history helper decomposition, interactive report selection              |
-| 0.10.2           | Batter-out commands: ground / fly / foul-fly / line-out / infield-fly          |
-| 0.10.1           | Umpire Supervisor: registry, crew assignment, evaluations, career history      |
-| 0.10.0           | Unified runner logic, WAL mode, migration-only schema, model helpers           |
-| 0.9.x            | TUI Help/focus system, steal command, runner_movements v16, module split       |
-| 0.8.0            | Runner overrides by batting order, `Option<BatterOrder>` on bases              |
-| 0.7.x            | Compact PA persistence, deterministic resume, TUI scoreboard                   |
-| 0.6.x            | Pitch-by-pitch tracking, pitch count, strike/ball logic                        |
-| 0.4.x            | Pre-game lineup editing, DH support, `GameStatus` enum                         |
-| 0.3.x            | Player management, CSV/JSON import-export                                      |
-| 0.2.x            | SQLite persistence, menu system, schema migrations                             |
-| 0.1.0            | Initial CLI scoring                                                            |
+| Version          | Key Features                                                                    |
+|------------------|---------------------------------------------------------------------------------|
+| 0.11.1           | `CommandKind` taxonomy refactor + scoreboard UX polish                          |
+| 0.11.0           | Consolidates alpha1 + alpha2 + 8 fixes; stable release                          |
+| 0.11.0-alpha2    | Grammar refactor, regex-assisted parser, order-independent segments, 83+ tests  |
+| 0.11.0-alpha1    | Structural refactor: engine/ absorbs core/, cli/screens/, anti-homonym renames  |
+| 0.10.6           | Composite defensive plays, unassisted out, fielder's choice, TUI history        |
+| 0.10.5 / -bugfix | Umpire summary with date/time/venue, nullable game_time fix                     |
+| 0.10.4           | Umpire reports CSV/JSON export, `GameInfo` struct, interactive history UX       |
+| 0.10.3           | Umpire history helper decomposition, interactive report selection               |
+| 0.10.2           | Batter-out commands: ground / fly / foul-fly / line-out / infield-fly           |
+| 0.10.1           | Umpire Supervisor: registry, crew assignment, evaluations, career history       |
+| 0.10.0           | Unified runner logic, WAL mode, migration-only schema, model helpers            |
+| 0.9.x            | TUI Help/focus system, steal command, runner_movements v16, module split        |
+| 0.8.0            | Runner overrides by batting order, `Option<BatterOrder>` on bases               |
+| 0.7.x            | Compact PA persistence, deterministic resume, TUI scoreboard                    |
+| 0.6.x            | Pitch-by-pitch tracking, pitch count, strike/ball logic                         |
+| 0.4.x            | Pre-game lineup editing, DH support, `GameStatus` enum                          |
+| 0.3.x            | Player management, CSV/JSON import-export                                       |
+| 0.2.x            | SQLite persistence, menu system, schema migrations                              |
+| 0.1.0            | Initial CLI scoring                                                             |
 
 ## 🚀 Roadmap
 
@@ -410,7 +451,7 @@ MIT License — Free to use for your games! ⚾
 
 ---
 
-**Version:** 0.11.0
+**Version:** 0.11.1
 **Schema:** v18
 **Edition:** Rust 2024
 **Author:** Alessandro Maestri
