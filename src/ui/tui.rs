@@ -9,16 +9,16 @@ use crossterm::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
     },
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::layout::Rect;
 use ratatui::{
-    Frame, Terminal,
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    style::Style,
-    text::{Line, Text},
+    backend::CrosstermBackend, layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
+    Frame,
+    Terminal,
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -325,6 +325,163 @@ impl TuiUi {
         out
     }
 
+    fn focused_block(title: &str, focused: bool) -> Block<'static> {
+        let base = Block::default()
+            .borders(Borders::ALL)
+            .title(title.to_string());
+
+        if focused {
+            base.border_style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .title_style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            base
+        }
+    }
+
+    fn passive_block(title: &str) -> Block<'static> {
+        Block::default()
+            .borders(Borders::ALL)
+            .title(title.to_string())
+            .border_style(Style::default().fg(Color::DarkGray))
+    }
+
+    fn batting_team_flags(data: &ScoreboardViewData) -> (bool, bool) {
+        match data.half_sym {
+            "↑" => (true, false),
+            "↓" => (false, true),
+            _ => (false, false),
+        }
+    }
+
+    fn styled_count_span(count: &str) -> Span<'static> {
+        match count {
+            "3-2" => Span::styled(
+                count.to_string(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+            ),
+            "3-1" | "2-2" => Span::styled(
+                count.to_string(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            _ => Span::raw(count.to_string()),
+        }
+    }
+
+    fn styled_outs_spans(outs: u8) -> Vec<Span<'static>> {
+        let active_style = Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD);
+
+        let inactive_style = Style::default().fg(Color::DarkGray);
+
+        let visible_outs = outs.min(2);
+        let mut spans = Vec::new();
+
+        for i in 0..2 {
+            if i > 0 {
+                spans.push(Span::raw(" "));
+            }
+
+            if i < visible_outs {
+                spans.push(Span::styled("●", active_style));
+            } else {
+                spans.push(Span::styled("○", inactive_style));
+            }
+        }
+
+        spans
+    }
+
+    fn build_centered_status_line(count: &str, outs: u8, width: usize) -> Line<'static> {
+        let visible_outs = outs.min(2);
+
+        let plain_outs = match visible_outs {
+            0 => "○ ○",
+            1 => "● ○",
+            _ => "● ●",
+        };
+
+        let plain = format!("{count}  OUT {plain_outs}");
+        let plain_width = Self::display_width(&plain);
+
+        let left_pad = width.saturating_sub(plain_width) / 2;
+        let right_pad = width.saturating_sub(plain_width + left_pad);
+
+        let out_label = if outs >= 2 {
+            Span::styled(
+                "OUT",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Span::raw("OUT")
+        };
+
+        let mut spans = Vec::new();
+        spans.push(Span::raw(" ".repeat(left_pad)));
+        spans.push(Self::styled_count_span(count));
+        spans.push(Span::raw("  "));
+        spans.push(out_label);
+        spans.push(Span::raw(" "));
+        spans.extend(Self::styled_outs_spans(visible_outs));
+        spans.push(Span::raw(" ".repeat(right_pad)));
+
+        Line::from(spans)
+    }
+
+    fn render_linescore_row_styled(
+        team_abbr: &str,
+        innings: &[u16],
+        start_inning: usize,
+        end_inning: usize,
+        totals: RheTotals,
+        width: usize,
+        batting: bool,
+    ) -> Line<'static> {
+        let marker = if batting { "▸" } else { " " };
+
+        let inning_cells = (start_inning..=end_inning)
+            .map(|inning_no| format!("{:>2}", Self::inning_value(innings, inning_no)))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // 1 spazio iniziale + 1 marker + 1 spazio + team(3) + 1 spazio
+        let left = format!(" {} {:<3} {}", marker, team_abbr, inning_cells);
+
+        let rhe = format!(
+            "| {:>3} {:>3} {:>3} ",
+            totals.runs, totals.hits, totals.errors
+        );
+
+        let full = Self::fit_two_columns(&left, &rhe, width);
+
+        let style = if batting {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+        } else {
+            Style::default()
+        };
+
+        Line::from(Span::styled(
+            Self::pad_right_fit(full.as_str(), width),
+            style,
+        ))
+    }
+
     fn visible_inning_range(total_innings: usize, width: usize) -> (usize, usize) {
         let total = total_innings.max(9);
 
@@ -345,39 +502,49 @@ impl TuiUi {
         innings.get(inning_no - 1).copied().unwrap_or(0)
     }
 
-    fn render_linescore_header(start_inning: usize, end_inning: usize, width: usize) -> String {
-        let innings = (start_inning..=end_inning)
-            .map(|n| format!("{:>2}", n))
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        let left = format!("      {}", innings);
-        let right = format!("| {:>3} {:>3} {:>3} ", "R", "H", "E");
-
-        Self::fit_two_columns(&left, &right, width)
-    }
-
-    fn render_linescore_row(
-        team_abbr: &str,
-        innings: &[u16],
+    fn render_linescore_header(
         start_inning: usize,
         end_inning: usize,
-        totals: RheTotals,
+        current_inning: usize,
         width: usize,
-    ) -> String {
-        let inning_cells = (start_inning..=end_inning)
-            .map(|inning_no| format!("{:>2}", Self::inning_value(innings, inning_no)))
-            .collect::<Vec<_>>()
-            .join(" ");
+    ) -> Line<'static> {
+        let mut spans = Vec::new();
 
-        let left = format!(" {:<3}  {}", team_abbr, inning_cells);
+        // Allineamento con le righe squadra:
+        // " {} {:<3} {}"
+        // 1 spazio + 1 marker + 1 spazio + 3 chars team + 1 spazio = 7
+        spans.push(Span::raw("       "));
 
-        let rhe = format!(
-            "| {:>3} {:>3} {:>3} ",
-            totals.runs, totals.hits, totals.errors
-        );
+        for inning in start_inning..=end_inning {
+            let text = format!("{:>2}", inning);
 
-        Self::fit_two_columns(&left, &rhe, width)
+            if inning == current_inning {
+                spans.push(Span::styled(
+                    text,
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+                ));
+            } else {
+                spans.push(Span::raw(text));
+            }
+
+            if inning != end_inning {
+                spans.push(Span::raw(" "));
+            }
+        }
+
+        let right = format!(" | {:>3} {:>3} {:>3} ", "R", "H", "E");
+
+        // Calcolo padding per allineare la parte destra come faceva fit_two_columns
+        let left_width: usize = spans.iter().map(|s| s.content.len()).sum();
+        let right_width = Self::display_width(&right);
+        let spaces = width.saturating_sub(left_width + right_width);
+
+        spans.push(Span::raw(" ".repeat(spaces)));
+        spans.push(Span::raw(right));
+
+        Line::from(spans)
     }
 
     fn render_base_diamond(
@@ -397,13 +564,6 @@ impl TuiUi {
         let bottom = Self::pad_right(&Self::center_text(&bottom_raw, width), width);
 
         (top, bottom)
-    }
-
-    fn outs_dots(outs: u8) -> String {
-        let o1 = if outs >= 1 { '●' } else { '○' };
-        let o2 = if outs >= 2 { '●' } else { '○' };
-
-        format!("OUT {} {}", o1, o2)
     }
 
     fn format_player_name_for_scoreboard(first: &str, last: &str, max_len: usize) -> String {
@@ -504,16 +664,10 @@ impl TuiUi {
         }
     }
 
-    fn build_linescore_lines(
-        ctx: Option<&PlayBallUiContext>,
+    fn build_linescore_header_and_range(
         data: &ScoreboardViewData,
         width: usize,
-    ) -> (String, String, String) {
-        let (away, home) = match ctx {
-            Some(c) => (c.away_abbr.as_str(), c.home_abbr.as_str()),
-            None => ("AWY", "HOM"),
-        };
-
+    ) -> (Line<'static>, usize, usize) {
         let total_innings = data
             .away_innings
             .len()
@@ -523,35 +677,10 @@ impl TuiUi {
 
         let (start_inning, end_inning) = Self::visible_inning_range(total_innings, width);
 
-        let header = Self::render_linescore_header(start_inning, end_inning, width);
+        let header =
+            Self::render_linescore_header(start_inning, end_inning, data.inning as usize, width);
 
-        let away_line = Self::render_linescore_row(
-            away,
-            &data.away_innings,
-            start_inning,
-            end_inning,
-            RheTotals {
-                runs: data.away_score,
-                hits: data.away_hits,
-                errors: data.away_errors,
-            },
-            width,
-        );
-
-        let home_line = Self::render_linescore_row(
-            home,
-            &data.home_innings,
-            start_inning,
-            end_inning,
-            RheTotals {
-                runs: data.home_score,
-                hits: data.home_hits,
-                errors: data.home_errors,
-            },
-            width,
-        );
-
-        (header, away_line, home_line)
+        (header, start_inning, end_inning)
     }
 
     fn render_scoreboard(
@@ -560,21 +689,54 @@ impl TuiUi {
         f: &mut Frame,
         area: Rect,
     ) {
-        let block = Block::default().borders(Borders::ALL).title("Scoreboard");
+        let data = Self::scoreboard_view_data(state);
+        let block = Self::passive_block("Scoreboard").title_style(Style::default().fg(Color::Blue));
+
         let inner = block.inner(area);
         f.render_widget(block, area);
 
         let w = inner.width as usize;
-        let data = Self::scoreboard_view_data(state);
-        let (header, line_away, line_home) = Self::build_linescore_lines(ctx, &data, w);
+        let (header, start_inning, end_inning) = Self::build_linescore_header_and_range(&data, w);
+
         let (d_top, d_bot) = Self::render_base_diamond(w, data.on_1b, data.on_2b, data.on_3b);
 
-        let outs_str = Self::outs_dots(data.outs);
-        let status = format!(
-            "{}{}  {}  {}",
-            data.inning, data.half_sym, data.count, outs_str
+        let (away_abbr, home_abbr) = match ctx {
+            Some(c) => (c.away_abbr.as_str(), c.home_abbr.as_str()),
+            None => ("AWY", "HOM"),
+        };
+
+        let away_batting = Self::batting_team_flags(&data).0;
+        let home_batting = Self::batting_team_flags(&data).1;
+
+        let away_line = Self::render_linescore_row_styled(
+            away_abbr,
+            &data.away_innings,
+            start_inning,
+            end_inning,
+            RheTotals {
+                runs: data.away_score,
+                hits: data.away_hits,
+                errors: data.away_errors,
+            },
+            w,
+            away_batting,
         );
-        let status_line = Self::pad_right_fit(Self::center_text(&status, w).as_str(), w);
+
+        let home_line = Self::render_linescore_row_styled(
+            home_abbr,
+            &data.home_innings,
+            start_inning,
+            end_inning,
+            RheTotals {
+                runs: data.home_score,
+                hits: data.home_hits,
+                errors: data.home_errors,
+            },
+            w,
+            home_batting,
+        );
+
+        let status_line = Self::build_centered_status_line(data.count.as_str(), data.outs, w);
 
         let batter_line =
             Self::fit_two_columns(data.batter_left.as_str(), data.batter_right.as_str(), w);
@@ -605,21 +767,21 @@ impl TuiUi {
         let pitcher_line = Self::fit_two_columns(&pitcher_left, &pitcher_right, w);
 
         let lines = vec![
-            Line::from(Self::pad_right_fit(header.as_str(), w)),
-            Line::from(Self::pad_right_fit(line_away.as_str(), w)),
-            Line::from(Self::pad_right_fit(line_home.as_str(), w)),
+            header,
+            away_line,
+            home_line,
             Line::from(Self::pad_right_fit("", w)),
             Line::from(d_top),
             Line::from(d_bot),
             Line::from(Self::pad_right_fit("", w)),
-            Line::from(Self::pad_right_fit(status_line.as_str(), w)),
+            status_line,
             Line::from(Self::pad_right_fit("", w)),
             Line::from(batter_line),
             Line::from(pitcher_line),
         ];
 
-        let p = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
-        f.render_widget(p, inner);
+        let para = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
+        f.render_widget(para, inner);
     }
 
     fn help_line_count() -> usize {
@@ -674,7 +836,7 @@ impl TuiUi {
 
     fn render_help(f: &mut Frame, area: Rect, scroll: u16, focused: bool) {
         let title = if focused { "Help ►" } else { "Help" };
-        let block = Block::default().borders(Borders::ALL).title(title);
+        let block = Self::focused_block(title, focused);
         let inner = block.inner(area);
         f.render_widget(block, area);
 
@@ -687,7 +849,7 @@ impl TuiUi {
 
     fn render_command(f: &mut Frame, area: Rect, prompt: &str, input: &str, focused: bool) {
         let title = if focused { "Command ►" } else { "Command" };
-        let block = Block::default().borders(Borders::ALL).title(title);
+        let block = Self::focused_block(title, focused);
         let inner = block.inner(area);
         f.render_widget(block, area);
 
@@ -770,7 +932,7 @@ impl TuiUi {
             };
 
             let log_widget = Paragraph::new(text)
-                .block(Block::default().borders(Borders::ALL).title(log_title))
+                .block(Self::focused_block(log_title, focus == Focus::Log))
                 .wrap(Wrap { trim: false })
                 .scroll((scroll, 0));
 
