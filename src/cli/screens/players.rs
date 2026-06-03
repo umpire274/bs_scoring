@@ -4,7 +4,7 @@ use crate::models::player_traits::{BatSide, PitchHand};
 use crate::models::types::Position;
 use crate::utils::term;
 use crate::utils::term::choose_enum;
-use crate::{Database, Menu, Team};
+use crate::{Database, League, Menu, Team};
 use std::fs;
 use std::io;
 use std::io::Write;
@@ -711,72 +711,81 @@ fn get_all_players_with_teams(conn: &rusqlite::Connection) -> Vec<(Player, Strin
 }
 
 fn update_player(db: &Database) {
-    term::show_header("UPDATE PLAYER");
-
     let conn = db.get_connection();
 
-    let players = get_all_players_with_teams(conn);
-
-    if players.is_empty() {
-        term::show_error("No players available");
+    let Some(team) = select_team_for_player_action(conn, "UPDATE PLAYER") else {
         return;
-    }
+    };
 
-    println!("Players:\n");
-    display_player_list(&players);
-    println!();
+    let Some(team_id) = team.id else {
+        term::show_error("Selected team has no valid ID");
+        return;
+    };
 
-    if let Some(choice) = term::read_i64("Select player to update (0 to cancel): ") {
-        if choice == 0 {
-            println!("\n❌ Operation cancelled");
+    loop {
+        term::show_header(&format!("UPDATE PLAYER - {}", team.name));
+
+        let players = get_players_for_team_with_name(conn, team_id, &team.name);
+
+        if players.is_empty() {
+            println!("📭 No players available for this team.\n");
             term::wait_for_enter();
-            return;
+            break;
+        }
+
+        println!("Players for {}:\n", team.name);
+        display_player_list(&players);
+        println!("\n  0. 🔙 Back\n");
+
+        let Some(choice) = term::read_i64("Select player to update (0 to go back): ") else {
+            break;
+        };
+
+        if choice == 0 {
+            break;
         }
 
         if choice < 1 || choice as usize > players.len() {
             term::show_error("Invalid selection");
-            return;
+            continue;
         }
 
         let (mut player, _) = players[(choice - 1) as usize].clone();
 
         println!("\nCurrent values (press ENTER to keep):\n");
 
-        // Update first name
         let new_first = term::read_string(&format!("First name [{}]: ", player.first_name));
         if !new_first.is_empty() {
             player.first_name = new_first;
         }
 
-        // Update last name
         let new_last = term::read_string(&format!("Last name [{}]: ", player.last_name));
         if !new_last.is_empty() {
             player.last_name = new_last;
         }
 
-        // Update number
-        if let Some(new_number) = term::read_i32(&format!("Number [{}]: ", player.number))
-            && new_number > 0
-            && new_number <= 99
-        {
-            player.number = new_number;
+        if let Some(new_number) = term::read_i32(&format!("Number [{}]: ", player.number)) {
+            if new_number > 0 && new_number <= 99 {
+                player.number = new_number;
+            } else {
+                println!("  ⚠️  Invalid number ignored. Keeping current value.");
+            }
         }
 
-        // Update position
         if let Some(pos_choice) = term::read_i32(&format!(
             "Position [{}] (1-9, or 0 to keep): ",
             player.position.to_number()
-        )) && pos_choice > 0
-            && pos_choice <= 9
-            && let Some(new_pos) = Position::from_number(pos_choice as u8)
-        {
-            player.position = new_pos;
+        )) {
+            if pos_choice > 0 && pos_choice <= 9 {
+                if let Some(new_pos) = Position::from_number(pos_choice as u8) {
+                    player.position = new_pos;
+                }
+            } else if pos_choice != 0 {
+                println!("  ⚠️  Invalid position ignored. Keeping current value.");
+            }
         }
 
-        // Update pitch hand
         player.pitch = choose_enum(player.pitch).or(player.pitch);
-
-        // Update batting side
         player.bat = choose_enum(player.bat).or(player.bat);
 
         match player.update(conn) {
@@ -787,31 +796,43 @@ fn update_player(db: &Database) {
 }
 
 fn delete_player(db: &Database) {
-    term::show_header("DELETE PLAYER");
-
     let conn = db.get_connection();
 
-    let players = get_all_players_with_teams(conn);
-
-    if players.is_empty() {
-        term::show_error("No players available");
+    let Some(team) = select_team_for_player_action(conn, "DELETE PLAYER") else {
         return;
-    }
+    };
 
-    println!("Players:\n");
-    display_player_list(&players);
-    println!();
+    let Some(team_id) = team.id else {
+        term::show_error("Selected team has no valid ID");
+        return;
+    };
 
-    if let Some(choice) = term::read_i64("Select player to delete (0 to cancel): ") {
-        if choice == 0 {
-            println!("\n❌ Operation cancelled");
+    loop {
+        term::show_header(&format!("DELETE PLAYER - {}", team.name));
+
+        let players = get_players_for_team_with_name(conn, team_id, &team.name);
+
+        if players.is_empty() {
+            println!("📭 No players available for this team.\n");
             term::wait_for_enter();
-            return;
+            break;
+        }
+
+        println!("Players for {}:\n", team.name);
+        display_player_list(&players);
+        println!("\n  0. 🔙 Back\n");
+
+        let Some(choice) = term::read_i64("Select player to delete (0 to go back): ") else {
+            break;
+        };
+
+        if choice == 0 {
+            break;
         }
 
         if choice < 1 || choice as usize > players.len() {
             term::show_error("Invalid selection");
-            return;
+            continue;
         }
 
         let (player, team_name) = &players[(choice - 1) as usize];
@@ -833,6 +854,103 @@ fn delete_player(db: &Database) {
             term::wait_for_enter();
         }
     }
+}
+
+fn select_team_for_player_action(conn: &rusqlite::Connection, title: &str) -> Option<Team> {
+    term::show_header(title);
+
+    let leagues = match League::get_all(conn) {
+        Ok(leagues) => leagues,
+        Err(e) => {
+            term::show_error(&format!("Error loading leagues: {}", e));
+            return None;
+        }
+    };
+
+    if leagues.is_empty() {
+        term::show_error("No leagues available");
+        return None;
+    }
+
+    println!("Leagues:\n");
+    for (i, league) in leagues.iter().enumerate() {
+        let season = league.season.as_deref().unwrap_or("N/A");
+        term::show_list_item(i + 1, &format!("{} ({})", league.name, season));
+    }
+    println!("\n  0. 🔙 Back\n");
+
+    let Some(league_choice) = term::read_i64("Select league (0 to cancel): ") else {
+        println!("\n❌ Operation cancelled");
+        term::wait_for_enter();
+        return None;
+    };
+
+    if league_choice == 0 {
+        println!("\n❌ Operation cancelled");
+        term::wait_for_enter();
+        return None;
+    }
+
+    if league_choice < 1 || league_choice as usize > leagues.len() {
+        term::show_error("Invalid selection");
+        return None;
+    }
+
+    let league = &leagues[(league_choice - 1) as usize];
+    let Some(league_id) = league.id else {
+        term::show_error("Selected league has no valid ID");
+        return None;
+    };
+
+    let teams = match Team::get_by_league(conn, league_id) {
+        Ok(teams) => teams,
+        Err(e) => {
+            term::show_error(&format!("Error loading teams: {}", e));
+            return None;
+        }
+    };
+
+    if teams.is_empty() {
+        term::show_error("No teams available for the selected league");
+        return None;
+    }
+
+    println!("\nTeams for {}:\n", league.name);
+    for (i, team) in teams.iter().enumerate() {
+        term::show_list_item(i + 1, &team.name);
+    }
+    println!("\n  0. 🔙 Back\n");
+
+    let Some(team_choice) = term::read_i64("Select team (0 to cancel): ") else {
+        println!("\n❌ Operation cancelled");
+        term::wait_for_enter();
+        return None;
+    };
+
+    if team_choice == 0 {
+        println!("\n❌ Operation cancelled");
+        term::wait_for_enter();
+        return None;
+    }
+
+    if team_choice < 1 || team_choice as usize > teams.len() {
+        term::show_error("Invalid selection");
+        return None;
+    }
+
+    Some(teams[(team_choice - 1) as usize].clone())
+}
+
+fn get_players_for_team_with_name(
+    conn: &rusqlite::Connection,
+    team_id: i64,
+    team_name: &str,
+) -> Vec<(Player, String)> {
+    Player::get_by_team(conn, team_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|player| (player, team_name.to_string()))
+        .collect()
 }
 
 fn change_team(db: &Database) {

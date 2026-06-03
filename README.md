@@ -1,10 +1,10 @@
-# ⚾ Baseball Scorer — v0.11.1
+# ⚾ Baseball Scorer — v0.11.2
 
 A comprehensive baseball and softball scoring TUI application with SQLite
 persistence, pitch-by-pitch tracking, runner advancement overrides, steal
 support, deterministic game resume, and umpire supervisor tools.
 
-## 🆕 What's New in v0.11.1
+## 🆕 What's New in v0.11.2
 
 `v0.11.1` is an internal refactor plus a scoreboard UX polish. No change
 to the grammar accepted by the parser or to the engine behaviour —
@@ -451,7 +451,7 @@ MIT License — Free to use for your games! ⚾
 
 ---
 
-**Version:** 0.11.1
+**Version:** 0.11.2
 **Schema:** v18
 **Edition:** Rust 2024
 **Author:** Alessandro Maestri
