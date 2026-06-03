@@ -936,8 +936,16 @@ fn select_team_for_player_action(conn: &rusqlite::Connection, title: &str) -> Op
         }
     };
 
-    if leagues.is_empty() {
-        term::show_error("No leagues available");
+    let unassigned_teams = match Team::get_without_league(conn) {
+        Ok(teams) => teams,
+        Err(e) => {
+            term::show_error(&format!("Error loading unassigned teams: {}", e));
+            return None;
+        }
+    };
+
+    if leagues.is_empty() && unassigned_teams.is_empty() {
+        term::show_error("No leagues or unassigned teams available");
         return None;
     }
 
@@ -946,6 +954,9 @@ fn select_team_for_player_action(conn: &rusqlite::Connection, title: &str) -> Op
         let season = league.season.as_deref().unwrap_or("N/A");
         term::show_list_item(i + 1, &format!("{} ({})", league.name, season));
     }
+
+    let no_league_choice = leagues.len() + 1;
+    term::show_list_item(no_league_choice, "No league");
     println!("\n  0. 🔙 Back\n");
 
     let Some(league_choice) = term::read_i64("Select league (0 to cancel): ") else {
@@ -960,31 +971,37 @@ fn select_team_for_player_action(conn: &rusqlite::Connection, title: &str) -> Op
         return None;
     }
 
-    if league_choice < 1 || league_choice as usize > leagues.len() {
+    if league_choice < 1 || league_choice as usize > no_league_choice {
         term::show_error("Invalid selection");
         return None;
     }
 
-    let league = &leagues[(league_choice - 1) as usize];
-    let Some(league_id) = league.id else {
-        term::show_error("Selected league has no valid ID");
-        return None;
-    };
-
-    let teams = match Team::get_by_league(conn, league_id) {
-        Ok(teams) => teams,
-        Err(e) => {
-            term::show_error(&format!("Error loading teams: {}", e));
+    let (teams, teams_label) = if league_choice as usize == no_league_choice {
+        (unassigned_teams, "No league".to_string())
+    } else {
+        let league = &leagues[(league_choice - 1) as usize];
+        let Some(league_id) = league.id else {
+            term::show_error("Selected league has no valid ID");
             return None;
-        }
+        };
+
+        let teams = match Team::get_by_league(conn, league_id) {
+            Ok(teams) => teams,
+            Err(e) => {
+                term::show_error(&format!("Error loading teams: {}", e));
+                return None;
+            }
+        };
+
+        (teams, league.name.clone())
     };
 
     if teams.is_empty() {
-        term::show_error("No teams available for the selected league");
+        term::show_error(&format!("No teams available for {}", teams_label));
         return None;
     }
 
-    println!("\nTeams for {}:\n", league.name);
+    println!("\nTeams for {}:\n", teams_label);
     for (i, team) in teams.iter().enumerate() {
         term::show_list_item(i + 1, &team.name);
     }

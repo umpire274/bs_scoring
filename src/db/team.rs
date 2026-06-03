@@ -93,6 +93,18 @@ impl Team {
         teams.collect()
     }
 
+    /// Get teams that are not associated with any league
+    pub fn get_without_league(conn: &Connection) -> Result<Vec<Team>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, league_id, city, abbreviation, founded_year
+             FROM teams WHERE league_id IS NULL ORDER BY name",
+        )?;
+
+        let teams = stmt.query_map([], Self::from_row)?;
+
+        teams.collect()
+    }
+
     /// Update team
     pub fn update(&self, conn: &Connection) -> Result<()> {
         if let Some(id) = self.id {
