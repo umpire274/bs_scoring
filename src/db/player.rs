@@ -7,6 +7,7 @@ pub struct Player {
     pub id: Option<i64>,
     pub team_id: i64,
     pub number: i32,
+    pub away_number: i32,
     pub first_name: String,
     pub last_name: String,
     pub position: Position,
@@ -15,25 +16,29 @@ pub struct Player {
     pub is_active: bool,
 }
 
+pub struct NewPlayer {
+    pub team_id: i64,
+    pub number: i32,
+    pub away_number: i32,
+    pub first_name: String,
+    pub last_name: String,
+    pub position: Position,
+    pub pitch: Option<PitchHand>,
+    pub bat: Option<BatSide>,
+}
+
 impl Player {
-    pub fn new(
-        team_id: i64,
-        number: i32,
-        first_name: String,
-        last_name: String,
-        position: Position,
-        pitch: Option<PitchHand>,
-        bat: Option<BatSide>,
-    ) -> Self {
+    pub fn new(data: NewPlayer) -> Self {
         Player {
             id: None,
-            team_id,
-            number,
-            first_name,
-            last_name,
-            position,
-            pitch,
-            bat,
+            team_id: data.team_id,
+            number: data.number,
+            away_number: data.away_number,
+            first_name: data.first_name,
+            last_name: data.last_name,
+            position: data.position,
+            pitch: data.pitch,
+            bat: data.bat,
             is_active: true,
         }
     }
@@ -46,10 +51,13 @@ impl Player {
     /// Helper function to map a database row to a Player struct
     fn from_row(row: &rusqlite::Row) -> Result<Self> {
         let position_num: u8 = row.get(5)?;
+        let away_number: i32 = row.get(9).or_else(|_| row.get(2))?;
+
         Ok(Player {
             id: Some(row.get(0)?),
             team_id: row.get(1)?,
             number: row.get(2)?,
+            away_number,
             first_name: row.get(3)?,
             last_name: row.get(4)?,
             position: Position::from_number(position_num).unwrap_or(Position::RightField),
@@ -59,19 +67,20 @@ impl Player {
         })
     }
 
-    /// Helper to map a database row with team_name to (Player, String)
-    /// Expects columns: id, team_id, number, first_name, last_name, position, is_active, team_name
+    /// Helper to map a database row with team_name to (Player, String).
+    /// Expects columns: id, team_id, number, first_name, last_name, position, pitch, bat,
+    /// is_active, away_number, team_name.
     pub fn from_row_with_team(row: &rusqlite::Row) -> Result<(Self, String)> {
         let player = Self::from_row(row)?;
-        let team_name: String = row.get(9)?;
+        let team_name: String = row.get(10)?;
         Ok((player, team_name))
     }
 
     /// Create a new player
     pub fn create(&mut self, conn: &Connection) -> Result<i64> {
         conn.execute(
-            "INSERT INTO players (team_id, number, first_name, last_name, position, pitch, bat, is_active)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO players (team_id, number, first_name, last_name, position, pitch, bat, is_active, away_number)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 self.team_id,
                 self.number,
@@ -80,7 +89,8 @@ impl Player {
                 self.position.to_number(),
                 self.pitch.map(|p| p.as_str().to_string()),
                 self.bat.map(|b| b.as_str().to_string()),
-                self.is_active
+                self.is_active,
+                self.away_number
             ],
         )?;
 
@@ -92,7 +102,8 @@ impl Player {
     /// Get player by ID
     pub fn get_by_id(conn: &Connection, id: i64) -> Result<Player> {
         let mut stmt = conn.prepare(
-            "SELECT id, team_id, number, first_name, last_name, position, pitch, bat, is_active
+            "SELECT id, team_id, number, first_name, last_name, position, pitch, bat, is_active,
+                    COALESCE(away_number, number) AS away_number
              FROM players WHERE id = ?1",
         )?;
 
@@ -102,7 +113,8 @@ impl Player {
     /// Get all players for a team
     pub fn get_by_team(conn: &Connection, team_id: i64) -> Result<Vec<Player>> {
         let mut stmt = conn.prepare(
-            "SELECT id, team_id, number, first_name, last_name, position, pitch, bat, is_active
+            "SELECT id, team_id, number, first_name, last_name, position, pitch, bat, is_active,
+                    COALESCE(away_number, number) AS away_number
              FROM players WHERE team_id = ?1 AND is_active = 1
              ORDER BY number",
         )?;
@@ -117,7 +129,7 @@ impl Player {
         if let Some(id) = self.id {
             conn.execute(
                 "UPDATE players SET team_id = ?1, number = ?2, first_name = ?3, last_name = ?4,
-                 position = ?5, pitch = ?6, bat = ?7, is_active = ?8 WHERE id = ?9",
+                 position = ?5, pitch = ?6, bat = ?7, is_active = ?8, away_number = ?9 WHERE id = ?10",
                 params![
                     self.team_id,
                     self.number,
@@ -127,6 +139,7 @@ impl Player {
                     self.pitch.map(|p| p.as_str().to_string()),
                     self.bat.map(|b| b.as_str().to_string()),
                     self.is_active,
+                    self.away_number,
                     id
                 ],
             )?;
@@ -156,15 +169,16 @@ mod tests {
         let mut team = Team::new("Yankees".to_string(), None, None, None, None);
         let team_id = team.create(conn).unwrap();
 
-        let mut player = Player::new(
+        let mut player = Player::new(NewPlayer {
             team_id,
-            99,
-            "Aaron".to_string(),
-            "Judge".to_string(),
-            Position::RightField,
-            Some(PitchHand::Rhp),
-            Some(BatSide::R),
-        );
+            number: 99,
+            away_number: 99,
+            first_name: "Aaron".to_string(),
+            last_name: "Judge".to_string(),
+            position: Position::RightField,
+            pitch: Some(PitchHand::Rhp),
+            bat: Some(BatSide::R),
+        });
         let player_id = player.create(conn).unwrap();
         assert!(player_id > 0);
 

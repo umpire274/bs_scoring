@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 18;
+pub const CURRENT_SCHEMA_VERSION: i64 = 19;
 
 /// Migration structure
 pub struct Migration {
@@ -104,6 +104,11 @@ pub fn get_migrations() -> Vec<Migration> {
             version: 18,
             description: "Add umpire_leagues junction table for N:N umpire-league association",
             up: migration_v18,
+        },
+        Migration {
+            version: 19,
+            description: "Add away jersey number to players and allow jersey number zero",
+            up: migration_v19,
         },
     ]
 }
@@ -1074,6 +1079,24 @@ fn migration_v18(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_umpire_leagues_league ON umpire_leagues(league_id)",
         [],
     )?;
+
+    Ok(())
+}
+
+fn migration_v19(conn: &Connection) -> Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(players)")?;
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(Result::ok)
+        .collect();
+
+    if !columns.contains(&"away_number".to_string()) {
+        conn.execute("ALTER TABLE players ADD COLUMN away_number INTEGER", [])?;
+        conn.execute(
+            "UPDATE players SET away_number = number WHERE away_number IS NULL",
+            [],
+        )?;
+    }
 
     Ok(())
 }

@@ -1,8 +1,13 @@
 # Changelog
-All notable changes to this project will be documented in this file.
+## [0.11.3] - 2026-06-03
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Added
+- Added separate home and away jersey numbers for player creation.
+- If the away jersey number is left blank, it defaults to the home jersey number.
+
+### Changed
+- Jersey number validation now accepts `0` as a valid jersey number.
+- Player CSV/JSON export now includes `away_number`; import remains backward-compatible with previous player formats.
 
 ## [0.11.2] - 2026-06-03
 
@@ -11,7 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - After editing or deleting a player, the refreshed team roster is shown again until the user selects `0`.
 - Pressing ENTER on the player-selection prompt now behaves like `0` and goes back.
 
----
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [v0.11.1] - 2026-04-21
 
