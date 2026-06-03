@@ -1,5 +1,5 @@
 use crate::cli::menu::PlayerMenuChoice;
-use crate::db::player::Player;
+use crate::db::player::{NewPlayer, Player};
 use crate::models::player_traits::{BatSide, PitchHand};
 use crate::models::types::Position;
 use crate::utils::term;
@@ -80,7 +80,8 @@ fn import_csv(db: &Database) {
 
     // CSV format supported:
     // old: team,number,first_name,last_name,position
-    // new: team,number,first_name,last_name,position,pitch,bat
+    // current: team,number,away_number,first_name,last_name,position,pitch,bat
+    // If away_number is omitted, it defaults to number.
     for (line_num, line) in content.lines().enumerate() {
         if line_num == 0 && line.to_lowercase().contains("team") {
             continue;
@@ -91,9 +92,9 @@ fn import_csv(db: &Database) {
         }
 
         let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-        if parts.len() != 5 && parts.len() != 7 {
+        if !matches!(parts.len(), 5 | 7 | 8) {
             println!(
-                "⚠️  Line {}: Invalid format (expected 5 or 7 fields, got {})",
+                "⚠️  Line {}: Invalid format (expected 5, 7, or 8 fields, got {})",
                 line_num + 1,
                 parts.len()
             );
@@ -103,7 +104,7 @@ fn import_csv(db: &Database) {
 
         let team_name = parts[0];
         let number = match parts[1].parse::<i32>() {
-            Ok(n) if n > 0 && n <= 99 => n,
+            Ok(n) if (0..=99).contains(&n) => n,
             _ => {
                 println!(
                     "⚠️  Line {}: Invalid jersey number '{}'",
@@ -114,19 +115,46 @@ fn import_csv(db: &Database) {
                 continue;
             }
         };
-        let first_name = parts[2].to_string();
-        let last_name = parts[3].to_string();
-        let position_num = match parts[4].parse::<u8>() {
+        let has_away_number = parts.len() == 8;
+        let away_number = if has_away_number {
+            if parts[2].is_empty() {
+                number
+            } else {
+                match parts[2].parse::<i32>() {
+                    Ok(n) if (0..=99).contains(&n) => n,
+                    _ => {
+                        println!(
+                            "⚠️  Line {}: Invalid away jersey number '{}'",
+                            line_num + 1,
+                            parts[2]
+                        );
+                        errors += 1;
+                        continue;
+                    }
+                }
+            }
+        } else {
+            number
+        };
+
+        let data_offset = if has_away_number { 1 } else { 0 };
+        let first_name = parts[2 + data_offset].to_string();
+        let last_name = parts[3 + data_offset].to_string();
+        let position_num = match parts[4 + data_offset].parse::<u8>() {
             Ok(n) if (1..=9).contains(&n) => n,
             _ => {
-                println!("⚠️  Line {}: Invalid position '{}'", line_num + 1, parts[4]);
+                println!(
+                    "⚠️  Line {}: Invalid position '{}'",
+                    line_num + 1,
+                    parts[4 + data_offset]
+                );
                 errors += 1;
                 continue;
             }
         };
 
-        let raw_pitch = parts.get(5).copied().unwrap_or("");
-        let raw_bat = parts.get(6).copied().unwrap_or("");
+        let raw_pitch = parts.get(5 + data_offset).copied().unwrap_or("");
+        let raw_bat = parts.get(6 + data_offset).copied().unwrap_or("");
 
         let pitch = if raw_pitch.is_empty() {
             None
@@ -173,15 +201,16 @@ fn import_csv(db: &Database) {
         };
 
         let position = Position::from_number(position_num).unwrap();
-        let mut player = Player::new(
+        let mut player = Player::new(NewPlayer {
             team_id,
             number,
-            first_name.clone(),
-            last_name.clone(),
+            away_number,
+            first_name: first_name.clone(),
+            last_name: last_name.clone(),
             position,
             pitch,
             bat,
-        );
+        });
 
         match player.create(conn) {
             Ok(_) => {
@@ -257,12 +286,22 @@ fn import_json(db: &Database) {
         };
 
         let number = match player_data.get("number").and_then(|v| v.as_i64()) {
-            Some(n) if n > 0 && n <= 99 => n as i32,
+            Some(n) if (0..=99).contains(&n) => n as i32,
             _ => {
                 println!("⚠️  Player {}: Invalid 'number' field", idx + 1);
                 errors += 1;
                 continue;
             }
+        };
+
+        let away_number = match player_data.get("away_number").and_then(|v| v.as_i64()) {
+            Some(n) if (0..=99).contains(&n) => n as i32,
+            Some(_) => {
+                println!("⚠️  Player {}: Invalid 'away_number' field", idx + 1);
+                errors += 1;
+                continue;
+            }
+            None => number,
         };
 
         let first_name = match player_data.get("first_name").and_then(|v| v.as_str()) {
@@ -333,15 +372,16 @@ fn import_json(db: &Database) {
         };
 
         let position = Position::from_number(position_num).unwrap();
-        let mut player = Player::new(
+        let mut player = Player::new(NewPlayer {
             team_id,
             number,
-            first_name.clone(),
-            last_name.clone(),
+            away_number,
+            first_name: first_name.clone(),
+            last_name: last_name.clone(),
             position,
             pitch,
             bat,
-        );
+        });
 
         match player.create(conn) {
             Ok(_) => {
@@ -388,13 +428,15 @@ fn export_csv(db: &Database) {
         return;
     }
 
-    let mut csv_content = String::from("team,number,first_name,last_name,position,pitch,bat\n");
+    let mut csv_content =
+        String::from("team,number,away_number,first_name,last_name,position,pitch,bat\n");
 
     for (player, team_name) in &players {
         csv_content.push_str(&format!(
-            "{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{}\n",
             team_name,
             player.number,
+            player.away_number,
             player.first_name,
             player.last_name,
             player.position.to_number(),
@@ -406,7 +448,7 @@ fn export_csv(db: &Database) {
     match fs::write(&filepath, csv_content) {
         Ok(_) => {
             term::show_success(&format!(
-                "Exported {} players to '{}'\n\nFormat: team,number,first_name,last_name,position,pitch,bat",
+                "Exported {} players to '{}'\n\nFormat: team,number,away_number,first_name,last_name,position,pitch,bat",
                 players.len(),
                 filepath
             ));
@@ -440,6 +482,7 @@ fn export_json(db: &Database) {
         let player_obj = serde_json::json!({
             "team": team_name,
             "number": player.number,
+            "away_number": player.away_number,
             "first_name": player.first_name,
             "last_name": player.last_name,
             "position": player.position.to_number(),
@@ -539,12 +582,21 @@ fn add_player(db: &Database) {
 
                 let last_name = term::read_string("Last name: ");
 
-                let number = match term::read_i32("Jersey number: ") {
-                    Some(n) if n > 0 && n <= 99 => n,
+                let number = match term::read_i32("Home jersey number: ") {
+                    Some(n) if (0..=99).contains(&n) => n,
                     _ => {
-                        term::show_error("Invalid jersey number (1-99)");
+                        term::show_error("Invalid home jersey number (0-99)");
                         return;
                     }
+                };
+
+                let away_number = match term::read_i32("Away jersey number [same as home]: ") {
+                    Some(n) if (0..=99).contains(&n) => n,
+                    Some(_) => {
+                        term::show_error("Invalid away jersey number (0-99)");
+                        return;
+                    }
+                    None => number,
                 };
 
                 // Select position
@@ -577,27 +629,30 @@ fn add_player(db: &Database) {
                 let bat = term::choose_enum_optional::<BatSide>();
 
                 // Create player
-                let mut player = Player::new(
+                let mut player = Player::new(NewPlayer {
                     team_id,
                     number,
-                    first_name.clone(),
-                    last_name.clone(),
+                    away_number,
+                    first_name: first_name.clone(),
+                    last_name: last_name.clone(),
                     position,
                     pitch,
                     bat,
-                );
+                });
 
                 match player.create(conn) {
                     Ok(id) => {
                         term::show_success(&format!(
-                            "Player created successfully!\n\n   {:<14} {}\n   {:<14} {} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {:?}\n   {:<14} {}\n   {:<14} {}\n",
+                            "Player created successfully!\n\n   {:<14} {}\n   {:<14} {} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {:?}\n   {:<14} {}\n   {:<14} {}\n",
                             "ID:",
                             id,
                             "Name:",
                             first_name,
                             last_name,
-                            "Number:",
+                            "Home number:",
                             number,
+                            "Away number:",
+                            away_number,
                             "Team:",
                             team.name,
                             "Position:",
@@ -679,8 +734,9 @@ fn list_players(db: &Database) {
 
         for (player, team_name) in players {
             println!(
-                "  #{:<3} {:<25} {:<15} {:<12} (P:{:<3} B:{:<1})",
+                "  H#{:<3} A#{:<3} {:<25} {:<15} {:<12} (P:{:<3} B:{:<1})",
                 player.number,
+                player.away_number,
                 player.full_name(),
                 format!("({})", team_name),
                 format!("{:?}", player.position),
@@ -697,7 +753,9 @@ fn list_players(db: &Database) {
 fn get_all_players_with_teams(conn: &rusqlite::Connection) -> Vec<(Player, String)> {
     let mut stmt = conn
         .prepare(
-            "SELECT p.id, p.team_id, p.number, p.first_name, p.last_name, p.position, p.pitch, p.bat, p.is_active, t.name as team_name
+            "SELECT p.id, p.team_id, p.number, p.first_name, p.last_name, p.position, p.pitch, p.bat, p.is_active,
+                    COALESCE(p.away_number, p.number) AS away_number,
+                    t.name as team_name
              FROM players p
              JOIN teams t ON p.team_id = t.id
              WHERE p.is_active = 1
@@ -764,11 +822,22 @@ fn update_player(db: &Database) {
             player.last_name = new_last;
         }
 
-        if let Some(new_number) = term::read_i32(&format!("Number [{}]: ", player.number)) {
-            if new_number > 0 && new_number <= 99 {
+        if let Some(new_number) = term::read_i32(&format!("Home number [{}]: ", player.number)) {
+            if (0..=99).contains(&new_number) {
                 player.number = new_number;
             } else {
-                println!("  ⚠️  Invalid number ignored. Keeping current value.");
+                println!("  ⚠️  Invalid home number ignored. Keeping current value.");
+            }
+        }
+
+        if let Some(new_away_number) = term::read_i32(&format!(
+            "Away number [{}] (ENTER to keep): ",
+            player.away_number
+        )) {
+            if (0..=99).contains(&new_away_number) {
+                player.away_number = new_away_number;
+            } else {
+                println!("  ⚠️  Invalid away number ignored. Keeping current value.");
             }
         }
 
@@ -1045,7 +1114,13 @@ fn display_player_list(players: &[(Player, String)]) {
     for (i, (player, team_name)) in players.iter().enumerate() {
         term::show_list_item(
             i + 1,
-            &format!("#{} {} ({})", player.number, player.full_name(), team_name),
+            &format!(
+                "H#{} A#{} {} ({})",
+                player.number,
+                player.away_number,
+                player.full_name(),
+                team_name
+            ),
         );
     }
 }
