@@ -308,14 +308,15 @@ fn create_new_game(db: &Database) {
     let at_uses_dh = ask_team_dh("AWAY", &away_team.name);
     let away_required = if at_uses_dh { 10 } else { 9 };
 
-    let away_lineup = match insert_team_lineup(conn, away_team_id, &away_team.name, away_required) {
-        Some(lineup) => lineup,
-        None => {
-            println!("\n❌ Away team lineup cancelled. Game creation aborted.");
-            term::wait_for_enter();
-            return;
-        }
-    };
+    let away_lineup =
+        match insert_team_lineup(conn, away_team_id, &away_team.name, away_required, false) {
+            Some(lineup) => lineup,
+            None => {
+                println!("\n❌ Away team lineup cancelled. Game creation aborted.");
+                term::wait_for_enter();
+                return;
+            }
+        };
 
     // STEP 6: Insert lineup for HOME team
     println!("\n═══════════════════════════════════════");
@@ -325,14 +326,15 @@ fn create_new_game(db: &Database) {
     let ht_uses_dh = ask_team_dh("HOME", &home_team.name);
     let home_required = if ht_uses_dh { 10 } else { 9 };
 
-    let home_lineup = match insert_team_lineup(conn, home_team_id, &home_team.name, home_required) {
-        Some(lineup) => lineup,
-        None => {
-            println!("\n❌ Home team lineup cancelled. Game creation aborted.");
-            term::wait_for_enter();
-            return;
-        }
-    };
+    let home_lineup =
+        match insert_team_lineup(conn, home_team_id, &home_team.name, home_required, true) {
+            Some(lineup) => lineup,
+            None => {
+                println!("\n❌ Home team lineup cancelled. Game creation aborted.");
+                term::wait_for_enter();
+                return;
+            }
+        };
 
     // STEP 7: Save game to database
     match conn.execute(
@@ -475,10 +477,16 @@ fn edit_lineups(db: &mut Database) {
         None => return,
     };
 
+    let is_home_team = team_type == "Home";
+
     let current_lineup: Vec<(i64, i32, String, i32, String, String)> = {
         let mut stmt = match conn.prepare(
             "SELECT gl.player_id, gl.batting_order, gl.defensive_position,
-                    p.number, p.first_name, p.last_name
+                    CASE
+                        WHEN ?3 THEN p.number
+                        ELSE COALESCE(p.away_number, p.number)
+                    END AS jersey_number,
+                    p.first_name, p.last_name
              FROM game_lineups gl
              JOIN players p ON gl.player_id = p.id
              WHERE gl.game_id = ?1 AND gl.team_id = ?2 AND gl.is_starting = 1
@@ -491,7 +499,7 @@ fn edit_lineups(db: &mut Database) {
             }
         };
 
-        stmt.query_map(rusqlite::params![&game_id, team_id], |row| {
+        stmt.query_map(rusqlite::params![&game_id, team_id, is_home_team], |row| {
             Ok((
                 row.get(0)?,
                 row.get(1)?,
@@ -554,6 +562,7 @@ pub(crate) fn insert_team_lineup(
     team_id: i64,
     team_name: &str,
     required_players: usize, // 9 oppure 10
+    is_home_team: bool,
 ) -> Option<Vec<(i64, i32, String)>> {
     use crate::db::player::Player;
     use std::io::{self, Write};
@@ -594,7 +603,10 @@ pub(crate) fn insert_team_lineup(
         for player in &roster {
             println!(
                 "  #{:<3} {} {} ({})",
-                player.number, player.first_name, player.last_name, player.position
+                player.jersey_number(is_home_team),
+                player.first_name,
+                player.last_name,
+                player.position
             );
         }
         println!();
@@ -611,7 +623,7 @@ pub(crate) fn insert_team_lineup(
             // Read jersey number
             let jersey_number = loop {
                 match term::read_i32("Jersey number: ") {
-                    Some(num) if roster.iter().any(|p| p.number == num) => {
+                    Some(num) if roster.iter().any(|p| p.jersey_number(is_home_team) == num) => {
                         if used_numbers.contains(&num) {
                             println!("❌ Player #{} already in lineup!", num);
                             continue;
@@ -623,7 +635,10 @@ pub(crate) fn insert_team_lineup(
                 }
             };
 
-            let player = roster.iter().find(|p| p.number == jersey_number).unwrap();
+            let player = roster
+                .iter()
+                .find(|p| p.jersey_number(is_home_team) == jersey_number)
+                .unwrap();
             let player_id = player.id.unwrap();
 
             // Read defensive position
@@ -708,13 +723,18 @@ pub(crate) fn insert_team_lineup(
 
             let pitcher_number = loop {
                 match term::read_i32("Pitcher jersey number: ") {
-                    Some(num) if roster.iter().any(|p| p.number == num) => break num,
+                    Some(num) if roster.iter().any(|p| p.jersey_number(is_home_team) == num) => {
+                        break num;
+                    }
                     Some(num) => println!("❌ Player #{} not found in roster!", num),
                     None => println!("❌ Invalid number!"),
                 }
             };
 
-            let pitcher = roster.iter().find(|p| p.number == pitcher_number).unwrap();
+            let pitcher = roster
+                .iter()
+                .find(|p| p.jersey_number(is_home_team) == pitcher_number)
+                .unwrap();
             let pitcher_id = pitcher.id.unwrap();
 
             lineup.push((pitcher_id, 10, "1".to_string())); // Position 1 = Pitcher
@@ -725,7 +745,7 @@ pub(crate) fn insert_team_lineup(
         }
 
         // Display complete lineup and ask for confirmation
-        display_lineup(conn, &lineup, team_name, uses_dh);
+        display_lineup(conn, &lineup, team_name, uses_dh, is_home_team);
 
         if term::confirm("\nConfirm this lineup?") {
             return Some(lineup);
@@ -742,6 +762,7 @@ fn display_lineup(
     lineup: &[(i64, i32, String)],
     team_name: &str,
     uses_dh: bool,
+    is_home_team: bool,
 ) {
     use crate::db::player::Player;
 
@@ -766,7 +787,11 @@ fn display_lineup(
             }
             println!(
                 "  {:2}. #{:<3} {:<20} {:<20} {}",
-                batting_order, player.number, player.first_name, player.last_name, position_display
+                batting_order,
+                player.jersey_number(is_home_team),
+                player.first_name,
+                player.last_name,
+                position_display
             );
         }
     }
@@ -794,10 +819,15 @@ fn load_starting_lineup(
     conn: &Connection,
     game_id: &str,
     team_id: i64,
+    is_home_team: bool,
 ) -> rusqlite::Result<Vec<LineupRow>> {
     let mut stmt = conn.prepare(
         "SELECT gl.player_id, gl.batting_order, gl.defensive_position,
-                p.number, p.first_name, p.last_name
+                CASE
+                    WHEN ?3 THEN p.number
+                    ELSE COALESCE(p.away_number, p.number)
+                END AS jersey_number,
+                p.first_name, p.last_name
          FROM game_lineups gl
          JOIN players p ON gl.player_id = p.id
          WHERE gl.game_id = ?1 AND gl.team_id = ?2 AND gl.is_starting = 1
@@ -805,7 +835,7 @@ fn load_starting_lineup(
     )?;
 
     let v = stmt
-        .query_map(rusqlite::params![game_id, team_id], |row| {
+        .query_map(rusqlite::params![game_id, team_id, is_home_team], |row| {
             Ok((
                 row.get(0)?,
                 row.get(1)?,
@@ -825,6 +855,7 @@ fn load_bench_from_roster(
     conn: &Connection,
     team_id: i64,
     current_lineup: &[(i64, i32, String, i32, String, String)],
+    is_home_team: bool,
 ) -> Result<Vec<(i64, i32, String, String)>, String> {
     use crate::db::player::Player;
 
@@ -844,7 +875,7 @@ fn load_bench_from_roster(
             if starters.contains(&id) {
                 return None;
             }
-            Some((id, p.number, p.first_name, p.last_name))
+            Some((id, p.jersey_number(is_home_team), p.first_name, p.last_name))
         })
         .collect::<Vec<_>>();
 
@@ -981,8 +1012,9 @@ fn edit_lineup_helper(
     team_name: &str,
     team_type: &str,
 ) {
+    let is_home_team = team_type == "Home";
     loop {
-        let lineup = match load_starting_lineup(conn, game_id, team_id) {
+        let lineup = match load_starting_lineup(conn, game_id, team_id, is_home_team) {
             Ok(v) => v,
             Err(e) => {
                 term::show_error(&format!("Error loading lineup: {e}"));
@@ -1022,7 +1054,7 @@ fn edit_lineup_helper(
                     None => continue,
                 };
 
-                let bench = match load_bench_from_roster(conn, team_id, &lineup) {
+                let bench = match load_bench_from_roster(conn, team_id, &lineup, is_home_team) {
                     Ok(v) => v,
                     Err(msg) => {
                         term::show_error(&msg);

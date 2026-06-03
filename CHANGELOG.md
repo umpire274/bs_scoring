@@ -8,6 +8,7 @@
 ### Changed
 - Jersey number validation now accepts `0` as a valid jersey number.
 - Player CSV/JSON export now includes `away_number`; import remains backward-compatible with previous player formats.
+- Play Ball lineup entry and live matchup display now use the home jersey number for the home team and the away jersey number for the away team.
 
 ## [0.11.2] - 2026-06-03
 

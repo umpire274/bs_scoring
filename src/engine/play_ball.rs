@@ -225,7 +225,7 @@ pub fn run_play_ball_engine(
 
                 // 2) Determine away leadoff batter (batting_order=1)
                 let (batter_id, team_abbrv, jersey_no, first, last, batter_order, batter_position) =
-                    match get_batter_by_order(conn, game_id, away_team_id, 1) {
+                    match get_batter_by_order(conn, game_id, away_team_id, home_team_id, 1) {
                         Ok(v) => v,
                         Err(e) => {
                             ui.emit(UiEvent::Error(format!(
@@ -238,7 +238,7 @@ pub fn run_play_ball_engine(
                 // 3) Determine starting pitcher from fielding team (HOME when away bats)
                 let fielding_team_id = home_team_id;
                 let (pitcher_id, pitcher_no, p_first, p_last) =
-                    match get_current_pitcher(conn, game_id, fielding_team_id) {
+                    match get_current_pitcher(conn, game_id, fielding_team_id, home_team_id) {
                         Ok(v) => v,
                         Err(e) => {
                             ui.emit(UiEvent::Error(format!(
@@ -477,7 +477,13 @@ pub fn run_play_ball_engine(
                         last,
                         batter_order,
                         batter_position,
-                    ) = match get_batter_by_order(conn, game_id, batting_team_id, next_order) {
+                    ) = match get_batter_by_order(
+                        conn,
+                        game_id,
+                        batting_team_id,
+                        home_team_id,
+                        next_order,
+                    ) {
                         Ok(v) => v,
                         Err(e) => {
                             ui.emit(UiEvent::Error(format!(
@@ -492,6 +498,7 @@ pub fn run_play_ball_engine(
                         conn,
                         game_id,
                         fielding_team_id,
+                        home_team_id,
                     ) {
                         Ok(v) => v,
                         Err(e) => {
@@ -609,16 +616,26 @@ fn persist_event(
     }
 }
 
-fn get_player_basic(conn: &Connection, player_id: i64) -> rusqlite::Result<(i32, String, String)> {
+fn get_player_basic(
+    conn: &Connection,
+    player_id: i64,
+    home_team_id: i64,
+) -> rusqlite::Result<(i32, String, String)> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT number, first_name, last_name
+        SELECT
+            CASE
+                WHEN team_id = ?2 THEN number
+                ELSE COALESCE(away_number, number)
+            END AS jersey_number,
+            first_name,
+            last_name
         FROM players
         WHERE id = ?1
         LIMIT 1
         "#,
     )?;
-    stmt.query_row(params![player_id], |row| {
+    stmt.query_row(params![player_id, home_team_id], |row| {
         Ok((row.get(0)?, row.get(1)?, row.get(2)?))
     })
 }
@@ -673,7 +690,7 @@ fn hydrate_current_matchup(
     };
 
     if let Some(bid) = state.current_batter_id {
-        if let Ok((num, first, last)) = get_player_basic(conn, bid) {
+        if let Ok((num, first, last)) = get_player_basic(conn, bid, home_team_id) {
             state.current_batter_jersey_no = Some(num);
             state.current_batter_first_name = Some(first);
             state.current_batter_last_name = Some(last);
@@ -687,7 +704,7 @@ fn hydrate_current_matchup(
         }
     } else if (1..=9).contains(&next_order)
         && let Ok((batter_id, _abbr, jersey_no, first, last, batter_order, batter_position)) =
-            get_batter_by_order(conn, game_id, batting_team_id, next_order)
+            get_batter_by_order(conn, game_id, batting_team_id, home_team_id, next_order)
     {
         state.current_batter_id = Some(batter_id);
         state.current_batter_jersey_no = Some(jersey_no);
@@ -698,12 +715,13 @@ fn hydrate_current_matchup(
     }
 
     if let Some(pid) = state.current_pitcher_id {
-        if let Ok((num, first, last)) = get_player_basic(conn, pid) {
+        if let Ok((num, first, last)) = get_player_basic(conn, pid, home_team_id) {
             state.current_pitcher_jersey_no = Some(num);
             state.current_pitcher_first_name = Some(first);
             state.current_pitcher_last_name = Some(last);
         }
-    } else if let Ok((pid, num, first, last)) = get_current_pitcher(conn, game_id, fielding_team_id)
+    } else if let Ok((pid, num, first, last)) =
+        get_current_pitcher(conn, game_id, fielding_team_id, home_team_id)
     {
         state.current_pitcher_id = Some(pid);
         state.current_pitcher_jersey_no = Some(num);
@@ -718,10 +736,18 @@ fn get_current_pitcher(
     conn: &Connection,
     game_id: &str,
     fielding_team_id: i64,
+    home_team_id: i64,
 ) -> rusqlite::Result<(i64, i32, String, String)> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT p.id, p.number, p.first_name, p.last_name
+        SELECT
+            p.id,
+            CASE
+                WHEN p.team_id = ?3 THEN p.number
+                ELSE COALESCE(p.away_number, p.number)
+            END AS jersey_number,
+            p.first_name,
+            p.last_name
         FROM game_lineups gl
         JOIN players p ON gl.player_id = p.id
         WHERE gl.game_id = ?1
@@ -732,7 +758,7 @@ fn get_current_pitcher(
         "#,
     )?;
 
-    stmt.query_row(params![game_id, fielding_team_id], |row| {
+    stmt.query_row(params![game_id, fielding_team_id, home_team_id], |row| {
         Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
     })
 }
@@ -742,6 +768,7 @@ fn get_batter_by_order(
     conn: &Connection,
     game_id: &str,
     team_id: i64,
+    home_team_id: i64,
     batting_order: u8,
 ) -> rusqlite::Result<(i64, String, i32, String, String, BatterOrder, Position)> {
     let mut stmt = conn.prepare(
@@ -749,7 +776,10 @@ fn get_batter_by_order(
         SELECT
             p.id,
             t.abbreviation,
-            p.number,
+            CASE
+                WHEN p.team_id = ?4 THEN p.number
+                ELSE COALESCE(p.away_number, p.number)
+            END AS jersey_number,
             p.first_name,
             p.last_name,
             gl.batting_order,
@@ -765,28 +795,31 @@ fn get_batter_by_order(
         "#,
     )?;
 
-    stmt.query_row(params![game_id, team_id, batting_order as i64], |row| {
-        let batter_order: BatterOrder = row.get::<_, i64>(5)? as u8;
+    stmt.query_row(
+        params![game_id, team_id, batting_order as i64, home_team_id],
+        |row| {
+            let batter_order: BatterOrder = row.get::<_, i64>(5)? as u8;
 
-        let position_raw: String = row.get(6)?;
-        let position = Position::from_db_value(&position_raw).ok_or_else(|| {
-            rusqlite::Error::FromSqlConversionFailure(
-                6,
-                rusqlite::types::Type::Text,
-                format!("Invalid defensive_position value: {}", position_raw).into(),
-            )
-        })?;
+            let position_raw: String = row.get(6)?;
+            let position = Position::from_db_value(&position_raw).ok_or_else(|| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    6,
+                    rusqlite::types::Type::Text,
+                    format!("Invalid defensive_position value: {}", position_raw).into(),
+                )
+            })?;
 
-        Ok((
-            row.get(0)?,
-            row.get(1)?,
-            row.get(2)?,
-            row.get(3)?,
-            row.get(4)?,
-            batter_order,
-            position,
-        ))
-    })
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                batter_order,
+                position,
+            ))
+        },
+    )
 }
 
 /// Returns the batting order position for a given batter in a game lineup.
@@ -882,7 +915,7 @@ fn start_next_at_bat(
 
     // 3) Get next batter (by batting order cursor)
     let (batter_id, team_abbrv, jersey_no, first, last, batter_order, batter_position) =
-        match get_batter_by_order(conn, game_id, batting_team_id, next_order) {
+        match get_batter_by_order(conn, game_id, batting_team_id, home_team_id, next_order) {
             Ok(v) => v,
             Err(e) => {
                 ui.emit(UiEvent::Error(format!(
@@ -894,7 +927,7 @@ fn start_next_at_bat(
 
     // 4) Get current pitcher from fielding team lineup (your helper already does this)
     let (pitcher_id, pitcher_no, p_first, p_last) =
-        match get_current_pitcher(conn, game_id, fielding_team_id) {
+        match get_current_pitcher(conn, game_id, fielding_team_id, home_team_id) {
             Ok(v) => v,
             Err(e) => {
                 ui.emit(UiEvent::Error(format!(

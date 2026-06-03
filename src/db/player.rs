@@ -43,6 +43,15 @@ impl Player {
         }
     }
 
+    /// Return the jersey number to display/use for a home or away game.
+    pub fn jersey_number(&self, is_home_team: bool) -> i32 {
+        if is_home_team {
+            self.number
+        } else {
+            self.away_number
+        }
+    }
+
     /// Get full name
     pub fn full_name(&self) -> String {
         format!("{} {}", self.first_name, self.last_name)

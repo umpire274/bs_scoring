@@ -185,7 +185,13 @@ fn handle_invalid_lineup(
             if required == 10 { "DH" } else { "No DH" }
         );
 
-        let new_lineup = match insert_team_lineup(conn, team_id, &team_name, required as usize) {
+        let new_lineup = match insert_team_lineup(
+            conn,
+            team_id,
+            &team_name,
+            required as usize,
+            matches!(side, LineupSide::Home),
+        ) {
             Some(lineup) => lineup,
             None => {
                 println!("\n❌ Lineup insertion cancelled");
