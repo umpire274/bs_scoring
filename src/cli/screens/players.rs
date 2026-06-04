@@ -294,14 +294,25 @@ fn import_json(db: &Database) {
             }
         };
 
-        let away_number = match player_data.get("away_number").and_then(|v| v.as_i64()) {
-            Some(n) if (0..=99).contains(&n) => n as i32,
-            Some(_) => {
-                println!("⚠️  Player {}: Invalid 'away_number' field", idx + 1);
-                errors += 1;
-                continue;
-            }
+        let away_number = match player_data.get("away_number") {
             None => number,
+
+            Some(value) => match value.as_i64() {
+                Some(n) if (0..=99).contains(&n) => n as i32,
+                Some(_) => {
+                    println!("⚠️  Player {}: Invalid 'away_number' field", idx + 1);
+                    errors += 1;
+                    continue;
+                }
+                None => {
+                    println!(
+                        "⚠️  Player {}: Invalid 'away_number' field: must be an integer",
+                        idx + 1
+                    );
+                    errors += 1;
+                    continue;
+                }
+            },
         };
 
         let first_name = match player_data.get("first_name").and_then(|v| v.as_str()) {
