@@ -1,4 +1,38 @@
 # Changelog
+
+## [0.12.0] - Unreleased
+
+### Changed
+- Started player model update for international batting/throwing and position formats.
+
+---
+
+## [0.11.5] - 2026-06-04
+
+### Added
+
+* Added downloadable CSV import template for players.
+* Added downloadable JSON import template for players.
+* Included sample records and required fields in generated templates.
+
+### Fixed
+
+* Improved player import validation.
+* Improved lineup import validation for duplicate jersey numbers.
+
+---
+
+## [0.11.4] - 2026-06-04
+
+### Fixed
+
+* Play Ball now uses the correct jersey number based on team side.
+* Home teams use the home jersey number.
+* Away teams use the away jersey number.
+* Fixed lineup and roster rendering when away jersey numbers differ from home jersey numbers.
+
+---
+
 ## [0.11.3] - 2026-06-03
 
 ### Added
