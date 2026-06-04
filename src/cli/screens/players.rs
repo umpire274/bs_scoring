@@ -1176,8 +1176,8 @@ fn download_csv_template() -> anyhow::Result<()> {
 
     std::fs::write(
         path,
-        "team_name,team_code,league_name,number,away_number,first_name,last_name,role,bats,throws\n\
-         \"Rimini Baseball\",\"RIM\",\"Serie A\",12,9,\"Mario\",\"Rossi\",\"P\",\"R\",\"R\"\n",
+        "team_name,number,away_number,first_name,last_name,position,pitch,bat\n\
+         \"Rimini Baseball\",12,9,\"Mario\",\"Rossi\",1,\"RHP\",\"R\"\n",
     )?;
 
     println!("✅ CSV template written to {}", path);
@@ -1195,16 +1195,14 @@ fn download_json_template() -> anyhow::Result<()> {
 
     let template = r#"[
   {
-    "team_name": "Rimini Baseball",
-    "team_code": "RIM",
-    "league_name": "Serie A",
+    "team": "Rimini Baseball",
     "number": 12,
     "away_number": 9,
     "first_name": "Mario",
     "last_name": "Rossi",
-    "role": "P",
-    "bats": "R",
-    "throws": "R"
+    "position": 1,
+    "pitch": "RHP",
+    "bat": "R"
   }
 ]
 "#;
