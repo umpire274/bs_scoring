@@ -1135,8 +1135,13 @@ fn import_lineup(db: &mut Database) {
         }
     };
 
+    let is_home = matches!(
+        team_type.trim().to_ascii_lowercase().as_str(),
+        "home" | "h" | "home team"
+    );
+
     // 4) validate + resolve player_id tramite player_number nel roster team
-    let resolved = match validate_and_resolve(conn, team_id, &rows) {
+    let resolved = match validate_and_resolve(conn, team_id, is_home, &rows) {
         Ok(v) => v,
         Err(msg) => {
             term::show_error(&msg);
@@ -1180,6 +1185,7 @@ fn parse_lineup_file(path: &str, content: &str) -> Result<Vec<ImportLineupRow>, 
 fn validate_and_resolve(
     conn: &Connection,
     team_id: i64,
+    is_home: bool,
     rows: &[ImportLineupRow],
 ) -> Result<Vec<(i32, String, i64)>, String> {
     if rows.is_empty() {
@@ -1214,8 +1220,8 @@ fn validate_and_resolve(
     }
 
     // carica roster team: mappa number -> player_id
-    let roster_map =
-        load_roster_number_map(conn, team_id).map_err(|e| format!("Error loading roster: {e}"))?;
+    let roster_map = load_roster_number_map(conn, team_id, is_home)
+        .map_err(|e| format!("Error loading roster: {e}"))?;
 
     let mut out = Vec::new();
     for r in rows {
@@ -1237,22 +1243,22 @@ fn validate_and_resolve(
     Ok(out)
 }
 
-fn load_roster_number_map(conn: &Connection, team_id: i64) -> rusqlite::Result<HashMap<i32, i64>> {
-    // ⚠️ Adatta la query in base al tuo schema roster.
-    // Se hai players.team_id:
-    let mut stmt = conn.prepare(
-        "SELECT id, number
-         FROM players
-         WHERE team_id = ?1",
-    )?;
+fn load_roster_number_map(
+    conn: &Connection,
+    team_id: i64,
+    is_home_team: bool,
+) -> rusqlite::Result<HashMap<i32, i64>> {
+    use crate::db::player::Player;
 
+    let roster = Player::get_by_team(conn, team_id)?;
     let mut map = HashMap::new();
-    let mut rows = stmt.query(params![team_id])?;
-    while let Some(r) = rows.next()? {
-        let id: i64 = r.get(0)?;
-        let num: i32 = r.get(1)?;
-        map.insert(num, id);
+
+    for player in roster {
+        if let Some(player_id) = player.id {
+            map.insert(player.jersey_number(is_home_team), player_id);
+        }
     }
+
     Ok(map)
 }
 
