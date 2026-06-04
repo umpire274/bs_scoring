@@ -31,6 +31,8 @@ fn import_export_menu(db: &Database) {
         println!("  2. 📥 Import from JSON");
         println!("  3. 📤 Export to CSV");
         println!("  4. 📤 Export to JSON");
+        println!("  5. 📥 Download CSV template");
+        println!("  6. 📥 Download JSON template");
         println!();
         println!("  0. 🔙 Back");
         println!();
@@ -42,6 +44,16 @@ fn import_export_menu(db: &Database) {
             2 => import_json(db),
             3 => export_csv(db),
             4 => export_json(db),
+            5 => {
+                if let Err(e) = download_csv_template() {
+                    term::show_error(&format!("{e}"));
+                }
+            }
+            6 => {
+                if let Err(e) = download_json_template() {
+                    term::show_error(&format!("{e}"));
+                }
+            }
             0 => break,
             _ => {
                 println!("\n❌ Invalid choice. Press ENTER to continue...");
@@ -1151,4 +1163,52 @@ fn display_player_list(players: &[(Player, String)]) {
             ),
         );
     }
+}
+
+fn download_csv_template() -> anyhow::Result<()> {
+    let path = term::read_string("Output CSV template path: ");
+    let path = path.trim();
+
+    if path.is_empty() {
+        println!("Operation cancelled.");
+        return Ok(());
+    }
+
+    std::fs::write(
+        path,
+        "team_name,number,away_number,first_name,last_name,position,pitch,bat\n\
+         \"Rimini Baseball\",12,9,\"Mario\",\"Rossi\",1,\"RHP\",\"R\"\n",
+    )?;
+
+    println!("✅ CSV template written to {}", path);
+    Ok(())
+}
+
+fn download_json_template() -> anyhow::Result<()> {
+    let path = term::read_string("Output JSON template path: ");
+    let path = path.trim();
+
+    if path.is_empty() {
+        println!("Operation cancelled.");
+        return Ok(());
+    }
+
+    let template = r#"[
+  {
+    "team": "Rimini Baseball",
+    "number": 12,
+    "away_number": 9,
+    "first_name": "Mario",
+    "last_name": "Rossi",
+    "position": 1,
+    "pitch": "RHP",
+    "bat": "R"
+  }
+]
+"#;
+
+    std::fs::write(path, template)?;
+
+    println!("✅ JSON template written to {}", path);
+    Ok(())
 }
