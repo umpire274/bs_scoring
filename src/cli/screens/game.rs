@@ -613,33 +613,55 @@ pub(crate) fn insert_team_lineup(
 
         let mut lineup: Vec<(i64, i32, String)> = Vec::new();
         let mut used_positions: Vec<String> = Vec::new();
-        let mut used_numbers: Vec<i32> = Vec::new();
 
         // Collect batting order positions 1..=9 (always)
+        let mut used_player_ids: Vec<i64> = Vec::new();
+
         for pos in 1..=9 {
             println!("\n─────────────────────────────────────");
             println!("Batting order position: {}", pos);
 
-            // Read jersey number
-            let jersey_number = loop {
-                match term::read_i32("Jersey number: ") {
-                    Some(num) if roster.iter().any(|p| p.jersey_number(is_home_team) == num) => {
-                        if used_numbers.contains(&num) {
-                            println!("❌ Player #{} already in lineup!", num);
-                            continue;
-                        }
-                        break num;
-                    }
-                    Some(num) => println!("❌ Player #{} not found in roster!", num),
-                    None => println!("❌ Invalid number!"),
+            for (idx, player) in roster.iter().enumerate() {
+                let jersey_number = player.jersey_number(is_home_team);
+
+                println!(
+                    "{:>2}. #{:<2} {} {}",
+                    idx + 1,
+                    jersey_number,
+                    player.first_name,
+                    player.last_name
+                );
+            }
+
+            let player = loop {
+                let Some(choice) = term::read_i64("Select player: ") else {
+                    println!("❌ Invalid selection!");
+                    continue;
+                };
+
+                if choice < 1 || choice as usize > roster.len() {
+                    println!("❌ Invalid selection!");
+                    continue;
                 }
+
+                let selected_player = &roster[(choice - 1) as usize];
+                let player_id = selected_player.id.unwrap();
+
+                if used_player_ids.contains(&player_id) {
+                    println!(
+                        "❌ Player #{} {} {} already in lineup!",
+                        selected_player.jersey_number(is_home_team),
+                        selected_player.first_name,
+                        selected_player.last_name
+                    );
+                    continue;
+                }
+
+                break selected_player;
             };
 
-            let player = roster
-                .iter()
-                .find(|p| p.jersey_number(is_home_team) == jersey_number)
-                .unwrap();
             let player_id = player.id.unwrap();
+            let jersey_number = player.jersey_number(is_home_team);
 
             // Read defensive position
             let def_position = loop {
@@ -686,7 +708,7 @@ pub(crate) fn insert_team_lineup(
             };
 
             used_positions.push(def_position.clone());
-            used_numbers.push(jersey_number);
+            used_player_ids.push(player_id);
             lineup.push((player_id, pos, def_position.clone()));
 
             let position_display = if def_position == "DH" {
