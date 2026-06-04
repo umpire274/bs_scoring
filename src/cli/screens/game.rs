@@ -3,6 +3,7 @@ use crate::cli::screens::play_ball::play_ball;
 use crate::db::game_events::refactor_batter_order;
 use crate::utils::term;
 use crate::{Database, Menu, Team};
+use anyhow::{Result, anyhow};
 use chrono::Local;
 use rusqlite::{Connection, params};
 use std::collections::{HashMap, HashSet};
@@ -1269,7 +1270,7 @@ fn load_roster_number_map(
     conn: &Connection,
     team_id: i64,
     is_home_team: bool,
-) -> rusqlite::Result<HashMap<i32, i64>> {
+) -> Result<HashMap<i32, i64>> {
     use crate::db::player::Player;
 
     let roster = Player::get_by_team(conn, team_id)?;
@@ -1277,7 +1278,18 @@ fn load_roster_number_map(
 
     for player in roster {
         if let Some(player_id) = player.id {
-            map.insert(player.jersey_number(is_home_team), player_id);
+            let jersey_number = player.jersey_number(is_home_team);
+
+            if let Some(existing_player_id) = map.insert(jersey_number, player_id) {
+                return Err(anyhow!(
+                    "Duplicate {} jersey number {} for team {} (players {} and {})",
+                    if is_home_team { "away" } else { "home" },
+                    jersey_number,
+                    team_id,
+                    existing_player_id,
+                    player_id
+                ));
+            }
         }
     }
 
