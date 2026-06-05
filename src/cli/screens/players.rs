@@ -1,6 +1,6 @@
 use crate::cli::menu::PlayerMenuChoice;
 use crate::db::player::{NewPlayer, Player};
-use crate::models::player_traits::{BatSide, PitchHand};
+use crate::models::player_traits::{BatSide, ThrowHand};
 use crate::models::types::Position;
 use crate::utils::term;
 use crate::utils::term::choose_enum;
@@ -92,7 +92,7 @@ fn import_csv(db: &Database) {
 
     // CSV format supported:
     // old: team,number,first_name,last_name,position
-    // current: team,number,away_number,first_name,last_name,position,pitch,bat
+    // current: team,number,away_number,first_name,last_name,position,throw,bat
     // If away_number is omitted, it defaults to number.
     for (line_num, line) in content.lines().enumerate() {
         if line_num == 0 && line.to_lowercase().contains("team") {
@@ -165,19 +165,19 @@ fn import_csv(db: &Database) {
             }
         };
 
-        let raw_pitch = parts.get(5 + data_offset).copied().unwrap_or("");
+        let raw_throw = parts.get(5 + data_offset).copied().unwrap_or("");
         let raw_bat = parts.get(6 + data_offset).copied().unwrap_or("");
 
-        let pitch = if raw_pitch.is_empty() {
+        let throw = if raw_throw.is_empty() {
             None
         } else {
-            match raw_pitch.parse::<PitchHand>() {
+            match raw_throw.parse::<ThrowHand>() {
                 Ok(v) => Some(v),
                 Err(_) => {
                     println!(
-                        "⚠️  Line {}: Invalid pitch value '{}'",
+                        "⚠️  Line {}: Invalid throw value '{}'",
                         line_num + 1,
-                        raw_pitch
+                        raw_throw
                     );
                     errors += 1;
                     continue;
@@ -220,18 +220,18 @@ fn import_csv(db: &Database) {
             first_name: first_name.clone(),
             last_name: last_name.clone(),
             position,
-            pitch,
+            throw,
             bat,
         });
 
         match player.create(conn) {
             Ok(_) => {
-                let pitch_str = pitch.map(|p| p.as_str()).unwrap_or("-");
+                let throw_str = throw.map(|p| p.as_str()).unwrap_or("-");
                 let bat_str = bat.map(|b| b.as_str()).unwrap_or("-");
 
                 println!(
-                    "✓ Imported: #{} {} {} ({}) - {} [pitch: {}, bat: {}]",
-                    number, first_name, last_name, team_name, position, pitch_str, bat_str
+                    "✓ Imported: #{} {} {} ({}) - {} [throw: {}, bat: {}]",
+                    number, first_name, last_name, team_name, position, throw_str, bat_str
                 );
                 imported += 1;
             }
@@ -353,14 +353,17 @@ fn import_json(db: &Database) {
             }
         };
 
-        let raw_pitch = player_data.get("pitch").and_then(|v| v.as_str());
+        let raw_throw = player_data
+            .get("throw")
+            .or_else(|| player_data.get("pitch"))
+            .and_then(|v| v.as_str());
         let raw_bat = player_data.get("bat").and_then(|v| v.as_str());
 
-        let pitch = match raw_pitch {
-            Some(s) if !s.trim().is_empty() => match s.parse::<PitchHand>() {
+        let throw = match raw_throw {
+            Some(s) if !s.trim().is_empty() => match s.parse::<ThrowHand>() {
                 Ok(v) => Some(v),
                 Err(_) => {
-                    println!("⚠️  Player {}: Invalid pitch value '{}'", idx + 1, s);
+                    println!("⚠️  Player {}: Invalid throw value '{}'", idx + 1, s);
                     errors += 1;
                     continue;
                 }
@@ -402,18 +405,18 @@ fn import_json(db: &Database) {
             first_name: first_name.clone(),
             last_name: last_name.clone(),
             position,
-            pitch,
+            throw,
             bat,
         });
 
         match player.create(conn) {
             Ok(_) => {
-                let pitch_str = pitch.map(|p| p.as_str()).unwrap_or("-");
+                let throw_str = throw.map(|p| p.as_str()).unwrap_or("-");
                 let bat_str = bat.map(|b| b.as_str()).unwrap_or("-");
 
                 println!(
-                    "✓ Imported: #{} {} {} ({}) - {} [pitch: {}, bat: {}]",
-                    number, first_name, last_name, team_name, position, pitch_str, bat_str
+                    "✓ Imported: #{} {} {} ({}) - {} [throw: {}, bat: {}]",
+                    number, first_name, last_name, team_name, position, throw_str, bat_str
                 );
                 imported += 1;
             }
@@ -452,7 +455,7 @@ fn export_csv(db: &Database) {
     }
 
     let mut csv_content =
-        String::from("team,number,away_number,first_name,last_name,position,pitch,bat\n");
+        String::from("team,number,away_number,first_name,last_name,position,throw,bat\n");
 
     for (player, team_name) in &players {
         csv_content.push_str(&format!(
@@ -463,7 +466,7 @@ fn export_csv(db: &Database) {
             player.first_name,
             player.last_name,
             player.position.to_number(),
-            player.pitch.map(|p| p.as_str()).unwrap_or(""),
+            player.throw.map(|p| p.as_str()).unwrap_or(""),
             player.bat.map(|b| b.as_str()).unwrap_or("")
         ));
     }
@@ -471,7 +474,7 @@ fn export_csv(db: &Database) {
     match fs::write(&filepath, csv_content) {
         Ok(_) => {
             term::show_success(&format!(
-                "Exported {} players to '{}'\n\nFormat: team,number,away_number,first_name,last_name,position,pitch,bat",
+                "Exported {} players to '{}'\n\nFormat: team,number,away_number,first_name,last_name,position,throw,bat",
                 players.len(),
                 filepath
             ));
@@ -509,7 +512,7 @@ fn export_json(db: &Database) {
             "first_name": player.first_name,
             "last_name": player.last_name,
             "position": player.position.to_number(),
-            "pitch": player.pitch.map(|p| p.as_str()).unwrap_or(""),
+            "throw": player.throw.map(|p| p.as_str()).unwrap_or(""),
             "bat": player.bat.map(|b| b.as_str()).unwrap_or("")
         });
         players_json.push(player_obj);
@@ -645,8 +648,8 @@ fn add_player(db: &Database) {
                     }
                 };
 
-                // Select pitch hand (optional)
-                let pitch = term::choose_enum_optional::<PitchHand>();
+                // Select throw hand (optional)
+                let throw = term::choose_enum_optional::<ThrowHand>();
 
                 // Select batting side (optional)
                 let bat = term::choose_enum_optional::<BatSide>();
@@ -659,7 +662,7 @@ fn add_player(db: &Database) {
                     first_name: first_name.clone(),
                     last_name: last_name.clone(),
                     position,
-                    pitch,
+                    throw,
                     bat,
                 });
 
@@ -680,8 +683,8 @@ fn add_player(db: &Database) {
                             team.name,
                             "Position:",
                             position,
-                            "Pitch hand:",
-                            pitch.map(|p| p.as_str()).unwrap_or("None"),
+                            "Throw hand:",
+                            throw.map(|p| p.as_str()).unwrap_or("None"),
                             "Batting side:",
                             bat.map(|b| b.as_str()).unwrap_or("None")
                         ));
@@ -763,7 +766,7 @@ fn list_players(db: &Database) {
                 player.full_name(),
                 format!("({})", team_name),
                 format!("{:?}", player.position),
-                player.pitch.map(|p| p.as_str()).unwrap_or("-"),
+                player.throw.map(|p| p.as_str()).unwrap_or("-"),
                 player.bat.map(|b| b.as_str()).unwrap_or("-")
             );
         }
@@ -877,7 +880,7 @@ fn update_player(db: &Database) {
             }
         }
 
-        player.pitch = choose_enum(player.pitch).or(player.pitch);
+        player.throw = choose_enum(player.throw).or(player.throw);
         player.bat = choose_enum(player.bat).or(player.bat);
 
         match player.update(conn) {
@@ -1174,10 +1177,10 @@ fn download_csv_template() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    std::fs::write(
+    fs::write(
         path,
-        "team_name,number,away_number,first_name,last_name,position,pitch,bat\n\
-         \"Rimini Baseball\",12,9,\"Mario\",\"Rossi\",1,\"RHP\",\"R\"\n",
+        "team_name,number,away_number,first_name,last_name,position,throw,bat\n\
+         \"Rimini Baseball\",12,9,\"Mario\",\"Rossi\",1,\"R\",\"R\"\n",
     )?;
 
     println!("✅ CSV template written to {}", path);
@@ -1201,7 +1204,7 @@ fn download_json_template() -> anyhow::Result<()> {
     "first_name": "Mario",
     "last_name": "Rossi",
     "position": 1,
-    "pitch": "RHP",
+    "throw": "R",
     "bat": "R"
   }
 ]

@@ -72,7 +72,7 @@ pub fn get_migrations() -> Vec<Migration> {
         },
         Migration {
             version: 12,
-            description: "Add 'pitch' and 'bat' columns to players table for handedness information",
+            description: "Add throwing and batting handedness columns to players table",
             up: migration_v12,
         },
         Migration {
@@ -809,7 +809,7 @@ fn migration_v12(conn: &Connection) -> Result<()> {
     // Check and add 'pitch' column to players table if it doesn't exist
     if !check_column_exists(conn, "players", "pitch")? {
         conn.execute(
-            "ALTER TABLE players ADD COLUMN pitch TEXT CHECK(pitch IN ('LHP', 'RHP', 'SHP'))",
+            "ALTER TABLE players ADD COLUMN pitch TEXT CHECK(pitch IS NULL OR pitch IN ('L', 'R', 'S'))",
             [],
         )?;
     }

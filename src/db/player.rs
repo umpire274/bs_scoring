@@ -1,4 +1,4 @@
-use crate::models::player_traits::{BatSide, PitchHand};
+use crate::models::player_traits::{BatSide, ThrowHand};
 use crate::models::types::Position;
 use rusqlite::{Connection, Result, params};
 
@@ -11,7 +11,7 @@ pub struct Player {
     pub first_name: String,
     pub last_name: String,
     pub position: Position,
-    pub pitch: Option<PitchHand>,
+    pub throw: Option<ThrowHand>,
     pub bat: Option<BatSide>,
     pub is_active: bool,
 }
@@ -23,7 +23,7 @@ pub struct NewPlayer {
     pub first_name: String,
     pub last_name: String,
     pub position: Position,
-    pub pitch: Option<PitchHand>,
+    pub throw: Option<ThrowHand>,
     pub bat: Option<BatSide>,
 }
 
@@ -37,7 +37,7 @@ impl Player {
             first_name: data.first_name,
             last_name: data.last_name,
             position: data.position,
-            pitch: data.pitch,
+            throw: data.throw,
             bat: data.bat,
             is_active: true,
         }
@@ -70,15 +70,15 @@ impl Player {
             first_name: row.get(3)?,
             last_name: row.get(4)?,
             position: Position::from_number(position_num).unwrap_or(Position::RightField),
-            pitch: row.get(6).ok().and_then(|s: String| PitchHand::parse(&s)),
+            throw: row.get(6).ok().and_then(|s: String| ThrowHand::parse(&s)),
             bat: row.get(7).ok().and_then(|s: String| BatSide::parse(&s)),
             is_active: row.get(8)?,
         })
     }
 
     /// Helper to map a database row with team_name to (Player, String).
-    /// Expects columns: id, team_id, number, first_name, last_name, position, pitch, bat,
-    /// is_active, away_number, team_name.
+    /// Expects columns: id, team_id, number, first_name, last_name, position, throw, bat,
+    /// currently backed by the legacy `pitch` database column.
     pub fn from_row_with_team(row: &rusqlite::Row) -> Result<(Self, String)> {
         let player = Self::from_row(row)?;
         let team_name: String = row.get(10)?;
@@ -96,7 +96,7 @@ impl Player {
                 self.first_name,
                 self.last_name,
                 self.position.to_number(),
-                self.pitch.map(|p| p.as_str().to_string()),
+                self.throw.map(|p| p.as_str().to_string()),
                 self.bat.map(|b| b.as_str().to_string()),
                 self.is_active,
                 self.away_number
@@ -145,7 +145,7 @@ impl Player {
                     self.first_name,
                     self.last_name,
                     self.position.to_number(),
-                    self.pitch.map(|p| p.as_str().to_string()),
+                    self.throw.map(|p| p.as_str().to_string()),
                     self.bat.map(|b| b.as_str().to_string()),
                     self.is_active,
                     self.away_number,
@@ -185,7 +185,7 @@ mod tests {
             first_name: "Aaron".to_string(),
             last_name: "Judge".to_string(),
             position: Position::RightField,
-            pitch: Some(PitchHand::Rhp),
+            throw: Some(ThrowHand::R),
             bat: Some(BatSide::R),
         });
         let player_id = player.create(conn).unwrap();

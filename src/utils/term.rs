@@ -1,4 +1,4 @@
-use crate::models::player_traits::{BatSide, PitchHand};
+use crate::models::player_traits::{BatSide, ThrowHand};
 use std::io;
 use std::io::Write;
 
@@ -129,13 +129,13 @@ pub trait CliSelectable: Sized + Copy + std::fmt::Display {
     fn all_variants() -> &'static [Self];
 }
 
-impl CliSelectable for PitchHand {
+impl CliSelectable for ThrowHand {
     fn label() -> &'static str {
-        "Pitch hand"
+        "Throw hand"
     }
 
     fn all_variants() -> &'static [Self] {
-        PitchHand::all()
+        ThrowHand::all()
     }
 }
 

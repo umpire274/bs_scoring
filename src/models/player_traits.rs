@@ -2,46 +2,53 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-/// Throwing hand of a pitcher.
+/// Throwing hand of a player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PitchHand {
-    Lhp,
-    Rhp,
-    Shp,
+pub enum ThrowHand {
+    L,
+    R,
+    S,
 }
 
-impl PitchHand {
+impl ThrowHand {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Lhp => "LHP",
-            Self::Rhp => "RHP",
-            Self::Shp => "SHP",
+            Self::L => "L",
+            Self::R => "R",
+            Self::S => "S",
         }
     }
 
     pub fn parse(input: &str) -> Option<Self> {
         match input.trim().to_ascii_uppercase().as_str() {
-            "LHP" => Some(Self::Lhp),
-            "RHP" => Some(Self::Rhp),
-            "SHP" => Some(Self::Shp),
+            "L" => Some(Self::L),
+            "R" => Some(Self::R),
+            "S" => Some(Self::S),
+
+            // Backward-compatible legacy values.
+            "LHP" => Some(Self::L),
+            "RHP" => Some(Self::R),
+            "SHP" => Some(Self::S),
+
             _ => None,
         }
     }
 
-    /// Iterate all variants (replaces strum EnumIter).
+    /// Iterate all variants.
     pub fn all() -> &'static [Self] {
-        &[Self::Lhp, Self::Rhp, Self::Shp]
+        &[Self::L, Self::R, Self::S]
     }
 }
 
-impl fmt::Display for PitchHand {
+impl fmt::Display for ThrowHand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl FromStr for PitchHand {
+impl FromStr for ThrowHand {
     type Err = ();
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s).ok_or(())
     }
