@@ -86,14 +86,14 @@ pub fn get_app_data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
 /// Get the full path to the database file
 pub fn get_db_path() -> Result<PathBuf> {
     let app_dir = get_app_data_dir().map_err(|e| anyhow!("{e}"))?;
-    Ok(app_dir.join("baseball_scorer.db"))
+    Ok(app_dir.join("bs_scoring.db"))
 }
 
 /// Get a display-friendly path string for showing to users
 pub fn get_db_path_display() -> String {
     match get_db_path() {
         Ok(path) => path.display().to_string(),
-        Err(_) => "baseball_scorer.db".to_string(),
+        Err(_) => "bs_scoring.db".to_string(),
     }
 }
 
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn test_db_path_has_correct_name() {
         if let Ok(path) = get_db_path() {
-            assert_eq!(path.file_name().unwrap(), "baseball_scorer.db");
+            assert_eq!(path.file_name().unwrap(), "bs_scoring.db");
         }
     }
 

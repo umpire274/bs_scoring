@@ -98,3 +98,26 @@ impl FromStr for BatSide {
         Self::parse(s).ok_or(())
     }
 }
+
+/// Parses a combined BAT/THROW handedness value.
+///
+/// Expected format:
+/// - `R/R`
+/// - `R/L`
+/// - `L/R`
+/// - `S/S`
+///
+/// The value before `/` is the batting side.
+/// The value after `/` is the throwing hand.
+pub fn parse_bat_throw(input: &str) -> Option<(BatSide, ThrowHand)> {
+    let mut parts = input.trim().split('/');
+
+    let bat = parts.next()?.trim().parse::<BatSide>().ok()?;
+    let throw = parts.next()?.trim().parse::<ThrowHand>().ok()?;
+
+    if parts.next().is_some() {
+        return None;
+    }
+
+    Some((bat, throw))
+}

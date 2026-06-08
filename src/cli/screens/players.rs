@@ -1,6 +1,6 @@
 use crate::cli::menu::PlayerMenuChoice;
 use crate::db::player::{NewPlayer, Player};
-use crate::models::player_traits::{BatSide, ThrowHand};
+use crate::models::player_traits::{BatSide, ThrowHand, parse_bat_throw};
 use crate::models::types::Position;
 use crate::utils::term;
 use crate::utils::term::choose_enum;
@@ -92,7 +92,7 @@ fn import_csv(db: &Database) {
 
     // CSV format supported:
     // old: team,number,first_name,last_name,position
-    // current: team,number,away_number,first_name,last_name,position,throw,bat
+    // current: team;number;away_number;first_name;last_name;position;bat/throw
     // If away_number is omitted, it defaults to number.
     for (line_num, line) in content.lines().enumerate() {
         if line_num == 0 && line.to_lowercase().contains("team") {
@@ -103,10 +103,10 @@ fn import_csv(db: &Database) {
             continue;
         }
 
-        let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-        if !matches!(parts.len(), 5 | 7 | 8) {
+        let parts: Vec<&str> = line.split(';').map(|s| s.trim()).collect();
+        if !matches!(parts.len(), 5 | 6 | 7) {
             println!(
-                "⚠️  Line {}: Invalid format (expected 5, 7, or 8 fields, got {})",
+                "⚠️  Line {}: Invalid format (expected 5, 6, or 7 fields, got {})",
                 line_num + 1,
                 parts.len()
             );
@@ -127,57 +127,16 @@ fn import_csv(db: &Database) {
                 continue;
             }
         };
-        let has_away_number = parts.len() == 8;
-        let away_number = if has_away_number {
-            if parts[2].is_empty() {
-                number
-            } else {
-                match parts[2].parse::<i32>() {
-                    Ok(n) if (0..=99).contains(&n) => n,
-                    _ => {
-                        println!(
-                            "⚠️  Line {}: Invalid away jersey number '{}'",
-                            line_num + 1,
-                            parts[2]
-                        );
-                        errors += 1;
-                        continue;
-                    }
-                }
-            }
-        } else {
+        let away_number = if parts[2].is_empty() {
             number
-        };
-
-        let data_offset = if has_away_number { 1 } else { 0 };
-        let first_name = parts[2 + data_offset].to_string();
-        let last_name = parts[3 + data_offset].to_string();
-        let position_num = match parts[4 + data_offset].parse::<u8>() {
-            Ok(n) if (1..=9).contains(&n) => n,
-            _ => {
-                println!(
-                    "⚠️  Line {}: Invalid position '{}'",
-                    line_num + 1,
-                    parts[4 + data_offset]
-                );
-                errors += 1;
-                continue;
-            }
-        };
-
-        let raw_throw = parts.get(5 + data_offset).copied().unwrap_or("");
-        let raw_bat = parts.get(6 + data_offset).copied().unwrap_or("");
-
-        let throw = if raw_throw.is_empty() {
-            None
         } else {
-            match raw_throw.parse::<ThrowHand>() {
-                Ok(v) => Some(v),
-                Err(_) => {
+            match parts[2].parse::<i32>() {
+                Ok(n) if (0..=99).contains(&n) => n,
+                _ => {
                     println!(
-                        "⚠️  Line {}: Invalid throw value '{}'",
+                        "⚠️  Line {}: Invalid away jersey number '{}'",
                         line_num + 1,
-                        raw_throw
+                        parts[2]
                     );
                     errors += 1;
                     continue;
@@ -185,13 +144,32 @@ fn import_csv(db: &Database) {
             }
         };
 
-        let bat = if raw_bat.is_empty() {
-            None
+        let first_name = parts[3].to_string();
+        let last_name = parts[4].to_string();
+        let position_num = match parts[5].parse::<u8>() {
+            Ok(n) if (1..=9).contains(&n) => n,
+            _ => {
+                println!("⚠️  Line {}: Invalid position '{}'", line_num + 1, parts[5]);
+                errors += 1;
+                continue;
+            }
+        };
+
+        // Combined BAT/THROW field.
+        // Expected format: R/R, R/L, L/R, S/S, etc.
+        let raw_bat_throw = parts.get(6).copied().unwrap_or("");
+
+        let (bat, throw) = if raw_bat_throw.trim().is_empty() {
+            (None, None)
         } else {
-            match raw_bat.parse::<BatSide>() {
-                Ok(v) => Some(v),
-                Err(_) => {
-                    println!("⚠️  Line {}: Invalid bat value '{}'", line_num + 1, raw_bat);
+            match parse_bat_throw(raw_bat_throw) {
+                Some((bat, throw_hand)) => (Some(bat), Some(throw_hand)),
+                None => {
+                    println!(
+                        "⚠️  Line {}: Invalid bat_throw value '{}'",
+                        line_num + 1,
+                        raw_bat_throw
+                    );
                     errors += 1;
                     continue;
                 }
@@ -353,34 +331,55 @@ fn import_json(db: &Database) {
             }
         };
 
-        let raw_throw = player_data
-            .get("throw")
-            .or_else(|| player_data.get("pitch"))
-            .and_then(|v| v.as_str());
-        let raw_bat = player_data.get("bat").and_then(|v| v.as_str());
+        let raw_bat_throw = player_data.get("bat_throw").and_then(|v| v.as_str());
 
-        let throw = match raw_throw {
-            Some(s) if !s.trim().is_empty() => match s.parse::<ThrowHand>() {
-                Ok(v) => Some(v),
-                Err(_) => {
-                    println!("⚠️  Player {}: Invalid throw value '{}'", idx + 1, s);
-                    errors += 1;
-                    continue;
+        let (bat, throw) = if let Some(s) = raw_bat_throw {
+            if s.trim().is_empty() {
+                (None, None)
+            } else {
+                match parse_bat_throw(s) {
+                    Some((bat, throw_hand)) => (Some(bat), Some(throw_hand)),
+                    None => {
+                        println!("⚠️  Player {}: Invalid bat_throw value '{}'", idx + 1, s);
+                        errors += 1;
+                        continue;
+                    }
                 }
-            },
-            _ => None,
-        };
+            }
+        } else {
+            // Legacy compatibility with older JSON files using separate fields.
+            let raw_throw = player_data
+                .get("throw")
+                .or_else(|| player_data.get("pitch"))
+                .and_then(|v| v.as_str());
 
-        let bat = match raw_bat {
-            Some(s) if !s.trim().is_empty() => match s.parse::<BatSide>() {
-                Ok(v) => Some(v),
-                Err(_) => {
-                    println!("⚠️  Player {}: Invalid bat value '{}'", idx + 1, s);
-                    errors += 1;
-                    continue;
-                }
-            },
-            _ => None,
+            let raw_bat = player_data.get("bat").and_then(|v| v.as_str());
+
+            let throw = match raw_throw {
+                Some(s) if !s.trim().is_empty() => match s.parse::<ThrowHand>() {
+                    Ok(v) => Some(v),
+                    Err(_) => {
+                        println!("⚠️  Player {}: Invalid throw value '{}'", idx + 1, s);
+                        errors += 1;
+                        continue;
+                    }
+                },
+                _ => None,
+            };
+
+            let bat = match raw_bat {
+                Some(s) if !s.trim().is_empty() => match s.parse::<BatSide>() {
+                    Ok(v) => Some(v),
+                    Err(_) => {
+                        println!("⚠️  Player {}: Invalid bat value '{}'", idx + 1, s);
+                        errors += 1;
+                        continue;
+                    }
+                },
+                _ => None,
+            };
+
+            (bat, throw)
         };
 
         let team_id = match get_or_create_team(conn, team_name) {
@@ -1179,8 +1178,8 @@ fn download_csv_template() -> anyhow::Result<()> {
 
     fs::write(
         path,
-        "team_name,number,away_number,first_name,last_name,position,throw,bat\n\
-         \"Rimini Baseball\",12,9,\"Mario\",\"Rossi\",1,\"R\",\"R\"\n",
+        "team_name;number;away_number;first_name;last_name;position;bat_throw\n\
+         \"Rimini Baseball\";12;9;\"Mario\";\"Rossi\";\"P,C,IF\";\"R/R\"\n",
     )?;
 
     println!("✅ CSV template written to {}", path);
@@ -1203,14 +1202,13 @@ fn download_json_template() -> anyhow::Result<()> {
     "away_number": 9,
     "first_name": "Mario",
     "last_name": "Rossi",
-    "position": 1,
-    "throw": "R",
-    "bat": "R"
+    "position": "P,C,IF",
+    "bat_throw": "R/R"
   }
 ]
 "#;
 
-    std::fs::write(path, template)?;
+    fs::write(path, template)?;
 
     println!("✅ JSON template written to {}", path);
     Ok(())

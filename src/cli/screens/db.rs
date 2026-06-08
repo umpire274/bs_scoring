@@ -266,7 +266,7 @@ fn backup_database() {
 
     // Create backup filename with timestamp
     let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-    let backup_name = format!("baseball_scorer_backup_{}.db", timestamp);
+    let backup_name = format!("bs_scoring_backup_{}.db", timestamp);
 
     let backup_path = db_path.parent().unwrap().join(&backup_name);
 
@@ -353,7 +353,7 @@ fn restore_database() {
         if term::confirm("Are you sure you want to restore from this backup?") {
             // Safety backup of current DB
             let safety_backup = format!(
-                "baseball_scorer_before_restore_{}.db",
+                "bs_scoring_before_restore_{}.db",
                 Local::now().format("%Y%m%d_%H%M%S")
             );
             let safety_path = db_dir.join(&safety_backup);
@@ -401,8 +401,8 @@ fn list_backup_files(dir: &Path) -> std::io::Result<Vec<(String, u64)>> {
 
         if let Some(name) = path.file_name() {
             let name_str = name.to_string_lossy();
-            if (name_str.starts_with("baseball_scorer_backup_")
-                || name_str.starts_with("baseball_scorer_before_restore_"))
+            if (name_str.starts_with("bs_scoring_backup_")
+                || name_str.starts_with("bs_scoring_before_restore_"))
                 && let Ok(metadata) = fs::metadata(&path)
             {
                 backups.push((name_str.to_string(), metadata.len()));
