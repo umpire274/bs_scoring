@@ -1,5 +1,4 @@
 use crate::models::player_traits::{BatSide, ThrowHand};
-use crate::models::types::Position;
 use rusqlite::{Connection, Result, params};
 
 #[derive(Debug, Clone)]
@@ -10,7 +9,7 @@ pub struct Player {
     pub away_number: i32,
     pub first_name: String,
     pub last_name: String,
-    pub position: Position,
+    pub position: String,
     pub throw: Option<ThrowHand>,
     pub bat: Option<BatSide>,
     pub is_active: bool,
@@ -22,7 +21,7 @@ pub struct NewPlayer {
     pub away_number: i32,
     pub first_name: String,
     pub last_name: String,
-    pub position: Position,
+    pub position: String,
     pub throw: Option<ThrowHand>,
     pub bat: Option<BatSide>,
 }
@@ -59,7 +58,6 @@ impl Player {
 
     /// Helper function to map a database row to a Player struct
     fn from_row(row: &rusqlite::Row) -> Result<Self> {
-        let position_num: u8 = row.get(5)?;
         let away_number: i32 = row.get(9).or_else(|_| row.get(2))?;
 
         Ok(Player {
@@ -69,7 +67,7 @@ impl Player {
             away_number,
             first_name: row.get(3)?,
             last_name: row.get(4)?,
-            position: Position::from_number(position_num).unwrap_or(Position::RightField),
+            position: row.get(5)?,
             throw: row.get(6).ok().and_then(|s: String| ThrowHand::parse(&s)),
             bat: row.get(7).ok().and_then(|s: String| BatSide::parse(&s)),
             is_active: row.get(8)?,
@@ -95,7 +93,7 @@ impl Player {
                 self.number,
                 self.first_name,
                 self.last_name,
-                self.position.to_number(),
+                self.position,
                 self.throw.map(|p| p.as_str().to_string()),
                 self.bat.map(|b| b.as_str().to_string()),
                 self.is_active,
@@ -144,7 +142,7 @@ impl Player {
                     self.number,
                     self.first_name,
                     self.last_name,
-                    self.position.to_number(),
+                    self.position,
                     self.throw.map(|p| p.as_str().to_string()),
                     self.bat.map(|b| b.as_str().to_string()),
                     self.is_active,
@@ -184,7 +182,7 @@ mod tests {
             away_number: 99,
             first_name: "Aaron".to_string(),
             last_name: "Judge".to_string(),
-            position: Position::RightField,
+            position: "RF".to_string(),
             throw: Some(ThrowHand::R),
             bat: Some(BatSide::R),
         });

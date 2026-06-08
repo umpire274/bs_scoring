@@ -1,7 +1,6 @@
 use crate::cli::menu::PlayerMenuChoice;
 use crate::db::player::{NewPlayer, Player};
-use crate::models::player_traits::{BatSide, ThrowHand, parse_bat_throw};
-use crate::models::types::Position;
+use crate::models::player_traits::{BatSide, ThrowHand, parse_bat_throw, parse_player_positions};
 use crate::utils::term;
 use crate::utils::term::choose_enum;
 use crate::{Database, League, Menu, Team};
@@ -104,7 +103,7 @@ fn import_csv(db: &Database) {
         }
 
         let parts: Vec<&str> = line.split(';').map(|s| s.trim()).collect();
-        if !matches!(parts.len(), 5 | 6 | 7) {
+        if !matches!(parts.len(), 5..=7) {
             println!(
                 "⚠️  Line {}: Invalid format (expected 5, 6, or 7 fields, got {})",
                 line_num + 1,
@@ -146,7 +145,7 @@ fn import_csv(db: &Database) {
 
         let first_name = parts[3].to_string();
         let last_name = parts[4].to_string();
-        let position_num = match parts[5].parse::<u8>() {
+        let position = match parts[5].parse::<u8>() {
             Ok(n) if (1..=9).contains(&n) => n,
             _ => {
                 println!("⚠️  Line {}: Invalid position '{}'", line_num + 1, parts[5]);
@@ -190,14 +189,13 @@ fn import_csv(db: &Database) {
             }
         };
 
-        let position = Position::from_number(position_num).unwrap();
         let mut player = Player::new(NewPlayer {
             team_id,
             number,
             away_number,
             first_name: first_name.clone(),
             last_name: last_name.clone(),
-            position,
+            position: position.to_string(),
             throw,
             bat,
         });
@@ -322,10 +320,23 @@ fn import_json(db: &Database) {
             None => String::new(),
         };
 
-        let position_num = match player_data.get("position").and_then(|v| v.as_i64()) {
-            Some(n) if (1..=9).contains(&n) => n as u8,
+        let raw_position = match player_data.get("position").and_then(|v| v.as_str()) {
+            Some(s) if !s.trim().is_empty() => s,
             _ => {
-                println!("⚠️  Player {}: Invalid 'position' field", idx + 1);
+                println!("⚠️  Player {}: Missing 'position' field", idx + 1);
+                errors += 1;
+                continue;
+            }
+        };
+
+        let position = match parse_player_positions(raw_position) {
+            Some(value) => value,
+            None => {
+                println!(
+                    "⚠️  Player {}: Invalid position value '{}'",
+                    idx + 1,
+                    raw_position
+                );
                 errors += 1;
                 continue;
             }
@@ -396,14 +407,13 @@ fn import_json(db: &Database) {
             }
         };
 
-        let position = Position::from_number(position_num).unwrap();
         let mut player = Player::new(NewPlayer {
             team_id,
             number,
             away_number,
             first_name: first_name.clone(),
             last_name: last_name.clone(),
-            position,
+            position: position.clone(),
             throw,
             bat,
         });
@@ -464,7 +474,7 @@ fn export_csv(db: &Database) {
             player.away_number,
             player.first_name,
             player.last_name,
-            player.position.to_number(),
+            player.position,
             player.throw.map(|p| p.as_str()).unwrap_or(""),
             player.bat.map(|b| b.as_str()).unwrap_or("")
         ));
@@ -510,7 +520,7 @@ fn export_json(db: &Database) {
             "away_number": player.away_number,
             "first_name": player.first_name,
             "last_name": player.last_name,
-            "position": player.position.to_number(),
+            "position": player.position,
             "throw": player.throw.map(|p| p.as_str()).unwrap_or(""),
             "bat": player.bat.map(|b| b.as_str()).unwrap_or("")
         });
@@ -624,26 +634,35 @@ fn add_player(db: &Database) {
                     None => number,
                 };
 
-                // Select position
-                println!("\nDefensive positions:");
-                println!("  1. Pitcher");
-                println!("  2. Catcher");
-                println!("  3. First Base");
-                println!("  4. Second Base");
-                println!("  5. Third Base");
-                println!("  6. Shortstop");
-                println!("  7. Left Field");
-                println!("  8. Center Field");
-                println!("  9. Right Field");
+                // Select roster positions
+                println!("\nRoster positions:");
+                println!("  P   = Pitcher");
+                println!("  C   = Catcher");
+                println!("  1B  = First Base");
+                println!("  2B  = Second Base");
+                println!("  3B  = Third Base");
+                println!("  SS  = Shortstop");
+                println!("  LF  = Left Field");
+                println!("  CF  = Center Field");
+                println!("  RF  = Right Field");
+                println!("  IF  = Infield");
+                println!("  OF  = Outfield");
+                println!("  DH  = Designated Hitter");
                 println!();
 
-                print!("Select a defensive position (1-9): ");
-                io::stdout().flush().unwrap();
-                let position = match term::read_choice() {
-                    n if (1..=9).contains(&n) => Position::from_number(n as u8).unwrap(),
-                    _ => {
-                        term::show_error("Invalid position");
-                        return;
+                let position = loop {
+                    let input = term::read_string(
+                        "Enter roster position(s) separated by commas (e.g. P,C,IF): ",
+                    );
+
+                    match parse_player_positions(&input) {
+                        Some(value) => break value,
+                        None => {
+                            term::show_error(
+                                "Invalid position(s). Valid values: \
+                 P,C,1B,2B,3B,SS,LF,CF,RF,IF,OF,DH",
+                            );
+                        }
                     }
                 };
 
@@ -660,7 +679,7 @@ fn add_player(db: &Database) {
                     away_number,
                     first_name: first_name.clone(),
                     last_name: last_name.clone(),
-                    position,
+                    position: position.clone(),
                     throw,
                     bat,
                 });
@@ -668,7 +687,7 @@ fn add_player(db: &Database) {
                 match player.create(conn) {
                     Ok(id) => {
                         term::show_success(&format!(
-                            "Player created successfully!\n\n   {:<14} {}\n   {:<14} {} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {:?}\n   {:<14} {}\n   {:<14} {}\n",
+                            "Player created successfully!\n\n   {:<14} {}\n   {:<14} {} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {}\n   {:<14} {}\n",
                             "ID:",
                             id,
                             "Name:",
@@ -680,7 +699,7 @@ fn add_player(db: &Database) {
                             away_number,
                             "Team:",
                             team.name,
-                            "Position:",
+                            "Positions:",
                             position,
                             "Throw hand:",
                             throw.map(|p| p.as_str()).unwrap_or("None"),
@@ -866,16 +885,23 @@ fn update_player(db: &Database) {
             }
         }
 
-        if let Some(pos_choice) = term::read_i32(&format!(
-            "Position [{}] (1-9, or 0 to keep): ",
-            player.position.to_number()
-        )) {
-            if pos_choice > 0 && pos_choice <= 9 {
-                if let Some(new_pos) = Position::from_number(pos_choice as u8) {
-                    player.position = new_pos;
+        println!("Current positions: {}", player.position);
+
+        println!("Valid positions: P, C, 1B, 2B, 3B, SS, LF, CF, RF, IF, OF, DH");
+
+        let new_positions = term::read_string(&format!(
+            "Positions [{}] (comma-separated, ENTER to keep): ",
+            player.position
+        ));
+
+        if !new_positions.trim().is_empty() {
+            match parse_player_positions(&new_positions) {
+                Some(value) => {
+                    player.position = value;
                 }
-            } else if pos_choice != 0 {
-                println!("  ⚠️  Invalid position ignored. Keeping current value.");
+                None => {
+                    println!("  ⚠️  Invalid position(s) ignored. Keeping current value.");
+                }
             }
         }
 
