@@ -3,6 +3,14 @@ use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::PathBuf;
 
+pub fn ensure_app_data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let path = get_app_data_dir()?;
+
+    fs::create_dir_all(&path)?;
+
+    Ok(path)
+}
+
 /// Initialize database with proper error handling and user feedback
 ///
 /// This function:
@@ -39,18 +47,41 @@ pub fn setup_db() -> Result<(Database, String, utils::boot::DbBootStatus)> {
 
     Ok((db, db_path.to_string_lossy().to_string(), status))
 }
+
 /// Get the application data directory based on the operating system
 pub fn get_app_data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let base_dir = if cfg!(target_os = "windows") {
-        // Windows: %LOCALAPPDATA%\bs_scorer
+        // Windows: %LOCALAPPDATA%\bs_scoring
         let local_appdata = std::env::var("LOCALAPPDATA")
             .or_else(|_| std::env::var("APPDATA"))
             .map_err(|_| "Could not find LOCALAPPDATA or APPDATA environment variable")?;
-        PathBuf::from(local_appdata).join("bs_scorer")
+        PathBuf::from(local_appdata).join("bs_scoring")
     } else {
-        // macOS and Linux: $HOME/.bs_scorer
-        let home = std::env::var("HOME").map_err(|_| "Could not find HOME environment variable")?;
-        PathBuf::from(home).join(".bs_scorer")
+        #[cfg(target_os = "macos")]
+        {
+            let home =
+                std::env::var("HOME").map_err(|_| "Could not find HOME environment variable")?;
+
+            return Ok(PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("bs_scoring"));
+        }
+
+        #[cfg(all(unix, not(target_os = "macos")))]
+        {
+            if let Ok(xdg_data_home) = std::env::var("XDG_DATA_HOME") {
+                return Ok(PathBuf::from(xdg_data_home).join("bs_scoring"));
+            }
+
+            let home =
+                std::env::var("HOME").map_err(|_| "Could not find HOME environment variable")?;
+
+            return Ok(PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("bs_scoring"));
+        }
     };
 
     // Create directory if it doesn't exist
@@ -64,14 +95,14 @@ pub fn get_app_data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
 /// Get the full path to the database file
 pub fn get_db_path() -> Result<PathBuf> {
     let app_dir = get_app_data_dir().map_err(|e| anyhow!("{e}"))?;
-    Ok(app_dir.join("baseball_scorer.db"))
+    Ok(app_dir.join("bs_scoring.db"))
 }
 
 /// Get a display-friendly path string for showing to users
 pub fn get_db_path_display() -> String {
     match get_db_path() {
         Ok(path) => path.display().to_string(),
-        Err(_) => "baseball_scorer.db".to_string(),
+        Err(_) => "bs_scoring.db".to_string(),
     }
 }
 
@@ -81,21 +112,16 @@ mod tests {
 
     #[test]
     fn test_app_data_dir_creation() {
-        let dir = get_app_data_dir();
-        assert!(dir.is_ok());
+        let path = ensure_app_data_dir().expect("failed to create app data dir");
 
-        if let Ok(path) = dir {
-            assert!(path.exists());
-
-            // Verify it contains "bs_scorer"
-            assert!(path.to_string_lossy().contains("bs_scorer"));
-        }
+        assert!(path.exists());
+        assert!(path.is_dir());
     }
 
     #[test]
     fn test_db_path_has_correct_name() {
         if let Ok(path) = get_db_path() {
-            assert_eq!(path.file_name().unwrap(), "baseball_scorer.db");
+            assert_eq!(path.file_name().unwrap(), "bs_scoring.db");
         }
     }
 
@@ -107,9 +133,12 @@ mod tests {
         if cfg!(target_os = "windows") {
             // Should contain AppData or LOCALAPPDATA
             assert!(path_str.contains("AppData") || path_str.contains("APPDATA"));
+            assert!(path_str.contains("bs_scoring"));
         } else {
             // Should be in home directory and start with dot
-            assert!(path_str.contains(".bs_scorer"));
+            assert!(path_str.contains(".local"));
+            assert!(path_str.contains("share"));
+            assert!(path_str.contains("bs_scoring"));
         }
     }
 }
