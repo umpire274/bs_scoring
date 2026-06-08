@@ -109,9 +109,9 @@ impl Player {
     /// Get player by ID
     pub fn get_by_id(conn: &Connection, id: i64) -> Result<Player> {
         let mut stmt = conn.prepare(
-            "SELECT id, team_id, number, first_name, last_name, position, bat, throw, is_active,
-                    COALESCE(away_number, number) AS away_number
-             FROM players WHERE id = ?1",
+            "SELECT id, team_id, number, first_name, last_name, position, throw, bat, is_active,
+                COALESCE(away_number, number) AS away_number
+         FROM players WHERE id = ?1",
         )?;
 
         stmt.query_row(params![id], Self::from_row)
@@ -120,10 +120,10 @@ impl Player {
     /// Get all players for a team
     pub fn get_by_team(conn: &Connection, team_id: i64) -> Result<Vec<Player>> {
         let mut stmt = conn.prepare(
-            "SELECT id, team_id, number, first_name, last_name, position, bat, throw, is_active,
-                    COALESCE(away_number, number) AS away_number
-             FROM players WHERE team_id = ?1 AND is_active = 1
-             ORDER BY number",
+            "SELECT id, team_id, number, first_name, last_name, position, throw, bat, is_active,
+                COALESCE(away_number, number) AS away_number
+         FROM players WHERE team_id = ?1 AND is_active = 1
+         ORDER BY number",
         )?;
 
         let players = stmt.query_map(params![team_id], Self::from_row)?;
