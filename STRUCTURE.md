@@ -1,84 +1,82 @@
-# 🎯 BS Scoring v0.11.1 – Project Structure
+# 🎯 BS Scoring v0.12.0 — Project Structure
 
-## 📂 Directory layout
+This document describes the project layout and the main architectural boundaries of BS Scoring.
 
-```
+## Directory Layout
+
+```text
 bs_scoring/
-│
-├── Cargo.toml                  # Package manifest ([lib] + [[bin]])
+├── Cargo.toml
 ├── Cargo.lock
 ├── README.md
 ├── CHANGELOG.md
-├── SCORING_GUIDE.md            # Scorer command reference
-├── STRUCTURE.md                # This file
-├── RELEASE.md                  # Release process
-├── .gitignore
-│
+├── SCORING_GUIDE.md
+├── STRUCTURE.md
+├── RELEASE.md
 └── src/
-    ├── lib.rs                  # Library entry point / public re-exports
-    ├── main.rs                 # Binary entry point
+    ├── lib.rs
+    ├── main.rs
     │
-    ├── models/                 # Pure data types — no I/O, no DB, no UI
-    │   ├── types.rs            # HalfInning, Pitch, GameStatus, Score, Position, …
-    │   ├── game_state.rs       # GameState, BatterOrder, PitchStats
-    │   ├── runner.rs           # RunnerDest, RunnerOverride
-    │   ├── session.rs          # PlayBallGameContext, PlayBallGate, LineupSide
-    │   ├── plate_appearance.rs # PlateAppearance, PlateAppearanceOutcome, …
-    │   ├── events.rs           # DomainEvent, PersistedEvent
-    │   ├── field_zone.rs       # FieldZone (LF, CF, RF, …)
-    │   ├── player_traits.rs    # PitchHand, BatSide
-    │   ├── umpires.rs          # Umpire domain types, evaluation rows
-    │   └── scoring/            # Full scoring-notation value types
+    ├── models/
+    │   ├── types.rs
+    │   ├── game_state.rs
+    │   ├── runner.rs
+    │   ├── session.rs
+    │   ├── plate_appearance.rs
+    │   ├── events.rs
+    │   ├── field_zone.rs
+    │   ├── player_traits.rs
+    │   ├── umpires.rs
+    │   └── scoring/
     │       ├── mod.rs
-    │       └── types.rs        # HitType, OutType, Walk, AdvancedPlay,
-    │                           #   PlateAppearanceResult, Base, ScoringError
+    │       └── types.rs
     │
-    ├── engine/                 # Game logic — no I/O, no UI              [v0.11.x]
-    │   ├── commands/           # Scoring-command pipeline           [alpha2: rebuilt]
-    │   │   ├── kind.rs         # CommandKind taxonomy               [v0.11.1]
-    │   │   ├── types.rs        # EngineCommand enum
-    │   │   ├── errors.rs       # ParseError / ValidationError / CommandError
-    │   │   ├── grammar/        # Stateless syntactic layer
-    │   │   │   ├── mod.rs      # parse_line() facade
-    │   │   │   ├── tokens.rs   # Lazy regexes + TokenKind classifier
-    │   │   │   └── segment.rs  # Segment enum + parse_segment()
-    │   │   ├── validator.rs    # State-aware validation + coalescing
-    │   │   └── parser.rs       # Facade: parse_engine_commands(line, &state)
-    │   ├── scoring/            # Scoring-rules helpers (ex-core/scoring)
-    │   │   ├── batter_outs.rs  # BatterOutType, fielding-sequence parsing
+    ├── engine/
+    │   ├── commands/
+    │   │   ├── kind.rs
+    │   │   ├── types.rs
+    │   │   ├── errors.rs
+    │   │   ├── grammar/
+    │   │   │   ├── mod.rs
+    │   │   │   ├── tokens.rs
+    │   │   │   └── segment.rs
+    │   │   ├── validator.rs
+    │   │   └── parser.rs
+    │   ├── scoring/
+    │   │   ├── batter_outs.rs
     │   │   └── resolve_batter_out.rs
-    │   ├── notation.rs         # Scoring-notation parser (ex-core/parser.rs)
-    │   ├── runners.rs          # Runner-movement logic (ex-core/runner_logic.rs)
-    │   ├── apply.rs            # EngineCommand → ApplyResult (ex-core/play_ball_apply.rs)
-    │   ├── reducer.rs          # PA/DomainEvent → GameState (ex-core/play_ball_reducer.rs)
-    │   ├── helpers.rs          # Shared internal helpers
-    │   └── play_ball.rs        # Main game loop: I/O, DB persistence, state drive
+    │   ├── notation.rs
+    │   ├── runners.rs
+    │   ├── apply.rs
+    │   ├── reducer.rs
+    │   ├── helpers.rs
+    │   └── play_ball.rs
     │
-    ├── db/                     # SQLite persistence layer
-    │   ├── database.rs         # Connection + WAL + PRAGMAs
-    │   ├── migrations.rs       # Schema versioning
-    │   ├── game_queries.rs     # list_playable_games, gate_check_lineups, set_game_status
-    │   ├── plate_appearances.rs# plate_appearances CRUD
-    │   ├── runner_movements.rs # runner_movements CRUD
-    │   ├── game_events.rs      # game_events log CRUD
-    │   ├── at_bat_draft.rs     # In-progress PA draft (resume support)
-    │   ├── league.rs           # League CRUD
-    │   ├── team.rs             # Team CRUD
-    │   ├── player.rs           # Player CRUD
-    │   ├── umpire.rs           # Umpire + UmpireEvaluation CRUD
-    │   └── config.rs           # Cross-platform DB path
+    ├── db/
+    │   ├── database.rs
+    │   ├── migrations.rs
+    │   ├── config.rs
+    │   ├── game_queries.rs
+    │   ├── plate_appearances.rs
+    │   ├── runner_movements.rs
+    │   ├── game_events.rs
+    │   ├── at_bat_draft.rs
+    │   ├── league.rs
+    │   ├── team.rs
+    │   ├── player.rs
+    │   └── umpire.rs
     │
-    ├── ui/                     # UI abstractions (Ui trait + backends)
-    │   ├── events.rs           # UiEvent definitions
-    │   ├── context.rs          # PlayBallUiContext (team names, …)
-    │   ├── factory.rs          # UI backend selection
-    │   ├── app.rs              # App-level UI state
-    │   ├── cli_impl.rs         # Plain-text CLI backend      [renamed from cli.rs]
-    │   └── tui.rs              # Ratatui terminal-UI backend
+    ├── ui/
+    │   ├── events.rs
+    │   ├── context.rs
+    │   ├── factory.rs
+    │   ├── app.rs
+    │   ├── cli_impl.rs
+    │   └── tui.rs
     │
-    ├── cli/                    # User-facing CLI layer                    [v0.11.x]
-    │   ├── menu.rs             # Menu-choice enums (ex-core/menu.rs)
-    │   └── screens/            # Menu-entry handlers (ex-cli/commands/)
+    ├── cli/
+    │   ├── menu.rs
+    │   └── screens/
     │       ├── main_menu.rs
     │       ├── game.rs
     │       ├── play_ball.rs
@@ -91,289 +89,200 @@ bs_scoring/
     │       └── umpire_supervisor.rs
     │
     └── utils/
-        ├── boot.rs             # App initialization (banner, boot status)
-        ├── term.rs             # Terminal helpers         [renamed from cli.rs]
-        ├── normalize.rs        # slugify / filename normalization
-        └── time.rs             # Export-timestamp helpers
+        ├── boot.rs
+        ├── term.rs
+        ├── normalize.rs
+        └── time.rs
 ```
 
----
+## Architectural Boundaries
 
-## 🏗️ Architecture
+### `models/`
 
-The game loop in `engine/play_ball.rs` hands each raw input line to the
-command pipeline and then applies the resulting `Vec<EngineCommand>` one
-command at a time. The pipeline itself is split into a **stateless**
-syntactic stage and a **state-aware** validation stage — a pattern
-introduced in v0.11.0:
+Pure domain and data types.
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                 main.rs / cli/screens/                           │
-│               Menu-driven CLI application                         │
-└─────────────────────────────┬────────────────────────────────────┘
-                              │
-                              ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                     engine/play_ball.rs                          │
-│   Main game loop: reads input, drives state, writes DB          │
-└───┬───────────────────────────────────────────────────┬──────────┘
-    │                                                   │
-    ▼                                                   ▼
-┌────────────────────────────────────────────┐   ┌─────────────────┐
-│           engine/commands/                 │   │       db/       │
-│                                            │   │                 │
-│   parser.rs  (facade)                      │   │ plate_appear…   │
-│       │                                    │   │ game_events.rs  │
-│       ▼                                    │   │ game_queries.rs │
-│   grammar/   (stateless, regex-assisted)   │   │ at_bat_draft.rs │
-│     tokens.rs → TokenKind                  │   │ runner_movem…   │
-│     segment.rs → Segment                   │   │                 │
-│       │                                    │   │ SQLite + WAL    │
-│       ▼                                    │   │                 │
-│   validator.rs  (state-aware, coalescing)  │   │                 │
-│       │                                    │   └─────────────────┘
-│       ▼                                    │
-│   Result<Vec<EngineCommand>,               │
-│          Vec<CommandError>>                │
-│                                            │
-└───────────────┬────────────────────────────┘
-                │
-                ▼ (on Ok)
-┌────────────────────────────────────────────┐
-│              engine/                       │
-│                                            │
-│    apply.rs                                │
-│       │                                    │
-│       ▼                                    │
-│    runners.rs   (single source of truth    │
-│                  for base advancement)     │
-│       │                                    │
-│       ▼                                    │
-│    reducer.rs                              │
-└────────────────┬───────────────────────────┘
-                 │
-                 ▼
-        ┌──────────────────────┐
-        │       models/        │
-        │                      │
-        │ game_state.rs        │
-        │ runner.rs            │
-        │ session.rs           │
-        │ plate_appearance.rs  │
-        │ events.rs            │
-        └──────────────────────┘
-```
+Important files:
 
----
+- `types.rs` — game-level types such as `HalfInning`, `Pitch`, `PitchCount`, `GameStatus`, `Score`, and lineup defensive `Position`.
+- `player_traits.rs` — player roster traits:
+  - `BatSide`
+  - `ThrowHand`
+  - `PlayerFieldPosition`
+  - `parse_bat_throw()`
+  - `parse_player_positions()`
+- `game_state.rs` — in-memory game state.
+- `runner.rs` — base runner destinations and overrides.
+- `plate_appearance.rs` — plate-appearance records and replay sequence types.
+- `events.rs` — domain events emitted by the engine.
 
-## 🔑 Key design decisions
+### `engine/`
 
-### Command pipeline (v0.11.0)
+Game logic and command processing.
 
-The scoring-command pipeline is deliberately split into two stages so that
-each can be tested in isolation and the responsibilities are not tangled:
+The engine owns:
 
-| Stage     | Module                      | Input                               | Output                                      | State?      |
-|-----------|-----------------------------|-------------------------------------|---------------------------------------------|-------------|
-| Syntactic | `engine/commands/grammar`   | `&str` (raw line)                   | `Vec<Segment>` or `Vec<CommandError>`       | stateless   |
-| Semantic  | `engine/commands/validator` | `Vec<IndexedSegment>`, `&GameState` | `Vec<EngineCommand>` or `Vec<CommandError>` | state-aware |
+- command parsing;
+- semantic validation;
+- command application;
+- runner movement logic;
+- replay/reducer logic;
+- Play Ball state driving.
 
-The thin facade `engine/commands/parser.rs::parse_engine_commands(line, &state)`
-composes the two.
+The command pipeline is split into:
 
-Design rules:
+| Stage | Module | Responsibility |
+|---|---|---|
+| Lexical/syntactic | `engine/commands/grammar` | Parse raw text into segments |
+| Semantic | `engine/commands/validator.rs` | Validate against `GameState` |
+| Facade | `engine/commands/parser.rs` | Public parser entry point |
+| Application | `engine/apply.rs` | Apply `EngineCommand` values |
+| Replay | `engine/reducer.rs` | Rebuild `GameState` from persisted data |
 
-- The **grammar layer has no access to the game state**. It classifies
-  tokens, parses every comma-separated segment independently, and never
-  privileges the first token — all segments are peers.
-- The **validator owns the subject rule**, the runner-presence checks,
-  the infield-fly preconditions, the too-many-outs cap, and every
-  structural conflict (hit + out, FC + hit, FC + batter-out, etc.).
-- **Errors are accumulated**, never short-circuited: every segment that
-  fails a syntactic or semantic check produces a `CommandError` with its
-  1-based index; the caller sees every problem in a single pass.
-- **Coalescing happens at the end** of the validator: a hit segment plus
-  any number of runner-advance segments becomes a single `EngineCommand`
-  variant (`Single` / `Double` / `Triple` / `HomeRun`) with
-  `runner_overrides` populated; defensive-out segments merge into a
-  single `DefensivePlay`; pitches and steals stay as independent
-  commands in their original segment order.
+### `db/`
 
-### Vocabulary taxonomy: `CommandKind` (v0.11.1)
+SQLite persistence layer.
 
-v0.11.1 introduces a single source of truth for the list of verbs the
-grammar accepts: the `CommandKind` enum in `engine::commands::kind`. It
-is a flat 26-variant enum with one variant per lexical verb shape,
-paired with a `CommandFamily` grouping (`Control`, `Status`, `Pitch`,
-`Hit`, `BatterOut`, `FielderChoice`, `Steal`, `Advance`).
+Important files:
 
-Every layer of the command pipeline references `CommandKind` instead of
-keeping its own parallel sub-enums:
+- `database.rs` — connection setup, WAL, PRAGMAs.
+- `migrations.rs` — schema versioning and automatic data migrations.
+- `config.rs` — cross-platform database path.
+- `player.rs` — Player CRUD.
+- `team.rs` — Team CRUD.
+- `league.rs` — League CRUD.
+- `game_queries.rs` — playable games and lineup gate checks.
+- `plate_appearances.rs` and `runner_movements.rs` — scoring persistence.
+- `at_bat_draft.rs` — in-progress plate appearance resume support.
+- `umpire.rs` — umpires and evaluations.
 
-| Layer                             | Before v0.11.1                                         | After v0.11.1                         |
-|-----------------------------------|--------------------------------------------------------|---------------------------------------|
-| `tokens::TokenKind::Verb`         | `HitVerb`, `PitchVerb`, `StealVerb`, `Keyword`         | `Verb(CommandKind)`                   |
-| `segment::Segment::Control`       | `Control(ControlKind)`                                 | `Control(CommandKind)`                |
-| `segment::Segment::Status`        | `Status(StatusKind)`                                   | `Status(CommandKind)`                 |
-| `segment::Segment::Pitch`         | `Pitch(PitchKind)`                                     | `Pitch(CommandKind)`                  |
-| `segment::Segment::Hit { kind }`  | `HitKind`                                              | `CommandKind`                         |
-| `validator::Resolved::Pitch / Hit`| `PitchKind` / `HitKind`                                | `CommandKind`                         |
+## Player Model in v0.12.0
 
-`BatterOutKind` is retained — its variants carry fielder identifiers
-(not just a tag) — but gains a `.command_kind()` helper that maps each
-variant to the corresponding `CommandKind`. `FlyOut { foul: true }` maps
-to `CommandKind::FoulFlyOut`, which is a lexically distinct verb in the
-grammar.
+The v0.12.0 player model separates roster data from lineup/scoring data.
 
-Adding a new command in a future release now requires touching exactly
-one enum variant plus the dispatch in the two or three handlers that
-care about it, instead of updating five parallel sub-enums. See the
-module documentation of `kind.rs` for the full "adding a command"
-checklist.
+### Player roster positions
 
-### Model split (v0.9.0)
+`players.position` is a normalized comma-separated string of roster capabilities.
 
-Prior to v0.9.0, `models/play_ball.rs` contained everything related to live
-game state. It has been split into focused modules:
+Examples:
 
-| Module                    | Contents                                                                               |
-|---------------------------|----------------------------------------------------------------------------------------|
-| `models/game_state.rs`    | `GameState`, `BatterOrder`, `PitchStats`                                               |
-| `models/runner.rs`        | `RunnerDest`, `RunnerOverride`                                                         |
-| `models/session.rs`       | `PlayBallGameContext`, `PlayBallGate`, `LineupSide`                                    |
-| `models/scoring/types.rs` | Full scoring notation types (`HitType`, `OutType`, etc.) — used by the notation parser |
-
-The compatibility shim `models/play_ball.rs` that mirrored the pre-v0.9.0
-path was kept through the v0.10.x line and removed in v0.11.0-alpha1.
-
-### Runner identity on bases (`Option<BatterOrder>`)
-
-`GameState.on_1b/on_2b/on_3b` are `Option<BatterOrder>` (since v0.8.0).
-The engine knows *who* is on each base by batting-order slot, not just
-*whether* a base is occupied. This enables explicit runner overrides and
-steal command validation.
-
-The UI still displays bases as occupied/empty (`◆` / `◇`).
-
-### Runner override flow
-
-```
-Input: "6 h, 5 2b"
-  └─ parse_engine_commands()
-       └─ Single { zone: None, runner_overrides: [{ order: 5, dest: Second }] }
-            └─ apply_hit_command()
-                 ├─ validate_runner_overrides()   ← collision check before state change
-                 └─ PlateAppearance { ..., runner_overrides: [...] }
-                      └─ apply_live_plate_appearance()
-                           └─ apply_hit_with_overrides(state, batter=6, bases=1, overrides)
-                                • runner on 2B was order=5 → override: stays on 2B
-                                • batter #6 → automatic: goes to 1B
+```text
+P
+P,C,IF
+IF,OF,DH
+LF,CF,RF
 ```
 
-### Steal flow (v0.9.1)
+Allowed values:
 
-```
-Input: "k, 6 st 2b"
-  └─ parse_engine_commands()
-       ├─ Pitch(CalledStrike)
-       └─ StealBase { order: 6, dest: Second }
-            └─ apply_steal()
-                 ├─ validate: on_1b == Some(6)?   ← error if runner not on source base
-                 ├─ state.on_1b = None
-                 ├─ state.on_2b = Some(6)
-                 └─ persisted: DomainEvent::StolenBase { order: 6, dest: Second, … }
+```text
+P,C,1B,2B,3B,SS,LF,CF,RF,IF,OF,DH
 ```
 
-### Two advancement paths
+This is independent from lineup defensive positions, which remain numeric `1`–`9` plus `DH` where applicable.
 
-| Path           | Function                       | Used for                              |
-|----------------|--------------------------------|---------------------------------------|
-| With overrides | `apply_hit_with_overrides()`   | Live scoring                          |
-| Replay from DB | `apply_plate_appearance_row()` | Resume — uses `runner_overrides_json` |
+### Batting and throwing
 
-### Override validation
+The database stores batting and throwing separately:
 
-Before any state mutation, `validate_runner_overrides()` checks:
+```text
+bat   = R | L | S
+throw = R | L | S
+```
 
-1. No two overrides (or batter destination) claim the same base.
-2. No override targets a base occupied by a runner *not* listed in the
-   overrides — they would otherwise be silently evicted.
+Import/export uses the WBSC-style combined field:
 
-Both conditions return an explicit error message to the scorer.
+```text
+bat_throw = BAT/THROW
+```
 
-### DB schema version
+Examples:
 
-Current: **v16**.
+```text
+R/R
+L/R
+S/L
+```
 
-| Migration | Change                                                                                                                    |
-|-----------|---------------------------------------------------------------------------------------------------------------------------|
-| v14       | `plate_appearances_compact` → `plate_appearances` with `batter_order`                                                     |
-| v15       | Add `runner_overrides_json TEXT NOT NULL DEFAULT '[]'` to `plate_appearances`                                             |
-| v16       | Rebuild `runner_movements`: drop legacy `at_bat_id` FK, add `pa_seq`, `game_event_id`, `inning`, `half_inning`, `game_id` |
+### Jersey numbers
 
-### `game_events` vs `runner_movements` responsibility
+Each player has:
 
-| Table              | What goes here                                                                                                                    |
-|--------------------|-----------------------------------------------------------------------------------------------------------------------------------|
-| `game_events`      | Administrative/informational: game start, status changes, side changes, at-bat tracking, pitch recording, strikeouts, outs, walks |
-| `runner_movements` | Every physical base movement: hit advancement (auto or override), walk forced advancement, stolen base                            |
+```text
+number       # home jersey number
+away_number  # away jersey number
+```
 
-`runner_movements` rows are linked to a PA via `pa_seq` (for hit/walk) or standalone via `pa_seq = NULL` (for steal and
-future events like wild pitch).
+Both are unique within the same team.
 
-### Replay order
+## Database Storage
 
-Resume reconstructs state from three sources in order:
+### Linux
 
-1. `game_events` → log display only (admin events shown in scorelog)
-2. `plate_appearances` → PA state (batting order, outs, score from hits/walks/outs)
-3. `runner_movements` (standalone, `pa_seq IS NULL`) → interleaved with PAs by inning/half to restore base state for
-   non-PA events (steals)
+```text
+$XDG_DATA_HOME/bs_scoring
+```
 
----
+or:
 
-## 📦 Dependencies
+```text
+~/.local/share/bs_scoring
+```
 
-| Crate        | Purpose                                |
-|--------------|----------------------------------------|
-| `rusqlite`   | SQLite bindings                        |
-| `serde`      | Serialization framework                |
-| `serde_json` | JSON for PA sequences and outcome data |
-| `ratatui`    | Terminal UI                            |
-| `crossterm`  | Cross-platform terminal control        |
-| `chrono`     | Date handling                          |
-| `uuid`       | Game ID generation                     |
+### macOS
 
----
+```text
+~/Library/Application Support/bs_scoring
+```
 
-## 🗄️ Database locations
+### Windows
 
-| Platform | Path                                          |
-|----------|-----------------------------------------------|
-| Windows  | `%LOCALAPPDATA%\bs_scorer\baseball_scorer.db` |
-| macOS    | `$HOME/.bs_scorer/baseball_scorer.db`         |
-| Linux    | `$HOME/.bs_scorer/baseball_scorer.db`         |
+```text
+%LOCALAPPDATA%\bs_scoring
+```
 
----
+with fallback to:
 
-## 📈 Version history (major milestones)
+```text
+%APPDATA%\bs_scoring
+```
 
-| Version | Highlights                                                                                                                                                      |
-|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| v0.10.0 | Unified `runner_logic` module; WAL mode + PRAGMAs; migration-only schema; `HalfInning`/`PlateAppearanceOutcome` helpers; ~400 lines of duplication removed      |
-| v0.9.2  | `runner_movements` rebuilt (migration v16); steal/hit/walk movements persisted per-runner; steal replay fixed; `game_events` scope clarified to admin/info only |
-| v0.9.1  | Steal command (`<order> st <dest>`); Unicode panic fix; runner collision validation                                                                             |
-| v0.9.0  | Module split (game_state, runner, session, scoring); runner override persistence (migration v15); DB queries moved to db/game_queries                           |
-| v0.8.0  | Runner overrides by batting order; `Option<BatterOrder>` on bases                                                                                               |
-| v0.7.7  | Refactor pass: dead types removed, strum removed, migration gap fixed                                                                                           |
-| v0.7.x  | Compact PA persistence, deterministic resume, TUI scoreboard                                                                                                    |
-| v0.6.x  | Pitch-by-pitch tracking, pitch count, strike/ball logic                                                                                                         |
-| v0.4.x  | Pre-game lineup editing, GameStatus enum                                                                                                                        |
-| v0.3.x  | Player management, CSV/JSON import-export                                                                                                                       |
-| v0.2.x  | SQLite persistence, menu system, schema migrations                                                                                                              |
-| v0.1.0  | Initial CLI scoring                                                                                                                                             |
+Legacy Linux data in `~/.bs_scorer` is migrated automatically.
 
----
+## Migration Responsibilities
 
-**Built with Rust 🦀 — Play Ball! ⚾**
+`db/migrations.rs` owns schema and data migrations, including:
+
+- legacy player `pitch` column migration to `throw`;
+- conversion of `RHP/LHP/SHP` to `R/L/S`;
+- conversion of numeric player positions to roster-position codes;
+- database filename migration from `baseball_scorer*.db` to `bs_scoring*.db`;
+- enforcement of home/away jersey uniqueness.
+
+## CLI Layer
+
+`cli/screens/` contains menu workflows.
+
+Important screens:
+
+- `players.rs` — player CRUD, import/export, templates.
+- `game.rs` — game creation and lineup workflows.
+- `play_ball.rs` — entry into live game mode.
+- `team.rs` and `leagues.rs` — organization management.
+- `umpire_supervisor.rs` — umpire evaluation workflows.
+
+## UI Layer
+
+`ui/` contains display abstractions and backends:
+
+- `cli_impl.rs` — plain text output.
+- `tui.rs` — Ratatui scoreboard and live game UI.
+- `events.rs` — UI event types.
+- `factory.rs` — backend selection.
+
+## Development Checks
+
+```bash
+cargo fmt
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --workspace
+```
