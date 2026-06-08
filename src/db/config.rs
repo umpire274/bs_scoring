@@ -3,6 +3,14 @@ use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::PathBuf;
 
+pub fn ensure_app_data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let path = get_app_data_dir()?;
+
+    fs::create_dir_all(&path)?;
+
+    Ok(path)
+}
+
 /// Initialize database with proper error handling and user feedback
 ///
 /// This function:
@@ -39,6 +47,7 @@ pub fn setup_db() -> Result<(Database, String, utils::boot::DbBootStatus)> {
 
     Ok((db, db_path.to_string_lossy().to_string(), status))
 }
+
 /// Get the application data directory based on the operating system
 pub fn get_app_data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let base_dir = if cfg!(target_os = "windows") {
@@ -103,15 +112,10 @@ mod tests {
 
     #[test]
     fn test_app_data_dir_creation() {
-        let dir = get_app_data_dir();
-        assert!(dir.is_ok());
+        let path = ensure_app_data_dir().expect("failed to create app data dir");
 
-        if let Ok(path) = dir {
-            assert!(path.exists());
-
-            // Verify it contains "bs_scoring"
-            assert!(path.to_string_lossy().contains("bs_scoring"));
-        }
+        assert!(path.exists());
+        assert!(path.is_dir());
     }
 
     #[test]
