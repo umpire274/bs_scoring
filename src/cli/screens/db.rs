@@ -392,6 +392,19 @@ fn restore_database() {
     }
 }
 
+const BACKUP_PREFIXES: &[&str] = &[
+    "bs_scoring_backup_",
+    "bs_scoring_before_restore_",
+    "baseball_scorer_backup_",
+    "baseball_scorer_before_restore_",
+];
+
+fn is_backup_file(file_name: &str) -> bool {
+    BACKUP_PREFIXES
+        .iter()
+        .any(|prefix| file_name.starts_with(prefix))
+}
+
 fn list_backup_files(dir: &Path) -> std::io::Result<Vec<(String, u64)>> {
     let mut backups = Vec::new();
 
@@ -401,8 +414,8 @@ fn list_backup_files(dir: &Path) -> std::io::Result<Vec<(String, u64)>> {
 
         if let Some(name) = path.file_name() {
             let name_str = name.to_string_lossy();
-            if (name_str.starts_with("bs_scoring_backup_")
-                || name_str.starts_with("bs_scoring_before_restore_"))
+
+            if is_backup_file(&name_str)
                 && let Ok(metadata) = fs::metadata(&path)
             {
                 backups.push((name_str.to_string(), metadata.len()));
