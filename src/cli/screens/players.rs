@@ -90,9 +90,14 @@ fn import_csv(db: &Database) {
     let mut errors = 0;
 
     // CSV format supported:
-    // old: team,number,first_name,last_name,position
-    // current: team;number;away_number;first_name;last_name;position;bat/throw
-    // If away_number is omitted, it defaults to number.
+    // team_name;number;away_number;first_name;last_name;position;bat_throw
+    //
+    // Notes:
+    // - Field separator is semicolon (`;`).
+    // - `position` supports one or more comma-separated roster positions
+    //   such as `P`, `P,C,IF`, or `IF,OF,DH`.
+    // - `bat_throw` uses the international BAT/THROW format, e.g. `R/R`.
+    // - If `away_number` is omitted, it defaults to `number`.
     for (line_num, line) in content.lines().enumerate() {
         if line_num == 0 && line.to_lowercase().contains("team") {
             continue;
@@ -103,9 +108,9 @@ fn import_csv(db: &Database) {
         }
 
         let parts: Vec<&str> = line.split(';').map(|s| s.trim()).collect();
-        if !matches!(parts.len(), 5..=7) {
+        if parts.len() != 7 {
             println!(
-                "⚠️  Line {}: Invalid format (expected 5, 6, or 7 fields, got {})",
+                "⚠️  Line {}: Invalid format (expected 7 fields, got {})",
                 line_num + 1,
                 parts.len()
             );
@@ -114,6 +119,11 @@ fn import_csv(db: &Database) {
         }
 
         let team_name = parts[0];
+        if team_name.is_empty() {
+            println!("⚠️  Line {}: Missing team_name", line_num + 1);
+            errors += 1;
+            continue;
+        }
         let number = match parts[1].parse::<i32>() {
             Ok(n) if (0..=99).contains(&n) => n,
             _ => {
@@ -144,10 +154,17 @@ fn import_csv(db: &Database) {
         };
 
         let first_name = parts[3].to_string();
+        if first_name.is_empty() {
+            println!("⚠️  Line {}: Missing first_name", line_num + 1);
+            errors += 1;
+            continue;
+        }
+
         let last_name = parts[4].to_string();
-        let position = match parts[5].parse::<u8>() {
-            Ok(n) if (1..=9).contains(&n) => n,
-            _ => {
+
+        let position = match parse_player_positions(parts[5]) {
+            Some(value) => value,
+            None => {
                 println!("⚠️  Line {}: Invalid position '{}'", line_num + 1, parts[5]);
                 errors += 1;
                 continue;
@@ -195,7 +212,7 @@ fn import_csv(db: &Database) {
             away_number,
             first_name: first_name.clone(),
             last_name: last_name.clone(),
-            position: position.to_string(),
+            position: position.clone(),
             throw,
             bat,
         });
@@ -264,10 +281,14 @@ fn import_json(db: &Database) {
     let mut errors = 0;
 
     for (idx, player_data) in players_data.iter().enumerate() {
-        let team_name = match player_data.get("team").and_then(|v| v.as_str()) {
-            Some(t) => t,
-            None => {
-                println!("⚠️  Player {}: Missing 'team' field", idx + 1);
+        let team_name = match player_data
+            .get("team_name")
+            .or_else(|| player_data.get("team")) // Legacy compatibility.
+            .and_then(|v| v.as_str())
+        {
+            Some(t) if !t.trim().is_empty() => t,
+            _ => {
+                println!("⚠️  Player {}: Missing 'team_name' field", idx + 1);
                 errors += 1;
                 continue;
             }
@@ -464,26 +485,32 @@ fn export_csv(db: &Database) {
     }
 
     let mut csv_content =
-        String::from("team,number,away_number,first_name,last_name,position,throw,bat\n");
+        String::from("team_name;number;away_number;first_name;last_name;position;bat_throw\n");
 
     for (player, team_name) in &players {
+        let bat_throw = match (player.bat, player.throw) {
+            (Some(bat), Some(throw_hand)) => {
+                format!("{}/{}", bat.as_str(), throw_hand.as_str())
+            }
+            _ => String::new(),
+        };
+
         csv_content.push_str(&format!(
-            "{},{},{},{},{},{},{},{}\n",
+            "{};{};{};{};{};{};{}\n",
             team_name,
             player.number,
             player.away_number,
             player.first_name,
             player.last_name,
             player.position,
-            player.throw.map(|p| p.as_str()).unwrap_or(""),
-            player.bat.map(|b| b.as_str()).unwrap_or("")
+            bat_throw
         ));
     }
 
     match fs::write(&filepath, csv_content) {
         Ok(_) => {
             term::show_success(&format!(
-                "Exported {} players to '{}'\n\nFormat: team,number,away_number,first_name,last_name,position,throw,bat",
+                "Exported {} players to '{}'\n\nFormat: team_name;number;away_number;first_name;last_name;position;bat_throw",
                 players.len(),
                 filepath
             ));
@@ -514,16 +541,23 @@ fn export_json(db: &Database) {
     let mut players_json = Vec::new();
 
     for (player, team_name) in &players {
+        let bat_throw = match (player.bat, player.throw) {
+            (Some(bat), Some(throw_hand)) => {
+                format!("{}/{}", bat.as_str(), throw_hand.as_str())
+            }
+            _ => String::new(),
+        };
+
         let player_obj = serde_json::json!({
-            "team": team_name,
+            "team_name": team_name,
             "number": player.number,
             "away_number": player.away_number,
             "first_name": player.first_name,
             "last_name": player.last_name,
             "position": player.position,
-            "throw": player.throw.map(|p| p.as_str()).unwrap_or(""),
-            "bat": player.bat.map(|b| b.as_str()).unwrap_or("")
+            "bat_throw": bat_throw,
         });
+
         players_json.push(player_obj);
     }
 
@@ -538,7 +572,16 @@ fn export_json(db: &Database) {
     match fs::write(&filepath, json_content) {
         Ok(_) => {
             term::show_success(&format!(
-                "Exported {} players to '{}'",
+                "Exported {} players to '{}'\n\nFormat:\n\
+                 {{\n\
+                 \t\"team_name\": \"...\",\n\
+                 \t\"number\": 12,\n\
+                 \t\"away_number\": 12,\n\
+                 \t\"first_name\": \"Mario\",\n\
+                 \t\"last_name\": \"Rossi\",\n\
+                 \t\"position\": \"P,C,IF\",\n\
+                 \t\"bat_throw\": \"R/R\"\n\
+                 }}",
                 players.len(),
                 filepath
             ));
@@ -783,7 +826,7 @@ fn list_players(db: &Database) {
                 player.away_number,
                 player.full_name(),
                 format!("({})", team_name),
-                format!("{:?}", player.position),
+                player.position,
                 player.throw.map(|p| p.as_str()).unwrap_or("-"),
                 player.bat.map(|b| b.as_str()).unwrap_or("-")
             );
@@ -797,7 +840,7 @@ fn list_players(db: &Database) {
 fn get_all_players_with_teams(conn: &rusqlite::Connection) -> Vec<(Player, String)> {
     let mut stmt = conn
         .prepare(
-            "SELECT p.id, p.team_id, p.number, p.first_name, p.last_name, p.position, p.pitch, p.bat, p.is_active,
+            "SELECT p.id, p.team_id, p.number, p.first_name, p.last_name, p.position, p.bat, p.throw, p.is_active,
                     COALESCE(p.away_number, p.number) AS away_number,
                     t.name as team_name
              FROM players p
@@ -1205,7 +1248,7 @@ fn download_csv_template() -> anyhow::Result<()> {
     fs::write(
         path,
         "team_name;number;away_number;first_name;last_name;position;bat_throw\n\
-         \"Rimini Baseball\";12;9;\"Mario\";\"Rossi\";\"P,C,IF\";\"R/R\"\n",
+         Rimini Baseball;12;9;Mario;Rossi;P,C,IF;R/R\n",
     )?;
 
     println!("✅ CSV template written to {}", path);
@@ -1223,7 +1266,7 @@ fn download_json_template() -> anyhow::Result<()> {
 
     let template = r#"[
   {
-    "team": "Rimini Baseball",
+    "team_name": "Rimini Baseball",
     "number": 12,
     "away_number": 9,
     "first_name": "Mario",

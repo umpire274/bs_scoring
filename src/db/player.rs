@@ -86,7 +86,7 @@ impl Player {
     /// Create a new player
     pub fn create(&mut self, conn: &Connection) -> Result<i64> {
         conn.execute(
-            "INSERT INTO players (team_id, number, first_name, last_name, position, pitch, bat, is_active, away_number)
+            "INSERT INTO players (team_id, number, first_name, last_name, position, throw, bat, is_active, away_number)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 self.team_id,
@@ -109,7 +109,7 @@ impl Player {
     /// Get player by ID
     pub fn get_by_id(conn: &Connection, id: i64) -> Result<Player> {
         let mut stmt = conn.prepare(
-            "SELECT id, team_id, number, first_name, last_name, position, pitch, bat, is_active,
+            "SELECT id, team_id, number, first_name, last_name, position, bat, throw, is_active,
                     COALESCE(away_number, number) AS away_number
              FROM players WHERE id = ?1",
         )?;
@@ -120,7 +120,7 @@ impl Player {
     /// Get all players for a team
     pub fn get_by_team(conn: &Connection, team_id: i64) -> Result<Vec<Player>> {
         let mut stmt = conn.prepare(
-            "SELECT id, team_id, number, first_name, last_name, position, pitch, bat, is_active,
+            "SELECT id, team_id, number, first_name, last_name, position, bat, throw, is_active,
                     COALESCE(away_number, number) AS away_number
              FROM players WHERE team_id = ?1 AND is_active = 1
              ORDER BY number",
@@ -136,7 +136,7 @@ impl Player {
         if let Some(id) = self.id {
             conn.execute(
                 "UPDATE players SET team_id = ?1, number = ?2, first_name = ?3, last_name = ?4,
-                 position = ?5, pitch = ?6, bat = ?7, is_active = ?8, away_number = ?9 WHERE id = ?10",
+                 position = ?5, throw = ?6, bat = ?7, is_active = ?8, away_number = ?9 WHERE id = ?10",
                 params![
                     self.team_id,
                     self.number,

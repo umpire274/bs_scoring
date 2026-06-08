@@ -2,7 +2,7 @@ use chrono::Local;
 use rusqlite::{Connection, Result};
 
 /// Current schema version - increment this when adding migrations
-pub const CURRENT_SCHEMA_VERSION: i64 = 19;
+pub const CURRENT_SCHEMA_VERSION: i64 = 20;
 
 /// Migration structure
 pub struct Migration {
@@ -109,6 +109,11 @@ pub fn get_migrations() -> Vec<Migration> {
             version: 19,
             description: "Add away jersey number to players and allow jersey number zero",
             up: migration_v19,
+        },
+        Migration {
+            version: 20,
+            description: "Migration player model fields position, bat and throw",
+            up: migration_v20,
         },
     ]
 }
@@ -1097,6 +1102,89 @@ fn migration_v19(conn: &Connection) -> Result<()> {
             [],
         )?;
     }
+
+    Ok(())
+}
+
+fn migration_v20(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+            r#"
+        PRAGMA foreign_keys = OFF;
+
+        ALTER TABLE players RENAME TO players_old;
+
+        CREATE TABLE players (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_id INTEGER NOT NULL,
+            number INTEGER NOT NULL CHECK(number >= 0 AND number <= 99),
+            away_number INTEGER CHECK(away_number IS NULL OR (away_number >= 0 AND away_number <= 99)),
+            first_name TEXT NOT NULL,
+            last_name TEXT,
+            position TEXT NOT NULL,
+            bat TEXT CHECK(bat IS NULL OR bat IN ('R', 'L', 'S')),
+            throw TEXT CHECK(throw IS NULL OR throw IN ('R', 'L', 'S')),
+            is_active BOOLEAN NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+            FOREIGN KEY(team_id) REFERENCES teams(id)
+        );
+
+        INSERT INTO players (
+            id,
+            team_id,
+            number,
+            away_number,
+            first_name,
+            last_name,
+            position,
+            throw,
+            bat,
+            is_active
+        )
+        SELECT
+            id,
+            team_id,
+            number,
+            COALESCE(away_number, number),
+            first_name,
+            last_name,
+            CASE CAST(position AS TEXT)
+                WHEN '1' THEN 'P'
+                WHEN '2' THEN 'C'
+                WHEN '3' THEN '1B'
+                WHEN '4' THEN '2B'
+                WHEN '5' THEN '3B'
+                WHEN '6' THEN 'SS'
+                WHEN '7' THEN 'LF'
+                WHEN '8' THEN 'CF'
+                WHEN '9' THEN 'RF'
+                WHEN '10' THEN 'DH'
+                ELSE position
+            END,
+            CASE pitch
+                WHEN 'RHP' THEN 'R'
+                WHEN 'LHP' THEN 'L'
+                WHEN 'SHP' THEN 'S'
+                ELSE pitch
+            END,
+            bat,
+            is_active
+        FROM players_old;
+
+        DROP TABLE players_old;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_players_team_number
+            ON players(team_id, number);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_players_team_away_number
+            ON players(team_id, away_number);
+
+        CREATE INDEX IF NOT EXISTS idx_players_active ON players(is_active);
+
+        PRAGMA foreign_keys = ON;
+        "#,
+        )?;
 
     Ok(())
 }

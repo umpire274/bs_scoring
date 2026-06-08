@@ -118,6 +118,7 @@ pub enum PlayerFieldPosition {
     Infield,
     Outfield,
     DH,
+    UTL,
 }
 
 impl PlayerFieldPosition {
@@ -135,6 +136,7 @@ impl PlayerFieldPosition {
             Self::Infield => "IF",
             Self::Outfield => "OF",
             Self::DH => "DH",
+            Self::UTL => "UTL",
         }
     }
 
@@ -152,6 +154,7 @@ impl PlayerFieldPosition {
             "IF" => Some(Self::Infield),
             "OF" => Some(Self::Outfield),
             "DH" => Some(Self::DH),
+            "UTL" => Some(Self::UTL),
             _ => None,
         }
     }
@@ -170,6 +173,7 @@ impl PlayerFieldPosition {
             Self::Infield,
             Self::Outfield,
             Self::DH,
+            Self::UTL,
         ]
     }
 }
@@ -214,7 +218,7 @@ pub fn parse_bat_throw(input: &str) -> Option<(BatSide, ThrowHand)> {
 /// Parses and normalizes a comma-separated list of roster field positions.
 ///
 /// Accepted values:
-/// `P`, `C`, `1B`, `2B`, `3B`, `SS`, `LF`, `CF`, `RF`, `IF`, `OF`, `DH`.
+/// `P`, `C`, `1B`, `2B`, `3B`, `SS`, `LF`, `CF`, `RF`, `IF`, `OF`, `DH`. `UTL`
 ///
 /// Example:
 /// `P, C, IF` becomes `P,C,IF`.
